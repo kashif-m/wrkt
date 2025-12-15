@@ -1,11 +1,11 @@
 # Implementation Tasks
 
-## Phase 1 – Generic Rust Core (root `tracker-core/`)
+## Phase 1 – Generic Rust Core (root `strata/`)
 
-- [x] Define crate layout (`tracker_dsl`, `tracker_ir`, `tracker_engine`, `tracker_eval`, `tracker_planning`, `tracker_catalog`, `tracker_ffi`) inside the root `tracker-core/` workspace.
+- [x] Define crate layout (`tracker_dsl`, `tracker_ir`, `tracker_engine`, `tracker_eval`, `tracker_planning`, `tracker_catalog`, `tracker_ffi`) inside the root `strata/` workspace.
 - [x] Implement public API (`compile_tracker`, `validate_event`, `compute`, `apply`, `simulate`) with deterministic pure functions.
-- [ ] Build expression evaluator covering arithmetic, aggregations, conditionals, grouping, and time grains.
-- [ ] Add strong newtypes for IDs/units, boundary-friendly errors, and stateless replay tests to prove deterministic outputs.
+- [x] Build expression evaluator covering arithmetic, aggregations, conditionals, grouping, and time grains.
+- [x] Add strong newtypes for IDs/units, boundary-friendly errors, and stateless replay tests to prove deterministic outputs.
 
 ## Phase 2 – Workout Pack + Persistence
 

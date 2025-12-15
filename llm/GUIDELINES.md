@@ -513,7 +513,7 @@ Before merging a change to core, answer:
 
 ## Where each concern lives
 
-* `tracker-core` (generic):
+* `strata` (generic):
 
   * DSL parsing + IR
   * engine compute/apply/simulate

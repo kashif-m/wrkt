@@ -1,10 +1,12 @@
 [package]
-name = "tracker_engine"
+name = "tracker_eval"
 version = "0.1.0"
 edition = "2021"
 publish = false
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "1"
+time = { version = "0.3", features = ["macros"] }
 tracker_ir = { path = "../tracker_ir" }

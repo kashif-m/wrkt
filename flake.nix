@@ -4,10 +4,9 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
-    oh-my-zsh.url = "github:ohmyzsh/ohmyzsh";
   };
 
-  outputs = { self, nixpkgs, flake-utils, oh-my-zsh }:
+  outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
@@ -20,38 +19,44 @@
             rustc
             rustfmt
             clippy
-            pkg-config
-            openssl
-            sqlite
-            ripgrep
-            fd
-            jq
-            git
-            tree
-            gnupg
-            starship
-            zoxide
-            exa
-            bat
+            rust-analyzer
             zsh
+            git
+            zoxide
+            zsh-syntax-highlighting
+            zsh-autosuggestions
+            rustPlatform.rustLibSrc
           ];
 
           shellHook = ''
             export SHELL=${pkgs.zsh}/bin/zsh
             export ZDOTDIR=$PWD/.nix-zsh
+            export RUST_SRC_PATH=${pkgs.rustPlatform.rustLibSrc}/lib/rustlib/src/rust
             mkdir -p $ZDOTDIR
-            if [ ! -d "$ZDOTDIR/.oh-my-zsh" ]; then
-              cp -r ${oh-my-zsh}/share/oh-my-zsh $ZDOTDIR/.oh-my-zsh
-            fi
             if [ ! -f "$ZDOTDIR/.zshrc" ]; then
               cat <<'RC' > $ZDOTDIR/.zshrc
-            export ZSH="$ZDOTDIR/.oh-my-zsh"
-            ZSH_THEME="agnoster"
-            plugins=(git z)
-            source $ZSH/oh-my-zsh.sh
-            eval "$(starship init zsh)"
+            autoload -Uz colors && colors
+            autoload -Uz promptinit && promptinit
+            autoload -Uz vcs_info
+            setopt prompt_subst
+            setopt autocd
+            setopt inc_append_history
+            bindkey -e
             eval "$(zoxide init zsh)"
+            source ${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+            source ${pkgs.zsh-autosuggestions}/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+            zstyle ':vcs_info:*' enable git
+            zstyle ':vcs_info:git:*' check-for-changes true
+            zstyle ':vcs_info:git:*' stagedstr '+'
+            zstyle ':vcs_info:git:*' unstagedstr '*'
+            zstyle ':vcs_info:git:*' formats '%F{magenta}[%b%u%a]%f'
+            precmd() { vcs_info }
+            PROMPT='%F{cyan}%n%f %F{yellow}%~%f ''${vcs_info_msg_0_:-} %# '
+            alias l='ls -lah'
             RC
+            fi
+            if [ -z "$ZSH_NAME" ]; then
+              exec ${pkgs.zsh}/bin/zsh
             fi
             echo "Loaded workout tracker dev shell"
           '';

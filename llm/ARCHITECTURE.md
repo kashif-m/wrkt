@@ -118,7 +118,7 @@ Everything the user does becomes an append-only event.
 ## Crate layout
 
 ```
-tracker-core/
+strata/
   crates/
     tracker_dsl/          # parser: DSL -> AST
     tracker_ir/           # validated IR structs (serde)

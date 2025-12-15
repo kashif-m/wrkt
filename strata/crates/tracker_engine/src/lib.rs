@@ -5,9 +5,13 @@
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 use thiserror::Error;
+use tracker_eval::{
+    evaluate_metrics, AggregationFunc, AggregationSpec, EvalError, GroupExpr, MetricName,
+    MetricSpec,
+};
 use tracker_ir::{
     metric_delta, EngineOutput, EngineOutputDelta, EngineState, EventId, NormalizedEvent, Query,
-    SimulationOutput, Timestamp, TrackerDefinition, TrackerId,
+    SimulationOutput, TimeGrain, Timestamp, TrackerDefinition, TrackerId,
 };
 
 /// Engine-level error codes surfaced across FFI boundaries.
@@ -18,9 +22,17 @@ pub enum EngineError {
     #[error("event validation error: {0}")]
     EventValidation(String),
     #[error("tracker mismatch (expected {expected}, found {actual})")]
-    TrackerMismatch { expected: TrackerId, actual: TrackerId },
+    TrackerMismatch {
+        expected: TrackerId,
+        actual: TrackerId,
+    },
     #[error("state tracker mismatch (expected {expected}, found {actual})")]
-    StateMismatch { expected: TrackerId, actual: TrackerId },
+    StateMismatch {
+        expected: TrackerId,
+        actual: TrackerId,
+    },
+    #[error("evaluation error: {0}")]
+    Evaluation(String),
 }
 
 /// Compiles DSL text into a deterministic tracker definition.
@@ -36,8 +48,8 @@ pub fn validate_event(
     def: &TrackerDefinition,
     event_json: &str,
 ) -> Result<NormalizedEvent, EngineError> {
-    let value: Value =
-        serde_json::from_str(event_json).map_err(|err| EngineError::EventValidation(err.to_string()))?;
+    let value: Value = serde_json::from_str(event_json)
+        .map_err(|err| EngineError::EventValidation(err.to_string()))?;
 
     let event_id = value
         .get("event_id")
@@ -77,10 +89,7 @@ pub fn compute(
     query: Query,
 ) -> Result<EngineOutput, EngineError> {
     ensure_events(def, events)?;
-    let relevant: Vec<&NormalizedEvent> = events
-        .iter()
-        .filter(|event| event.tracker_id() == def.tracker_id())
-        .collect();
+    let relevant: Vec<NormalizedEvent> = events.to_vec();
 
     let total_events = relevant.len();
     let window_events = match query.time_window {
@@ -91,8 +100,9 @@ pub fn compute(
         None => total_events,
     };
 
-    let mut metrics = BTreeMap::new();
-    metrics.insert("event_count".into(), json!(total_events));
+    let metric_specs = default_metric_specs(&query);
+    let mut metrics =
+        evaluate_metrics(&metric_specs, &relevant, &query).map_err(EngineError::from)?;
     if query.time_window.is_some() {
         metrics.insert("window_event_count".into(), json!(window_events));
     }
@@ -158,10 +168,7 @@ pub fn simulate(
     })
 }
 
-fn ensure_tracker(
-    def: &TrackerDefinition,
-    tracker_id: &TrackerId,
-) -> Result<(), EngineError> {
+fn ensure_tracker(def: &TrackerDefinition, tracker_id: &TrackerId) -> Result<(), EngineError> {
     if tracker_id != def.tracker_id() {
         return Err(EngineError::TrackerMismatch {
             expected: def.tracker_id().clone(),
@@ -171,10 +178,7 @@ fn ensure_tracker(
     Ok(())
 }
 
-fn ensure_state(
-    def: &TrackerDefinition,
-    state: &EngineState,
-) -> Result<(), EngineError> {
+fn ensure_state(def: &TrackerDefinition, state: &EngineState) -> Result<(), EngineError> {
     if state.tracker_id() != def.tracker_id() {
         return Err(EngineError::StateMismatch {
             expected: def.tracker_id().clone(),
@@ -184,10 +188,7 @@ fn ensure_state(
     Ok(())
 }
 
-fn ensure_events(
-    def: &TrackerDefinition,
-    events: &[NormalizedEvent],
-) -> Result<(), EngineError> {
+fn ensure_events(def: &TrackerDefinition, events: &[NormalizedEvent]) -> Result<(), EngineError> {
     for event in events {
         ensure_tracker(def, event.tracker_id())?;
     }
@@ -201,5 +202,125 @@ fn ensure_object(value: Option<&Value>, label: &str) -> Result<Value, EngineErro
         _ => Err(EngineError::EventValidation(format!(
             "{label} must be a JSON object"
         ))),
+    }
+}
+
+fn default_metric_specs(query: &Query) -> Vec<MetricSpec> {
+    let mut specs = vec![MetricSpec {
+        name: MetricName::new("event_count"),
+        aggregation: AggregationSpec {
+            func: AggregationFunc::Count,
+            target: None,
+            filter: None,
+            group_by: vec![],
+        },
+    }];
+
+    if let Some(grain) = query.grains.first() {
+        let name = format!("events_by_{}", grain_label(*grain));
+        specs.push(MetricSpec {
+            name: MetricName::new(name),
+            aggregation: AggregationSpec {
+                func: AggregationFunc::Count,
+                target: None,
+                filter: None,
+                group_by: vec![GroupExpr::Time(*grain)],
+            },
+        });
+    }
+
+    specs
+}
+
+fn grain_label(grain: TimeGrain) -> &'static str {
+    match grain {
+        TimeGrain::Day => "day",
+        TimeGrain::Week => "week",
+        TimeGrain::Month => "month",
+        TimeGrain::Quarter => "quarter",
+        TimeGrain::Year => "year",
+        TimeGrain::AllTime => "all_time",
+        TimeGrain::Custom => "custom",
+    }
+}
+
+impl From<EvalError> for EngineError {
+    fn from(value: EvalError) -> Self {
+        EngineError::Evaluation(value.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+    use tracker_ir::{EventId, NormalizedEvent, Timestamp};
+
+    fn sample_event(tracker_id: &TrackerId, ts: i64, weight: i64) -> NormalizedEvent {
+        NormalizedEvent::new(
+            EventId::new(format!("event-{ts}")),
+            tracker_id.clone(),
+            Timestamp::new(ts),
+            json!({"weight": weight}),
+            json!({}),
+        )
+    }
+
+    fn sample_definition() -> TrackerDefinition {
+        TrackerDefinition::from_dsl("tracker workout v1 { fields {} }")
+    }
+
+    #[test]
+    fn compute_is_deterministic_across_runs() {
+        let def = sample_definition();
+        let tracker_id = def.tracker_id().clone();
+        let mut events = vec![
+            sample_event(&tracker_id, 1_000, 60),
+            sample_event(&tracker_id, 2_000, 65),
+            sample_event(&tracker_id, 3_000, 70),
+        ];
+        let query = Query {
+            time_window: None,
+            grains: vec![TimeGrain::Day],
+        };
+
+        let first = compute(&def, &events, query.clone()).expect("first compute");
+        events.reverse();
+        let second = compute(&def, &events, query).expect("second compute");
+
+        assert_eq!(first.total_events, second.total_events);
+        assert_eq!(first.metrics, second.metrics);
+    }
+
+    #[test]
+    fn simulate_matches_direct_computation() {
+        let def = sample_definition();
+        let tracker_id = def.tracker_id().clone();
+        let base = vec![
+            sample_event(&tracker_id, 1_000, 60),
+            sample_event(&tracker_id, 2_000, 65),
+        ];
+        let hypothetical = vec![sample_event(&tracker_id, 3_000, 70)];
+        let query = Query {
+            time_window: None,
+            grains: vec![],
+        };
+
+        let base_output = compute(&def, &base, query.clone()).expect("base compute");
+        let hypo_events = {
+            let mut all = base.clone();
+            all.extend_from_slice(&hypothetical);
+            all
+        };
+        let hypo_output = compute(&def, &hypo_events, query.clone()).expect("hypo compute");
+
+        let sim = simulate(&def, &base, &hypothetical, query).expect("simulation");
+
+        assert_eq!(sim.base.metrics, base_output.metrics);
+        assert_eq!(sim.hypothetical.metrics, hypo_output.metrics);
+        assert_eq!(
+            sim.delta.metrics,
+            metric_delta(&base_output.metrics, &hypo_output.metrics)
+        );
     }
 }
