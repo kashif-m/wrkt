@@ -1,0 +1,13 @@
+[workspace]
+members = [
+    "crates/tracker_dsl",
+    "crates/tracker_ir",
+    "crates/tracker_engine",
+    "crates/tracker_eval",
+    "crates/tracker_planning",
+    "crates/tracker_catalog",
+    "crates/tracker_ffi",
+]
+
+[workspace.metadata]
+description = "Generic tracker core written in Rust; integrates with RN clients via FFI."

@@ -1,0 +1,10 @@
+[package]
+name = "tracker_engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde_json = "1"
+thiserror = "1"
+tracker_ir = { path = "../tracker_ir" }
