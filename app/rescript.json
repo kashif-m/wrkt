@@ -1,0 +1,20 @@
+{
+  "name": "workout-app",
+  "sources": [
+    {
+      "dir": "rescript",
+      "subdirs": true
+    }
+  ],
+  "package-specs": {
+    "module": "commonjs",
+    "in-source": true
+  },
+  "suffix": ".bs.js",
+  "warnings": {
+    "error": "+a"
+  },
+  "dependencies": [
+    "@rescript/react"
+  ]
+}

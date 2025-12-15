@@ -20,6 +20,7 @@
             rustfmt
             clippy
             rust-analyzer
+            nodejs
             zsh
             git
             zoxide

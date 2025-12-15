@@ -5,3 +5,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracker_engine = { path = "../tracker_engine" }
+tracker_ir = { path = "../tracker_ir" }
+workout_pack = { path = "../../../workout-pack" }

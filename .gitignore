@@ -1,2 +1,6 @@
 .nix-zsh
 target
+node_modules
+/app/lib
+
+.bs.js
