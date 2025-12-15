@@ -1,0 +1,33 @@
+tracker "workout" v1 {
+  fields {
+    exercise: text
+    modality: enum("strength", "hypertrophy", "conditioning", "bodyweight")
+    reps: int optional
+    weight: float optional
+    duration_sec: int optional
+    distance_m: float optional
+    rpe: int optional
+  }
+
+  derive {
+    set_volume = if (weight > 0 && reps > 0) then weight * reps else 0
+    est_1rm = if (weight > 0 && reps > 0) then weight * (1 + reps / 30) else 0
+  }
+
+  metrics {
+    total_sets = sum(set_volume) over week
+    avg_rpe = avg(rpe) over week
+    max_weight = max(weight) by exercise over all_time
+    prs = max(est_1rm) by exercise over all_time
+  }
+
+  alerts {
+    high_rpe = if (avg_rpe > 8) then signal("HIGH_RPE", { level: avg_rpe })
+  }
+
+  planning {
+    strategy "strength" {
+      objective = max(est_1rm) over week
+    }
+  }
+}

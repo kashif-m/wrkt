@@ -9,10 +9,10 @@
 
 ## Phase 2 – Workout Pack + Persistence
 
-- [ ] Create workout-specific DSL configs, strategy packs, and catalog metadata outside the core.
-- [ ] Design SQLite schema (`trackers`, `events`, optional `snapshots`) and storage helpers that persist raw events.
-- [ ] Wire persistence to the core via JSON conversions and cached compiled configs.
-- [ ] Implement planning-based suggestion generator that simulates candidates, scores them, and returns top recommendations.
+- [x] Create workout-specific DSL configs, strategy packs, and catalog metadata outside the core.
+- [x] Design SQLite schema (`trackers`, `events`, optional `snapshots`) and storage helpers that persist raw events.
+- [x] Wire persistence to the core via JSON conversions and cached compiled configs.
+- [x] Implement planning-based suggestion generator that simulates candidates, scores them, and returns top recommendations.
 
 ## Phase 3 – React Native iOS Integration
 

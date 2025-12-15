@@ -1,0 +1,20 @@
+{
+  "muscle_groups": [
+    "chest",
+    "back",
+    "legs",
+    "shoulders",
+    "arms",
+    "core",
+    "conditioning"
+  ],
+  "exercises": [
+    { "slug": "bench_press", "name": "Bench Press", "muscle_group": "chest", "modality": "strength" },
+    { "slug": "squat", "name": "Back Squat", "muscle_group": "legs", "modality": "strength" },
+    { "slug": "deadlift", "name": "Conventional Deadlift", "muscle_group": "back", "modality": "strength" },
+    { "slug": "overhead_press", "name": "Overhead Press", "muscle_group": "shoulders", "modality": "strength" },
+    { "slug": "pull_up", "name": "Pull-Up", "muscle_group": "back", "modality": "bodyweight" },
+    { "slug": "plank", "name": "Plank Hold", "muscle_group": "core", "modality": "bodyweight" },
+    { "slug": "assault_bike", "name": "Assault Bike Sprint", "muscle_group": "conditioning", "modality": "conditioning" }
+  ]
+}
