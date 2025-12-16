@@ -1,0 +1,45 @@
+import AsyncStorage from "@react-native-async-storage/async-storage"
+import { initialEvents, WorkoutEvent } from "./workoutFlows"
+import { sortEventsByDeterministicOrder } from "./timePolicy"
+
+const STORAGE_KEY = "strata.workout.events"
+
+const readStore = async (): Promise<WorkoutEvent[]> => {
+  const raw = await AsyncStorage.getItem(STORAGE_KEY)
+  if (!raw) {
+    return []
+  }
+  try {
+    return JSON.parse(raw) as WorkoutEvent[]
+  } catch (error) {
+    console.warn("Failed to parse workout cache, resetting", error)
+    return []
+  }
+}
+
+const writeStore = async (events: WorkoutEvent[]) => {
+  await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(events))
+}
+
+export const init = async () => {
+  const existing = await readStore()
+  if (existing.length === 0) {
+    await writeStore(initialEvents)
+  }
+}
+
+export const insertEvent = async (event: WorkoutEvent) => {
+  const events = await readStore()
+  const merged = sortEventsByDeterministicOrder([...events, event])
+  await writeStore(merged)
+}
+
+export const fetchEvents = async (trackerId: string, range?: [number, number]): Promise<WorkoutEvent[]> => {
+  const events = await readStore()
+  let filtered = events.filter((event) => event.tracker_id === trackerId)
+  if (range) {
+    const [start, end] = range
+    filtered = filtered.filter((event) => event.ts >= start && event.ts <= end)
+  }
+  return sortEventsByDeterministicOrder(filtered)
+}

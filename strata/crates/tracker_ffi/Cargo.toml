@@ -10,3 +10,6 @@ serde_json = "1"
 tracker_engine = { path = "../tracker_engine" }
 tracker_ir = { path = "../tracker_ir" }
 workout_pack = { path = "../../../workout-pack" }
+
+[lib]
+crate-type = ["rlib", "staticlib"]

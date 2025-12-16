@@ -16,7 +16,7 @@
 
 ## Phase 3 – React Native iOS Integration
 
-- [ ] Build the JSI native module exposing the Rust core (`compileTracker`, `validateEvent`, `compute`, `simulate`) and link the static library into the RN iOS target.
-- [ ] Implement RN UI flows (logging, history, analytics, suggestion cards) that call into the core for validation and metrics.
-- [ ] Ensure offline logging and deterministic analytics with rounding/timezone policies, replaying event history per selected grains.
+- [x] Build the JSI native module exposing the Rust core (`compileTracker`, `validateEvent`, `compute`, `simulate`) and link the static library into the RN iOS target.
+- [x] Re-implement the RN UI/storage layer in TypeScript (logging, history, analytics, suggestion cards) while still hitting the Strata core.
+- [x] Ensure offline logging and deterministic analytics with rounding/timezone policies, replaying event history per selected grains.
 - [ ] Surface PRs, volume/1RM charts, and suggestion cards backed by the strategy module output.

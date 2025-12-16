@@ -4,35 +4,45 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-utils.url = "github:numtide/flake-utils";
+    fenix.url = "github:nix-community/fenix";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, fenix }:
     flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
+        fenixPkgs = fenix.packages.${system};
+        rustComponents = [
+          fenixPkgs.stable.rustc
+          fenixPkgs.stable.cargo
+          fenixPkgs.stable.clippy
+          fenixPkgs.stable.rustfmt
+          fenixPkgs.stable.rust-src
+          fenixPkgs.targets."aarch64-apple-ios".stable.rust-std
+          fenixPkgs.targets."aarch64-apple-ios-sim".stable.rust-std
+        ];
+        rustToolchain = fenixPkgs.combine rustComponents;
+        rustAnalyzer = fenixPkgs.latest.rust-analyzer;
+        rustSrc = fenixPkgs.stable.rust-src;
       in {
         devShells.default = pkgs.mkShell {
           name = "workout-tracker-shell";
 
           packages = with pkgs; [
-            cargo
-            rustc
-            rustfmt
-            clippy
-            rust-analyzer
+            rustToolchain
+            rustAnalyzer
             nodejs
             zsh
             git
             zoxide
             zsh-syntax-highlighting
             zsh-autosuggestions
-            rustPlatform.rustLibSrc
           ];
 
           shellHook = ''
             export SHELL=${pkgs.zsh}/bin/zsh
             export ZDOTDIR=$PWD/.nix-zsh
-            export RUST_SRC_PATH=${pkgs.rustPlatform.rustLibSrc}/lib/rustlib/src/rust
+            export RUST_SRC_PATH=${rustSrc}/lib/rustlib/src/rust
             mkdir -p $ZDOTDIR
             if [ ! -f "$ZDOTDIR/.zshrc" ]; then
               cat <<'RC' > $ZDOTDIR/.zshrc
