@@ -1,6 +1,8 @@
 import React, { useMemo } from "react"
 import { ScrollView, View, Text } from "react-native"
 import { WorkoutEvent, WorkoutState } from "../workoutFlows"
+import { Card, SectionHeading, BodyText } from "../ui/components"
+import { palette, spacing } from "../ui/theme"
 
 type Props = { state: WorkoutState }
 
@@ -56,46 +58,52 @@ const computePRs = (events: WorkoutEvent[]): PersonalRecord[] => {
 const VolumeChart = ({ data }: { data: VolumePoint[] }) => {
   const max = data.reduce((m, p) => Math.max(m, p.value), 0) || 1
   return (
-    <View style={{ gap: 8 }}>
-      <Text style={{ fontWeight: "600" }}>Volume trend (kg·reps)</Text>
+    <Card style={{ gap: spacing(1) }}>
+      <SectionHeading label="Volume trend" />
       {data.map(point => {
         const widthPct = `${Math.round((point.value / max) * 100)}%`
         return (
           <View key={point.label}>
-            <Text style={{ fontSize: 12, color: "#666" }}>{point.label}</Text>
-            <View style={{ backgroundColor: "#eee", height: 12, borderRadius: 6, overflow: "hidden" }}>
-              <View style={{ width: widthPct, backgroundColor: "#3b82f6", height: "100%" }} />
+            <Text style={{ fontSize: 12, color: palette.mutedText }}>{point.label}</Text>
+            <View style={{ backgroundColor: palette.mutedSurface, height: 12, borderRadius: 6, overflow: "hidden" }}>
+              <View style={{ width: widthPct, backgroundColor: palette.primary, height: "100%" }} />
             </View>
-            <Text style={{ fontSize: 12, color: "#444" }}>{Math.round(point.value)} kg·reps</Text>
+            <BodyText style={{ fontSize: 12 }}>{Math.round(point.value)} kg·reps</BodyText>
           </View>
         )
       })}
-    </View>
+    </Card>
   )
 }
 
 const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
-  <View style={{ marginTop: 24 }}>
-    <Text style={{ fontWeight: "600", marginBottom: 8 }}>Estimated 1RM / PR</Text>
+  <Card>
+    <SectionHeading label="Estimated PRs" />
     {prs.length === 0 ? (
-      <Text style={{ color: "#666" }}>Log sets to see personal records.</Text>
+      <BodyText style={{ color: palette.mutedText }}>Log sets to see personal records.</BodyText>
     ) : (
       prs.map(record => (
         <View
           key={record.exercise}
-          style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 0.5, borderColor: "#ddd" }}
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            paddingVertical: 6,
+            borderBottomWidth: 0.5,
+            borderColor: palette.border,
+          }}
         >
           <View>
-            <Text style={{ fontWeight: "500" }}>{record.exercise}</Text>
-            <Text style={{ fontSize: 12, color: "#666" }}>
+            <BodyText style={{ fontWeight: "600" }}>{record.exercise}</BodyText>
+            <Text style={{ fontSize: 12, color: palette.mutedText }}>
               {record.weight} kg × {record.reps || 1} reps
             </Text>
           </View>
-          <Text style={{ fontWeight: "600" }}>{Math.round(record.oneRm)} kg 1RM</Text>
+          <BodyText style={{ fontWeight: "600" }}>{Math.round(record.oneRm)} kg 1RM</BodyText>
         </View>
       ))
     )}
-  </View>
+  </Card>
 )
 
 const AnalyticsScreen = ({ state }: Props) => {
@@ -103,7 +111,10 @@ const AnalyticsScreen = ({ state }: Props) => {
   const prs = useMemo(() => computePRs(state.events), [state.events])
 
   return (
-    <ScrollView contentContainerStyle={{ padding: 16, gap: 24 }}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6), gap: spacing(2) }}
+    >
       <VolumeChart data={volumeSeries} />
       <PRTable prs={prs} />
     </ScrollView>

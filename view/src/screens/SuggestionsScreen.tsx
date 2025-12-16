@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from "react"
-import { ScrollView, View, Text, TextInput } from "react-native"
+import { ScrollView, Text } from "react-native"
 import { WorkoutState, suggestNext } from "../workoutFlows"
+import { Card, InputField, SectionHeading, BodyText } from "../ui/components"
+import { palette, spacing } from "../ui/theme"
 
 type Props = { state: WorkoutState }
 
@@ -12,19 +14,27 @@ const SuggestionsScreen = ({ state }: Props) => {
     suggestNext(state, planner).then(setSuggestion).catch(() => setSuggestion(null))
   }, [state, planner])
 
+  const coachText =
+    suggestion && suggestion["recommendations"]
+      ? JSON.stringify(suggestion["recommendations"], null, 2)
+      : JSON.stringify(suggestion ?? {}, null, 2)
+
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
-      <Text style={{ marginBottom: 12 }}>Coach suggestion</Text>
-      <View style={{ marginBottom: 12 }}>
-        <Text>Planner</Text>
-        <TextInput
-          value={planner}
-          onChangeText={(text) => setPlanner(text)}
-          autoCapitalize="none"
-          style={{ borderColor: "#ccc", borderWidth: 1, padding: 8, borderRadius: 4 }}
-        />
-      </View>
-      <Text>{suggestion ? JSON.stringify(suggestion, null, 2) : "Loading..."}</Text>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6), gap: spacing(2) }}
+    >
+      <Card>
+        <SectionHeading label="Planner mode" />
+        <BodyText style={{ color: palette.mutedText, marginBottom: spacing(1) }}>
+          Try different strategists to see how the plan shifts.
+        </BodyText>
+        <InputField label="Planner" value={planner} onChangeText={setPlanner} placeholder="strength" />
+      </Card>
+      <Card>
+        <SectionHeading label="Suggested focus" />
+        <Text style={{ color: palette.text, fontFamily: "Menlo", fontSize: 12 }}>{coachText}</Text>
+      </Card>
     </ScrollView>
   )
 }

@@ -1,4 +1,4 @@
-import { compute, suggest, validateEvent, JsonObject } from "./TrackerEngine"
+import { compute, suggest, validateEvent, JsonObject, compileTracker } from "./TrackerEngine"
 import { getLocalOffsetMinutes, roundToLocalDay, roundToLocalWeek, sortEventsByDeterministicOrder, TimeGrain } from "./timePolicy"
 
 export type WorkoutEvent = JsonObject & {
@@ -13,15 +13,30 @@ export type WorkoutState = { events: WorkoutEvent[] }
 
 export const WORKOUT_DSL = "tracker \"workout\" v1 {\n  fields {\n    exercise: text\n    reps: int optional\n    weight: float optional\n  }\n}"
 
-export const initialEvents: WorkoutEvent[] = [
-  {
-    event_id: "evt-1",
-    tracker_id: "workout",
-    ts: 1700000000,
-    payload: { exercise: "Bench Press", reps: 5, weight: 80 },
-    meta: {},
-  },
-]
+const TRACKER_ID_FALLBACK = "workout"
+let trackerIdentifier = TRACKER_ID_FALLBACK
+let trackerIdPromise: Promise<string> | null = null
+
+const resolveTrackerIdentifier = async () => {
+  try {
+    const compiled = await compileTracker(WORKOUT_DSL)
+    if (compiled && typeof compiled === "object" && "tracker_id" in compiled) {
+      trackerIdentifier = String((compiled as JsonObject)["tracker_id"])
+    }
+  } catch (error) {
+    console.warn("Failed to compile tracker", error)
+  }
+  return trackerIdentifier
+}
+
+export const getTrackerIdentifier = () => {
+  if (!trackerIdPromise) {
+    trackerIdPromise = resolveTrackerIdentifier()
+  }
+  return trackerIdPromise
+}
+
+export const initialEvents: WorkoutEvent[] = []
 
 export const initialState: WorkoutState = { events: initialEvents }
 
@@ -39,7 +54,8 @@ const annotateEvent = (event: WorkoutEvent): WorkoutEvent => {
 }
 
 export const logSet = async (state: WorkoutState, eventJson: WorkoutEvent): Promise<WorkoutState> => {
-  let normalized = eventJson
+  const tracker_id = await getTrackerIdentifier()
+  let normalized: WorkoutEvent = { ...eventJson, tracker_id }
   try {
     normalized = (await validateEvent(WORKOUT_DSL, eventJson)) as WorkoutEvent
   } catch (error) {

@@ -1,7 +1,9 @@
 import React, { useMemo, useState } from "react"
-import { ScrollView, View, Text, TextInput, Button } from "react-native"
+import { ScrollView, Text, View } from "react-native"
 import { insertEvent } from "../storage"
 import { WorkoutState, logSet, WorkoutEvent } from "../workoutFlows"
+import { Card, InputField, PrimaryButton, SectionHeading, BodyText } from "../ui/components"
+import { palette, spacing } from "../ui/theme"
 
 type Props = {
   state: WorkoutState
@@ -32,10 +34,16 @@ const buildEvent = (exercise: string, repsText: string, weightText: string): Wor
 const LoggedEvents = ({ state }: { state: WorkoutState }) => {
   const latest = useMemo(() => state.events[state.events.length - 1], [state.events])
   return (
-    <View style={{ marginBottom: 16 }}>
-      <Text>Logged sets: {state.events.length}</Text>
-      {latest ? <Text>Latest: {stringifyJson(latest)}</Text> : null}
-    </View>
+    <Card style={{ marginBottom: spacing(2) }}>
+      <SectionHeading label="Today’s progress" />
+      <BodyText>Logged sets: {state.events.length}</BodyText>
+      {latest ? (
+        <View style={{ marginTop: spacing(1) }}>
+          <Text style={{ color: palette.mutedText, fontSize: 12 }}>Last entry</Text>
+          <Text style={{ color: palette.text, fontSize: 12 }}>{stringifyJson(latest)}</Text>
+        </View>
+      ) : null}
+    </Card>
   )
 }
 
@@ -47,26 +55,6 @@ const statusMessages = {
 type MessageKey = keyof typeof statusMessages
 
 const initialFields = { exercise: "", reps: "", weight: "" }
-
-type FieldInputProps = {
-  value: string
-  label: string
-  onChangeText: (text: string) => void
-  keyboardType?: "default" | "numeric" | "email-address"
-}
-
-const FieldInput = ({ value, label, onChangeText, keyboardType = "default" }: FieldInputProps) => (
-  <View style={{ marginBottom: 12 }}>
-    <Text>{label}</Text>
-    <TextInput
-      value={value}
-      onChangeText={onChangeText}
-      placeholder={label}
-      keyboardType={keyboardType}
-      style={{ borderColor: "#ccc", borderWidth: 1, padding: 8, borderRadius: 4 }}
-    />
-  </View>
-)
 
 const LoggingScreen = ({ state, onStateChange, refreshFromStorage }: Props) => {
   const [exercise, setExercise] = useState(initialFields.exercise)
@@ -91,14 +79,33 @@ const LoggingScreen = ({ state, onStateChange, refreshFromStorage }: Props) => {
     setStatus("success")
   }
 
+  const statusColor = status === "success" ? palette.success : palette.warning
+
   return (
-    <ScrollView contentContainerStyle={{ padding: 16 }}>
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6) }}
+    >
       <LoggedEvents state={state} />
-      {status ? <Text>{statusMessages[status]}</Text> : null}
-      <FieldInput value={exercise} label="Exercise" onChangeText={setExercise} />
-      <FieldInput value={reps} label="Reps" keyboardType="numeric" onChangeText={setReps} />
-      <FieldInput value={weight} label="Weight (kg)" keyboardType="numeric" onChangeText={setWeight} />
-      <Button title="Log Set" onPress={handleSubmit} disabled={!exercise.trim()} />
+      <Card>
+        <SectionHeading label="Log a set" />
+        <BodyText style={{ color: palette.mutedText, marginBottom: spacing(1.5) }}>
+          Track every effort and the engine will keep your insights fresh.
+        </BodyText>
+        {status ? (
+          <Text style={{ color: statusColor, marginBottom: spacing(1) }}>{statusMessages[status]}</Text>
+        ) : null}
+        <InputField label="Exercise" value={exercise} onChangeText={setExercise} placeholder="Deadlift" />
+        <InputField label="Reps" value={reps} onChangeText={setReps} keyboardType="numeric" placeholder="5" />
+        <InputField
+          label="Weight (kg)"
+          value={weight}
+          onChangeText={setWeight}
+          keyboardType="numeric"
+          placeholder="120"
+        />
+        <PrimaryButton label="Log Set" onPress={handleSubmit} disabled={!exercise.trim()} />
+      </Card>
     </ScrollView>
   )
 }
