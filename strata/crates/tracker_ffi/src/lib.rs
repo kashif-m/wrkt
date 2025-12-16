@@ -6,7 +6,7 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use tracker_engine::{self, EngineError};
 use tracker_ir::{NormalizedEvent, Query, TrackerDefinition};
-use workout_pack::{generate_suggestions, PlannerKind};
+use workout_pack::{catalog, generate_suggestions, PlannerKind};
 
 #[repr(C)]
 pub struct FfiResult {
@@ -127,6 +127,23 @@ fn parse_planner_kind(ptr: *const c_char) -> Result<PlannerKind, String> {
         "conditioning" => Ok(PlannerKind::Conditioning),
         other => Err(format!("unknown planner kind: {other}")),
     }
+}
+
+#[no_mangle]
+pub extern "C" fn strata_exercise_catalog() -> FfiResult {
+    handle(|| Ok(catalog::catalog_json()))
+}
+
+#[no_mangle]
+pub extern "C" fn strata_validate_exercise(entry_json_ptr: *const c_char) -> FfiResult {
+    handle(|| {
+        let entry_json = cstr_to_str(entry_json_ptr)?;
+        let def: catalog::ExerciseDefinition =
+            serde_json::from_str(entry_json).map_err(|err| err.to_string())?;
+        catalog::validate_exercise(&def)?;
+        let clean = catalog::sanitize_exercise(&def);
+        Ok(clean)
+    })
 }
 
 fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {

@@ -25,3 +25,8 @@ export const typography = {
   body: { fontSize: 14, color: palette.text },
   label: { fontSize: 12, fontWeight: "500" as const, color: palette.mutedText },
 }
+
+export const fontSizes = {
+  actionButton: 16,
+  body: 14,
+}

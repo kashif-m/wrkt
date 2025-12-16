@@ -25,15 +25,18 @@ const HistoryScreen = ({ state }: Props) => (
     <SectionHeading label="Workout history" />
     {state.events.map((event, idx) => {
       const payload = event.payload ?? {}
-      const repsValue = payload.reps != null ? String(payload.reps) : "-"
-      const weightValue = payload.weight != null ? `${payload.weight} kg` : "-"
+      const repsValue = formatValue(payload.reps)
+      const weightValue =
+        payload.weight != null && typeof payload.weight === "number"
+          ? `${payload.weight} kg`
+          : formatValue(payload.weight)
       const volumeValue =
         payload.reps != null && payload.weight != null
           ? `${Number(payload.reps) * Number(payload.weight)} kg·reps`
           : "-"
       return (
         <Card key={event.event_id ?? `${idx}`} style={{ gap: spacing(1) }}>
-          <BodyText style={{ fontWeight: "600" }}>{payload.exercise ?? "Unknown movement"}</BodyText>
+          <BodyText style={{ fontWeight: "600" }}>{formatValue(payload.exercise)}</BodyText>
           <BodyText style={{ color: palette.mutedText }}>{formatDate(event.ts)}</BodyText>
           <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
             <LabeledText label="reps" value={repsValue} />
@@ -47,3 +50,22 @@ const HistoryScreen = ({ state }: Props) => (
 )
 
 export default HistoryScreen
+
+const formatValue = (value: unknown): string => {
+  if (value === null || value === undefined) {
+    return "-"
+  }
+  if (typeof value === "string") {
+    return value
+  }
+  if (typeof value === "number") {
+    return value.toString()
+  }
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No"
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => formatValue(item)).join(", ")
+  }
+  return JSON.stringify(value)
+}

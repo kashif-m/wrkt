@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage"
-import { initialEvents, WorkoutEvent } from "./workoutFlows"
+import { initialEvents, WorkoutEvent, getTrackerIdentifier } from "./workoutFlows"
 import { sortEventsByDeterministicOrder } from "./timePolicy"
 
 const STORAGE_KEY = "strata.workout.events"
@@ -34,9 +34,13 @@ export const insertEvent = async (event: WorkoutEvent) => {
   await writeStore(merged)
 }
 
-export const fetchEvents = async (trackerId: string, range?: [number, number]): Promise<WorkoutEvent[]> => {
+export const fetchEvents = async (
+  trackerId?: string,
+  range?: [number, number],
+): Promise<WorkoutEvent[]> => {
   const events = await readStore()
-  let filtered = events.filter((event) => event.tracker_id === trackerId)
+  const id = trackerId ?? (await getTrackerIdentifier())
+  let filtered = events.filter((event) => event.tracker_id === id)
   if (range) {
     const [start, end] = range
     filtered = filtered.filter((event) => event.ts >= start && event.ts <= end)

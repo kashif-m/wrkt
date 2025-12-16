@@ -57,7 +57,7 @@ export const logSet = async (state: WorkoutState, eventJson: WorkoutEvent): Prom
   const tracker_id = await getTrackerIdentifier()
   let normalized: WorkoutEvent = { ...eventJson, tracker_id }
   try {
-    normalized = (await validateEvent(WORKOUT_DSL, eventJson)) as WorkoutEvent
+    normalized = (await validateEvent(WORKOUT_DSL, { ...eventJson, tracker_id })) as WorkoutEvent
   } catch (error) {
     console.warn("TrackerEngine validateEvent unavailable, persisting raw payload", error)
   }

@@ -61,7 +61,7 @@ const VolumeChart = ({ data }: { data: VolumePoint[] }) => {
     <Card style={{ gap: spacing(1) }}>
       <SectionHeading label="Volume trend" />
       {data.map(point => {
-        const widthPct = `${Math.round((point.value / max) * 100)}%`
+        const widthPct = `${Math.round((point.value / max) * 100)}%` as `${number}%`
         return (
           <View key={point.label}>
             <Text style={{ fontSize: 12, color: palette.mutedText }}>{point.label}</Text>

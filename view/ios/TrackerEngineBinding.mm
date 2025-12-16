@@ -28,6 +28,8 @@ FfiResult strata_simulate(const char* dsl,
 FfiResult strata_generate_suggestions(const char* dsl,
                                       const char* events_json,
                                       const char* planner_kind);
+FfiResult strata_exercise_catalog(void);
+FfiResult strata_validate_exercise(const char* entry_json);
 void strata_free_string(char* ptr);
 }
 
@@ -133,6 +135,22 @@ void installTrackerEngineBinding(Runtime& rt) {
     auto planner = args[2].asString(runtime).utf8(runtime);
     auto ffi = strata_generate_suggestions(dsl.c_str(), events_json.c_str(),
                                            planner.c_str());
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
+  makeFunction("getExerciseCatalog", [](Runtime& runtime, const Value* args,
+                                        size_t count) -> Value {
+    auto ffi = strata_exercise_catalog();
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
+  makeFunction("validateExercise", [](Runtime& runtime, const Value* args,
+                                     size_t count) -> Value {
+    if (count < 1 || !args[0].isString()) {
+      throw std::invalid_argument("validateExercise requires entry JSON");
+    }
+    auto entry = args[0].asString(runtime).utf8(runtime);
+    auto ffi = strata_validate_exercise(entry.c_str());
     return makeStringResult(runtime, callStrata(ffi));
   });
 

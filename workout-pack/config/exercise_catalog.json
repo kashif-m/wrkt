@@ -1,20 +1,83 @@
-{
-  "muscle_groups": [
-    "chest",
-    "back",
-    "legs",
-    "shoulders",
-    "arms",
-    "core",
-    "conditioning"
-  ],
-  "exercises": [
-    { "slug": "bench_press", "name": "Bench Press", "muscle_group": "chest", "modality": "strength" },
-    { "slug": "squat", "name": "Back Squat", "muscle_group": "legs", "modality": "strength" },
-    { "slug": "deadlift", "name": "Conventional Deadlift", "muscle_group": "back", "modality": "strength" },
-    { "slug": "overhead_press", "name": "Overhead Press", "muscle_group": "shoulders", "modality": "strength" },
-    { "slug": "pull_up", "name": "Pull-Up", "muscle_group": "back", "modality": "bodyweight" },
-    { "slug": "plank", "name": "Plank Hold", "muscle_group": "core", "modality": "bodyweight" },
-    { "slug": "assault_bike", "name": "Assault Bike Sprint", "muscle_group": "conditioning", "modality": "conditioning" }
-  ]
-}
+[
+  {
+    "slug": "bench_press",
+    "display_name": "Bench Press",
+    "primary_muscle_group": "chest",
+    "secondary_groups": ["triceps", "shoulders"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 40, "max": 140 }
+  },
+  {
+    "slug": "pull_up",
+    "display_name": "Pull-Up",
+    "primary_muscle_group": "back",
+    "secondary_groups": ["biceps"],
+    "modality": "strength",
+    "logging_mode": "reps",
+    "suggested_load_range": { "min": 0, "max": 20 }
+  },
+  {
+    "slug": "squat",
+    "display_name": "Back Squat",
+    "primary_muscle_group": "legs",
+    "secondary_groups": ["glutes"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 60, "max": 200 }
+  },
+  {
+    "slug": "deadlift",
+    "display_name": "Deadlift",
+    "primary_muscle_group": "posterior_chain",
+    "secondary_groups": ["legs"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 80, "max": 250 }
+  },
+  {
+    "slug": "row_erg",
+    "display_name": "Rowing Ergometer",
+    "primary_muscle_group": "cardio",
+    "secondary_groups": ["back", "legs"],
+    "modality": "conditioning",
+    "logging_mode": "time_distance",
+    "suggested_load_range": { "min": 5, "max": 40 }
+  },
+  {
+    "slug": "overhead_press",
+    "display_name": "Overhead Press",
+    "primary_muscle_group": "shoulders",
+    "secondary_groups": ["triceps"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 20, "max": 80 }
+  },
+  {
+    "slug": "kettlebell_swings",
+    "display_name": "Kettlebell Swings",
+    "primary_muscle_group": "posterior_chain",
+    "secondary_groups": ["core"],
+    "modality": "conditioning",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 12, "max": 40 }
+  },
+  {
+    "slug": "box_jump",
+    "display_name": "Box Jump",
+    "primary_muscle_group": "legs",
+    "secondary_groups": ["cardio"],
+    "modality": "bodyweight",
+    "logging_mode": "reps",
+    "suggested_load_range": { "min": 5, "max": 20 }
+  },
+  {
+    "slug": "farmer_carry",
+    "display_name": "Farmer Carry",
+    "primary_muscle_group": "core",
+    "secondary_groups": ["grip"],
+    "modality": "hypertrophy",
+    "logging_mode": "distance_time",
+    "suggested_load_range": { "min": 20, "max": 60 }
+  }
+]

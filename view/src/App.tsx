@@ -1,32 +1,31 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { View, Text } from "react-native"
+import React, { useCallback, useEffect, useState } from "react"
+import { Alert, Text, TouchableOpacity, View } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
+import ExerciseBrowser from "./screens/ExerciseBrowser"
 import LoggingScreen from "./screens/LoggingScreen"
 import HistoryScreen from "./screens/HistoryScreen"
 import AnalyticsScreen from "./screens/AnalyticsScreen"
 import SuggestionsScreen from "./screens/SuggestionsScreen"
+import HomeScreen from "./screens/HomeScreen"
 import { WorkoutState, initialState } from "./workoutFlows"
 import { init, fetchEvents } from "./storage"
-import { Card, LabeledText, PillButton, BodyText } from "./ui/components"
-import { palette, spacing } from "./ui/theme"
+import { palette, spacing, radius } from "./ui/theme"
 
-const tabs = ["Log", "History", "Analytics", "Coach"] as const
-
-type Tab = (typeof tabs)[number]
-
-const tabLabels: Record<Tab, string> = {
-  Log: "Log",
-  History: "History",
-  Analytics: "Analytics",
-  Coach: "Coach",
-}
+type ScreenState =
+  | { key: "home" }
+  | { key: "browser" }
+  | { key: "log"; exerciseName?: string }
+  | { key: "history" }
+  | { key: "analytics" }
+  | { key: "coach" }
 
 const App = () => {
   const [state, setState] = useState<WorkoutState>(initialState)
-  const [activeTab, setActiveTab] = useState<Tab>("Log")
+  const [screen, setScreen] = useState<ScreenState>({ key: "home" })
+  const [selectedDate, setSelectedDate] = useState(() => new Date())
 
   const refreshFromStorage = useCallback(async () => {
-    const events = await fetchEvents("workout")
+    const events = await fetchEvents()
     setState({ events })
   }, [])
 
@@ -34,70 +33,100 @@ const App = () => {
     init().then(() => refreshFromStorage())
   }, [refreshFromStorage])
 
-  const summary = useMemo(() => {
-    const totalSets = state.events.length
-    const totalVolume = state.events.reduce((sum, event) => {
-      const reps = Number(event.payload?.reps ?? 0)
-      const weight = Number(event.payload?.weight ?? 0)
-      return sum + reps * weight
-    }, 0)
-    const uniqueExercises = new Set(
-      state.events.map((event) => String(event.payload?.exercise ?? "")),
-    )
-    return { totalSets, totalVolume, uniqueExercises: uniqueExercises.size }
-  }, [state.events])
+  const shiftDate = (deltaDays: number) => {
+    setSelectedDate((prev) => new Date(prev.getTime() + deltaDays * 24 * 60 * 60 * 1000))
+  }
+
+  const handleOpenCalendar = () => {
+    Alert.alert("Calendar", "Calendar view coming soon.")
+  }
+
+  const goHome = () => setScreen({ key: "home" })
 
   const renderScreen = () => {
-    switch (activeTab) {
-      case "Log":
+    switch (screen.key) {
+      case "home":
         return (
-          <LoggingScreen
-            state={state}
-            onStateChange={(nextState) => setState(nextState)}
-            refreshFromStorage={refreshFromStorage}
+          <HomeScreen
+            events={state.events}
+            selectedDate={selectedDate}
+            onSelectPreviousDay={() => shiftDate(-1)}
+            onSelectNextDay={() => shiftDate(1)}
+            onOpenCalendar={handleOpenCalendar}
+            onStartExercise={() => setScreen({ key: "browser" })}
+            onSelectExerciseFromList={(exerciseName) => {
+              console.log("Home: exercise selected from list", exerciseName)
+              setScreen({ key: "log", exerciseName })
+            }}
           />
         )
-      case "History":
+      case "browser":
+        return (
+          <ExerciseBrowser
+            onSelectExercise={(entry) => setScreen({ key: "log", exerciseName: entry.display_name })}
+            onClose={goHome}
+          />
+        )
+      case "log":
+        console.log("Navigating to logging screen", screen.exerciseName)
+        return (
+          <View style={{ flex: 1 }}>
+            <ShellHeader title={screen.exerciseName ?? "Log Workout"} onBack={goHome} />
+            <LoggingScreen
+              state={state}
+              onStateChange={(nextState) => setState(nextState)}
+              refreshFromStorage={refreshFromStorage}
+              prefillExerciseName={screen.exerciseName}
+            />
+          </View>
+        )
+      case "history":
         return <HistoryScreen state={state} />
-      case "Analytics":
+      case "analytics":
         return <AnalyticsScreen state={state} />
-      case "Coach":
+      case "coach":
         return <SuggestionsScreen state={state} />
     }
   }
 
   return (
     <SafeAreaProvider>
-      <View style={{ flex: 1, backgroundColor: palette.background }}>
-        <SafeAreaView style={{ flex: 1 }}>
-          <View style={{ paddingHorizontal: spacing(2), paddingTop: spacing(2), flex: 1 }}>
-            <Text style={{ color: palette.mutedText, textTransform: "uppercase", fontSize: 12 }}>
-              strata prototype
-            </Text>
-            <Text style={{ color: palette.text, fontSize: 28, fontWeight: "600", marginBottom: spacing(2) }}>
-              Workout coach
-            </Text>
-            <Card style={{ marginBottom: spacing(2) }}>
-              <BodyText style={{ color: palette.mutedText, marginBottom: spacing(1) }}>
-                Auto-tracked in the last 30 days
-              </BodyText>
-              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                <LabeledText label="sets" value={String(summary.totalSets)} />
-                <LabeledText label="volume" value={`${Math.round(summary.totalVolume)} kg·reps`} />
-                <LabeledText label="unique lifts" value={String(summary.uniqueExercises)} />
-              </View>
-            </Card>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", marginBottom: spacing(1.5) }}>
-              {tabs.map((tab) => (
-                <PillButton key={tab} label={tabLabels[tab]} active={activeTab === tab} onPress={() => setActiveTab(tab)} />
-              ))}
-            </View>
-            <View style={{ flex: 1 }}>{renderScreen()}</View>
-          </View>
-        </SafeAreaView>
-      </View>
+      <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }}>
+        <View style={{ flex: 1 }}>{renderScreen()}</View>
+      </SafeAreaView>
     </SafeAreaProvider>
   )
 }
 
 export default App
+
+const ShellHeader = ({ title, onBack }: { title: string; onBack: () => void }) => (
+  <View
+    style={{
+      flexDirection: "row",
+      alignItems: "center",
+      paddingHorizontal: spacing(2),
+      paddingVertical: spacing(1.5),
+      borderBottomWidth: 1,
+      borderColor: palette.border,
+      gap: spacing(1),
+    }}
+  >
+    <TouchableOpacity
+      onPress={onBack}
+      style={{
+        width: 36,
+        height: 36,
+        borderRadius: radius.card,
+        borderWidth: 1,
+        borderColor: palette.border,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: palette.surface,
+      }}
+    >
+      <Text style={{ color: palette.text, fontSize: 18 }}>{"<"}</Text>
+    </TouchableOpacity>
+    <Text style={{ color: palette.text, fontSize: 18, fontWeight: "600" }}>{title}</Text>
+  </View>
+)
