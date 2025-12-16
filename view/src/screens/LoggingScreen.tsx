@@ -408,19 +408,26 @@ const Stepper = ({
   </View>
 )
 
+const toNumber = (value: unknown): number => {
+  if (typeof value === "number") return value
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+const describeLoggedSet = (event: WorkoutEvent) => {
+  const reps = toNumber(event.payload?.reps)
+  const weight = toNumber(event.payload?.weight)
+  if (weight > 0 && reps > 0) {
+    return `${weight} kg × ${reps} reps`
+  }
+  if (reps > 0) {
+    return `${reps} reps`
+  }
+  return "0 reps"
+}
+
 const SetRow = ({ event, highlightColor, compact = false }: { event: WorkoutEvent; highlightColor?: string; compact?: boolean }) => {
-  const reps = formatValue(event.payload?.reps)
-  const weight = formatValue(event.payload?.weight)
-  const duration = formatValue(event.payload?.duration)
-  const distance = formatValue(event.payload?.distance)
-  const description =
-    weight !== "-" && reps !== "-"
-      ? `${weight} kg × ${reps} reps`
-      : duration !== "-"
-        ? `${duration} min`
-        : distance !== "-"
-          ? `${distance} m`
-          : "Set"
+  const description = describeLoggedSet(event)
 
   return (
     <View

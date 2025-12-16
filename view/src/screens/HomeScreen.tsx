@@ -244,24 +244,22 @@ const summarizeSets = (sets: WorkoutEvent[]): SetChunk[] => {
   return condensation
 }
 
+const toNumber = (value: unknown): number => {
+  if (typeof value === "number") return value
+  const parsed = Number(value)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 const describeSet = (event: WorkoutEvent) => {
-  const reps = formatValue(event.payload?.reps)
-  const weight = formatValue(event.payload?.weight)
-  const duration = formatValue(event.payload?.duration)
-  const distance = formatValue(event.payload?.distance)
-  if (weight !== "-" && reps !== "-") {
+  const reps = toNumber(event.payload?.reps)
+  const weight = toNumber(event.payload?.weight)
+  if (weight > 0 && reps > 0) {
     return `${weight} kg × ${reps} reps`
   }
-  if (reps !== "-") {
+  if (reps > 0) {
     return `${reps} reps`
   }
-  if (duration !== "-") {
-    return `${duration} min`
-  }
-  if (distance !== "-") {
-    return `${distance} m`
-  }
-  return "Set"
+  return "0 reps"
 }
 
 const formatSetLabel = (chunk: SetChunk) => {
