@@ -6,7 +6,18 @@
     "secondary_groups": ["triceps", "shoulders"],
     "modality": "strength",
     "logging_mode": "reps_weight",
-    "suggested_load_range": { "min": 40, "max": 140 }
+    "suggested_load_range": { "min": 40, "max": 140 },
+    "tags": ["barbell", "push"]
+  },
+  {
+    "slug": "incline_dumbbell_press",
+    "display_name": "Incline Dumbbell Press",
+    "primary_muscle_group": "chest",
+    "secondary_groups": ["shoulders"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 20, "max": 80 },
+    "tags": ["dumbbell", "push"]
   },
   {
     "slug": "pull_up",
@@ -15,7 +26,28 @@
     "secondary_groups": ["biceps"],
     "modality": "strength",
     "logging_mode": "reps",
-    "suggested_load_range": { "min": 0, "max": 20 }
+    "suggested_load_range": { "min": 0, "max": 20 },
+    "tags": ["bodyweight", "pull"]
+  },
+  {
+    "slug": "barbell_row",
+    "display_name": "Barbell Row",
+    "primary_muscle_group": "back",
+    "secondary_groups": ["posterior_chain"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 30, "max": 140 },
+    "tags": ["barbell", "pull"]
+  },
+  {
+    "slug": "lat_pulldown",
+    "display_name": "Lat Pulldown",
+    "primary_muscle_group": "back",
+    "secondary_groups": ["biceps"],
+    "modality": "hypertrophy",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 20, "max": 100 },
+    "tags": ["machine", "pull"]
   },
   {
     "slug": "squat",
@@ -24,7 +56,18 @@
     "secondary_groups": ["glutes"],
     "modality": "strength",
     "logging_mode": "reps_weight",
-    "suggested_load_range": { "min": 60, "max": 200 }
+    "suggested_load_range": { "min": 60, "max": 200 },
+    "tags": ["barbell", "legs"]
+  },
+  {
+    "slug": "walking_lunge",
+    "display_name": "Walking Lunge",
+    "primary_muscle_group": "legs",
+    "secondary_groups": ["glutes"],
+    "modality": "hypertrophy",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 10, "max": 60 },
+    "tags": ["dumbbell", "single_leg"]
   },
   {
     "slug": "deadlift",
@@ -33,25 +76,18 @@
     "secondary_groups": ["legs"],
     "modality": "strength",
     "logging_mode": "reps_weight",
-    "suggested_load_range": { "min": 80, "max": 250 }
+    "suggested_load_range": { "min": 80, "max": 250 },
+    "tags": ["barbell", "hinge"]
   },
   {
-    "slug": "row_erg",
-    "display_name": "Rowing Ergometer",
-    "primary_muscle_group": "cardio",
-    "secondary_groups": ["back", "legs"],
-    "modality": "conditioning",
-    "logging_mode": "time_distance",
-    "suggested_load_range": { "min": 5, "max": 40 }
-  },
-  {
-    "slug": "overhead_press",
-    "display_name": "Overhead Press",
-    "primary_muscle_group": "shoulders",
-    "secondary_groups": ["triceps"],
-    "modality": "strength",
+    "slug": "romanian_deadlift",
+    "display_name": "Romanian Deadlift",
+    "primary_muscle_group": "posterior_chain",
+    "secondary_groups": ["glutes"],
+    "modality": "hypertrophy",
     "logging_mode": "reps_weight",
-    "suggested_load_range": { "min": 20, "max": 80 }
+    "suggested_load_range": { "min": 40, "max": 160 },
+    "tags": ["barbell", "hinge"]
   },
   {
     "slug": "kettlebell_swings",
@@ -60,7 +96,58 @@
     "secondary_groups": ["core"],
     "modality": "conditioning",
     "logging_mode": "reps_weight",
-    "suggested_load_range": { "min": 12, "max": 40 }
+    "suggested_load_range": { "min": 12, "max": 40 },
+    "tags": ["kettlebell", "hinge"]
+  },
+  {
+    "slug": "hip_thrust",
+    "display_name": "Hip Thrust",
+    "primary_muscle_group": "glutes",
+    "secondary_groups": ["posterior_chain"],
+    "modality": "hypertrophy",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 40, "max": 180 },
+    "tags": ["barbell", "glutes"]
+  },
+  {
+    "slug": "overhead_press",
+    "display_name": "Overhead Press",
+    "primary_muscle_group": "shoulders",
+    "secondary_groups": ["triceps"],
+    "modality": "strength",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 20, "max": 80 },
+    "tags": ["barbell", "press"]
+  },
+  {
+    "slug": "lateral_raise",
+    "display_name": "Dumbbell Lateral Raise",
+    "primary_muscle_group": "shoulders",
+    "secondary_groups": ["triceps"],
+    "modality": "hypertrophy",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 5, "max": 20 },
+    "tags": ["dumbbell", "shoulders"]
+  },
+  {
+    "slug": "dips",
+    "display_name": "Parallel Bar Dips",
+    "primary_muscle_group": "triceps",
+    "secondary_groups": ["chest"],
+    "modality": "strength",
+    "logging_mode": "reps",
+    "suggested_load_range": { "min": 0, "max": 40 },
+    "tags": ["bodyweight", "push"]
+  },
+  {
+    "slug": "barbell_curl",
+    "display_name": "Barbell Curl",
+    "primary_muscle_group": "biceps",
+    "secondary_groups": [],
+    "modality": "hypertrophy",
+    "logging_mode": "reps_weight",
+    "suggested_load_range": { "min": 10, "max": 60 },
+    "tags": ["barbell", "arms"]
   },
   {
     "slug": "box_jump",
@@ -69,7 +156,8 @@
     "secondary_groups": ["cardio"],
     "modality": "bodyweight",
     "logging_mode": "reps",
-    "suggested_load_range": { "min": 5, "max": 20 }
+    "suggested_load_range": { "min": 5, "max": 20 },
+    "tags": ["plyometrics"]
   },
   {
     "slug": "farmer_carry",
@@ -78,6 +166,47 @@
     "secondary_groups": ["grip"],
     "modality": "hypertrophy",
     "logging_mode": "distance_time",
-    "suggested_load_range": { "min": 20, "max": 60 }
+    "suggested_load_range": { "min": 20, "max": 60 },
+    "tags": ["carry", "dumbbell"]
+  },
+  {
+    "slug": "plank",
+    "display_name": "Front Plank",
+    "primary_muscle_group": "core",
+    "secondary_groups": ["shoulders"],
+    "modality": "bodyweight",
+    "logging_mode": "time_distance",
+    "suggested_load_range": { "min": 30, "max": 180 },
+    "tags": ["bodyweight", "core"]
+  },
+  {
+    "slug": "hanging_leg_raise",
+    "display_name": "Hanging Leg Raise",
+    "primary_muscle_group": "core",
+    "secondary_groups": ["grip"],
+    "modality": "bodyweight",
+    "logging_mode": "reps",
+    "suggested_load_range": { "min": 5, "max": 20 },
+    "tags": ["bodyweight", "core"]
+  },
+  {
+    "slug": "row_erg",
+    "display_name": "Rowing Ergometer",
+    "primary_muscle_group": "cardio",
+    "secondary_groups": ["back", "legs"],
+    "modality": "conditioning",
+    "logging_mode": "time_distance",
+    "suggested_load_range": { "min": 5, "max": 40 },
+    "tags": ["erg", "conditioning"]
+  },
+  {
+    "slug": "assault_bike",
+    "display_name": "Assault Bike",
+    "primary_muscle_group": "cardio",
+    "secondary_groups": ["legs"],
+    "modality": "conditioning",
+    "logging_mode": "time_distance",
+    "suggested_load_range": { "min": 5, "max": 30 },
+    "tags": ["conditioning"]
   }
 ]

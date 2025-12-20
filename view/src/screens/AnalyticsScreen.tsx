@@ -1,40 +1,59 @@
-import React, { useMemo } from "react"
-import { ScrollView, View, Text } from "react-native"
+import React, { useEffect, useMemo, useRef, useState } from "react"
+import { ScrollView, View, Text, Animated, TouchableOpacity } from "react-native"
 import { WorkoutEvent, WorkoutState } from "../workoutFlows"
 import { Card, SectionHeading, BodyText } from "../ui/components"
-import { palette, spacing } from "../ui/theme"
+import { palette, spacing, radius } from "../ui/theme"
+import { roundToLocalWeek, roundToLocalDay } from "../timePolicy"
 
 type Props = { state: WorkoutState }
 
 type VolumePoint = { label: string; value: number }
 type PersonalRecord = { exercise: string; weight: number; reps: number; oneRm: number }
 
-const asDate = (ts: number) => new Date(ts * 1000)
+const WEEK = 7 * 24 * 60 * 60 * 1000
+const rangeOptions = [
+  { key: "8w", label: "8w", weeks: 8 },
+  { key: "16w", label: "16w", weeks: 16 },
+  { key: "6m", label: "6m", weeks: 26 },
+  { key: "1y", label: "1y", weeks: 52 },
+  { key: "all", label: "All", weeks: null },
+] as const
+type RangeKey = (typeof rangeOptions)[number]["key"]
+
+const metricOptions = [
+  { key: "volume", label: "Volume", unit: "kg·reps" },
+  { key: "sessions", label: "Sessions", unit: "sets" },
+] as const
+type MetricKey = (typeof metricOptions)[number]["key"]
 
 const formatWeekLabel = (ts: number) => {
-  const date = asDate(ts)
-  const weekStart = new Date(date)
-  const weekday = weekStart.getUTCDay()
-  const diff = weekStart.getUTCDate() - weekday
-  weekStart.setUTCDate(diff)
-  weekStart.setUTCHours(0, 0, 0, 0)
-  return weekStart.toISOString().slice(0, 10)
+  const start = new Date(ts)
+  const end = new Date(ts + WEEK - 1)
+  return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(
+    undefined,
+    { month: "short", day: "numeric" },
+  )}`
 }
 
-const computeVolumeSeries = (events: WorkoutEvent[]): VolumePoint[] => {
-  const totals = new Map<string, number>()
-  events.forEach(event => {
+const computeSeries = (events: WorkoutEvent[], metric: MetricKey, range: RangeKey): VolumePoint[] => {
+  const rangeConfig = rangeOptions.find((option) => option.key === range) ?? rangeOptions[0]
+  const minTs = rangeConfig.weeks ? Date.now() - rangeConfig.weeks * WEEK : null
+  const totals = new Map<number, { volume: number; count: number }>()
+  events.forEach((event) => {
+    if (minTs && event.ts < minTs) return
     const reps = Number(event.payload?.reps ?? 0)
     const weight = Number(event.payload?.weight ?? 0)
     const volume = reps * weight
-    const label = formatWeekLabel(event.ts)
-    totals.set(label, (totals.get(label) ?? 0) + volume)
+    const bucket = roundToLocalWeek(event.ts)
+    const current = totals.get(bucket) ?? { volume: 0, count: 0 }
+    totals.set(bucket, { volume: current.volume + volume, count: current.count + 1 })
   })
-  const points = Array.from(totals.entries())
-    .sort(([a], [b]) => (a < b ? -1 : 1))
-    .slice(-6)
-    .map(([label, value]) => ({ label, value }))
-  return points
+  return Array.from(totals.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([bucket, value]) => ({
+      label: formatWeekLabel(bucket),
+      value: metric === "volume" ? value.volume : value.count,
+    }))
 }
 
 const estimateOneRm = (weight: number, reps: number) => weight * (1 + reps / 30)
@@ -55,25 +74,68 @@ const computePRs = (events: WorkoutEvent[]): PersonalRecord[] => {
   return Array.from(best.values()).sort((a, b) => b.oneRm - a.oneRm)
 }
 
-const VolumeChart = ({ data }: { data: VolumePoint[] }) => {
+const MetricChart = ({
+  data,
+  metricLabel,
+  metricUnit,
+}: {
+  data: VolumePoint[]
+  metricLabel: string
+  metricUnit: string
+}) => {
+  if (data.length === 0) {
+    return <BodyText style={{ color: palette.mutedText }}>Log a few sessions to unlock this view.</BodyText>
+  }
   const max = data.reduce((m, p) => Math.max(m, p.value), 0) || 1
   return (
-    <Card style={{ gap: spacing(1) }}>
-      <SectionHeading label="Volume trend" />
-      {data.map(point => {
-        const widthPct = `${Math.round((point.value / max) * 100)}%` as `${number}%`
-        return (
-          <View key={point.label}>
+    <View style={{ gap: spacing(0.75) }}>
+      {data.map((point, index) => (
+        <View key={point.label}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: spacing(0.25) }}>
             <Text style={{ fontSize: 12, color: palette.mutedText }}>{point.label}</Text>
-            <View style={{ backgroundColor: palette.mutedSurface, height: 12, borderRadius: 6, overflow: "hidden" }}>
-              <View style={{ width: widthPct, backgroundColor: palette.primary, height: "100%" }} />
-            </View>
-            <BodyText style={{ fontSize: 12 }}>{Math.round(point.value)} kg·reps</BodyText>
+            <Text style={{ fontSize: 12, color: palette.text, fontWeight: "600" }}>
+              {Math.round(point.value)} {metricUnit}
+            </Text>
           </View>
-        )
-      })}
-    </Card>
+          <Bar value={point.value} max={max} delay={index * 50} />
+        </View>
+      ))}
+      <Text style={{ color: palette.mutedText, fontSize: 12, marginTop: spacing(0.25) }}>{metricLabel}</Text>
+    </View>
   )
+}
+
+const Bar = ({ value, max, delay }: { value: number; max: number; delay?: number }) => {
+  const progress = useRef(new Animated.Value(0)).current
+  useEffect(() => {
+    Animated.timing(progress, {
+      toValue: Math.min(1, value / max),
+      duration: 400,
+      delay,
+      useNativeDriver: false,
+    }).start()
+  }, [value, max, delay, progress])
+  const width = progress.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] })
+  return (
+    <View style={{ backgroundColor: palette.mutedSurface, height: 12, borderRadius: 6, overflow: "hidden" }}>
+      <Animated.View style={{ width, backgroundColor: palette.primary, height: "100%" }} />
+    </View>
+  )
+}
+
+const TogglePill = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => (
+  <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[pillStyle, active && { backgroundColor: palette.primary }]}>
+    <Text style={{ color: active ? "#0f172a" : palette.text, fontWeight: "700" }}>{label}</Text>
+  </TouchableOpacity>
+)
+
+const pillStyle = {
+  borderRadius: radius.pill,
+  borderWidth: 1,
+  borderColor: palette.border,
+  paddingVertical: spacing(0.5),
+  paddingHorizontal: spacing(1.5),
+  backgroundColor: palette.mutedSurface,
 }
 
 const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
@@ -106,8 +168,106 @@ const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
   </Card>
 )
 
+const ExerciseHistory = ({ events }: { events: WorkoutEvent[] }) => {
+  const grouped = useMemo(() => {
+    const buckets = new Map<number, WorkoutEvent[]>()
+    events.forEach((event) => {
+      const day = roundToLocalDay(event.ts)
+      const bucket = buckets.get(day) ?? []
+      bucket.push(event)
+      buckets.set(day, bucket)
+    })
+    return Array.from(buckets.entries())
+      .sort((a, b) => b[0] - a[0])
+      .slice(0, 8)
+  }, [events])
+
+  if (grouped.length === 0) {
+    return (
+      <Card>
+        <SectionHeading label="Recent sessions" />
+        <BodyText style={{ color: palette.mutedText }}>Log a handful of sets to see history rollups.</BodyText>
+      </Card>
+    )
+  }
+
+  return (
+    <Card style={{ gap: spacing(1.5) }}>
+      <SectionHeading label="Recent sessions" />
+      {grouped.map(([day, sets]) => {
+        const dayLabel = new Date(day).toLocaleDateString(undefined, {
+          weekday: "short",
+          month: "short",
+          day: "numeric",
+        })
+        return (
+          <View
+            key={day}
+            style={{
+              borderBottomWidth: 1,
+              borderColor: palette.border,
+              paddingBottom: spacing(1),
+              gap: spacing(0.25),
+            }}
+          >
+            <Text style={{ color: palette.mutedText, fontSize: 12, letterSpacing: 0.3 }}>{dayLabel}</Text>
+            {sets
+              .sort((a, b) => b.ts - a.ts)
+              .slice(0, 4)
+              .map((set) => (
+                <View
+                  key={set.event_id}
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <View style={{ flex: 1, marginRight: spacing(1) }}>
+                    <Text style={{ color: palette.text, fontWeight: "600" }}>
+                      {String(set.payload?.exercise ?? "Unlabeled")}
+                    </Text>
+                    <Text style={{ color: palette.mutedText, fontSize: 12 }}>{describeSet(set)}</Text>
+                  </View>
+                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                    {new Date(set.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </Text>
+                </View>
+              ))}
+          </View>
+        )
+      })}
+    </Card>
+  )
+}
+
+const describeSet = (event: WorkoutEvent) => {
+  const reps = Number(event.payload?.reps ?? 0)
+  const weight = Number(event.payload?.weight ?? 0)
+  const distance = Number(event.payload?.distance ?? 0)
+  const duration = Number(event.payload?.duration ?? 0)
+  if (weight && reps) {
+    return `${weight} kg × ${reps}`
+  }
+  if (reps) {
+    return `${reps} reps`
+  }
+  if (distance && duration) {
+    return `${distance} m / ${duration} s`
+  }
+  if (duration) {
+    return `${duration} sec`
+  }
+  return "Logged set"
+}
+
 const AnalyticsScreen = ({ state }: Props) => {
-  const volumeSeries = useMemo(() => computeVolumeSeries(state.events), [state.events])
+  const [selectedRange, setSelectedRange] = useState<RangeKey>("16w")
+  const [selectedMetric, setSelectedMetric] = useState<MetricKey>("volume")
+  const volumeSeries = useMemo(
+    () => computeSeries(state.events, selectedMetric, selectedRange),
+    [state.events, selectedMetric, selectedRange],
+  )
   const prs = useMemo(() => computePRs(state.events), [state.events])
 
   return (
@@ -115,8 +275,36 @@ const AnalyticsScreen = ({ state }: Props) => {
       style={{ flex: 1 }}
       contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6), gap: spacing(2) }}
     >
-      <VolumeChart data={volumeSeries} />
+      <Card style={{ gap: spacing(1.25) }}>
+        <SectionHeading label="Trends" />
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing(1) }}>
+          {metricOptions.map((option) => (
+            <TogglePill
+              key={option.key}
+              label={option.label}
+              active={selectedMetric === option.key}
+              onPress={() => setSelectedMetric(option.key)}
+            />
+          ))}
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing(1) }}>
+          {rangeOptions.map((option) => (
+            <TogglePill
+              key={option.key}
+              label={option.label}
+              active={selectedRange === option.key}
+              onPress={() => setSelectedRange(option.key)}
+            />
+          ))}
+        </View>
+        <MetricChart
+          data={volumeSeries}
+          metricLabel={metricOptions.find((opt) => opt.key === selectedMetric)?.label ?? "Metric"}
+          metricUnit={metricOptions.find((opt) => opt.key === selectedMetric)?.unit ?? ""}
+        />
+      </Card>
       <PRTable prs={prs} />
+      <ExerciseHistory events={state.events} />
     </ScrollView>
   )
 }

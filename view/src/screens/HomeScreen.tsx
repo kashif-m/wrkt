@@ -1,11 +1,15 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { ScrollView, Text, TouchableOpacity, View } from "react-native"
+import Svg, { Path, Text as SvgText, TSpan } from "react-native-svg"
 import { WorkoutEvent } from "../workoutFlows"
 import { roundToLocalDay } from "../timePolicy"
 import { palette, radius, spacing, typography, fontSizes } from "../ui/theme"
 import { Card } from "../ui/components"
 import { ExerciseCatalogEntry, fetchMergedCatalog } from "../exercise/catalogStorage"
 import { getMuscleColor } from "../ui/muscleColors"
+import ChevronLeftIcon from "../assets/chevron-left.svg"
+import ChevronRightIcon from "../assets/chevron-right.svg"
+import PlusIcon from "../assets/plus.svg"
 
 type Props = {
   events: WorkoutEvent[]
@@ -30,12 +34,12 @@ const HomeScreen = ({
   const dayBucket = roundToLocalDay(selectedDate.getTime())
   const todayBucket = roundToLocalDay(Date.now())
   const isToday = dayBucket === todayBucket
-  const monthYearLabel = selectedDate
-    .toLocaleDateString(undefined, { month: "long", year: "numeric" })
-    .toUpperCase()
-  const secondaryLabel = isToday
-    ? "Today"
-    : selectedDate.toLocaleDateString(undefined, { weekday: "long", day: "numeric" })
+  const primaryLabel = isToday ? "Today" : selectedDate.toLocaleDateString(undefined, { weekday: "long" })
+  const secondaryLabel = selectedDate.toLocaleDateString(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+  })
 
   useEffect(() => {
     fetchMergedCatalog().then(setCatalog).catch(console.warn)
@@ -65,7 +69,15 @@ const HomeScreen = ({
   const sections = useMemo(() => {
     const groupMap = new Map<
       string,
-      { label: string; exercises: { name: string; sets: { description: string; count: number }[]; color: string }[] }
+      {
+        label: string
+        exercises: {
+          name: string
+          sets: { description: string; count: number }[]
+          color: string
+          totalSets: number
+        }[]
+      }
     >()
     dayExercises.forEach(({ exercise, sets }) => {
       const meta = catalogMap.get(exercise)
@@ -74,7 +86,12 @@ const HomeScreen = ({
       const setChunks = summarizeSets(sets)
       const color = getMuscleColor(meta?.primary_muscle_group)
       const bucket = groupMap.get(groupKey) ?? { label, exercises: [] }
-      bucket.exercises.push({ name: exercise, sets: setChunks, color })
+      bucket.exercises.push({
+        name: exercise,
+        sets: setChunks,
+        color,
+        totalSets: setChunks.reduce((total, chunk) => total + chunk.count, 0),
+      })
       groupMap.set(groupKey, bucket)
     })
     return Array.from(groupMap.entries())
@@ -83,95 +100,116 @@ const HomeScreen = ({
   }, [dayExercises, catalogMap])
 
   const emptyState = sections.length === 0
+  const showStartCta = isToday || emptyState
+  const muscleChips = useMemo(() => {
+    const total = sections.reduce((sum, section) => sum + section.exercises.length, 0)
+    if (!total) return []
+    return sections
+      .map((section) => ({
+        key: section.key,
+        label: formatMuscleLabel(section.key),
+        color: section.exercises[0]?.color,
+        percent: Math.round((section.exercises.length / total) * 100),
+      }))
+      .sort((a, b) => b.percent - a.percent)
+  }, [sections])
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={toolbarContainer}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(1) }}>
-          <View style={appBadge}>
-            <Text style={{ color: palette.text, fontWeight: "700" }}>WR</Text>
-          </View>
-          <Text style={[typography.title, { fontSize: 20 }]}>wrkt</Text>
-        </View>
-        <View style={{ flexDirection: "row", gap: spacing(1) }}>
-          <IconButton label="CAL" onPress={onOpenCalendar} />
-          <IconButton label="+" onPress={onStartExercise} />
-        </View>
-      </View>
-
       <View style={daySelector}>
         <TouchableOpacity onPress={onSelectPreviousDay} style={arrowButton}>
-          <Text style={arrowLabel}>{"<"}</Text>
+          <ChevronLeftIcon width={20} height={20} color={palette.text} />
         </TouchableOpacity>
         <TouchableOpacity onPress={onOpenCalendar} style={{ alignItems: "center" }}>
-          <Text style={{ color: palette.text, fontSize: 12, letterSpacing: 1 }}>{monthYearLabel}</Text>
-          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-            {secondaryLabel} ·{" "}
-            {selectedDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
-          </Text>
+          <Text style={{ color: palette.text, fontSize: 18, fontWeight: "600" }}>{primaryLabel}</Text>
+          <Text style={{ color: palette.mutedText, fontSize: 12 }}>{secondaryLabel}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onSelectNextDay} style={arrowButton}>
-          <Text style={arrowLabel}>{">"}</Text>
+          <ChevronRightIcon width={20} height={20} color={palette.text} />
         </TouchableOpacity>
       </View>
 
       <View style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6), gap: spacing(2) }}>
-        {emptyState ? (
-          <Card style={{ alignItems: "center", paddingVertical: spacing(6) }}>
-            <Text style={{ color: palette.mutedText, fontSize: 16 }}>Workout Log Empty</Text>
+          <Card style={{ gap: spacing(1) }}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <View style={{ flex: 1 }}>
+                <Text style={[typography.title, { fontSize: 20 }]}>{primaryLabel}</Text>
+                <Text style={{ color: palette.mutedText, fontSize: 12 }}>{secondaryLabel}</Text>
+              </View>
+              {showStartCta ? (
+                <PrimaryAction label="Start workout" onPress={onStartExercise} />
+              ) : (
+                <View style={badge}>
+                  <Text style={{ color: palette.text, fontWeight: "600", fontSize: 12 }}>
+                    {events.filter((event) => roundToLocalDay(event.ts) === dayBucket).length} sets
+                  </Text>
+                </View>
+              )}
+            </View>
+            {muscleChips.length > 0 ? (
+              <View style={{ flexDirection: "row", gap: spacing(2), alignItems: "center" }}>
+                <MusclePie data={muscleChips} />
+                <View style={{ flex: 1, gap: spacing(0.75) }}>
+                  {muscleChips.map((chip) => (
+                    <View
+                      key={chip.key}
+                      style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+                    >
+                      <Text style={{ color: palette.text, fontWeight: "600" }}>{chip.label}</Text>
+                      <Text style={{ color: palette.mutedText }}>{chip.percent}%</Text>
+                    </View>
+                  ))}
+                </View>
+              </View>
+            ) : (
+              <Text style={{ color: palette.mutedText }}>No muscles logged yet.</Text>
+            )}
           </Card>
-        ) : (
-          sections.map((section) => (
-            <Card key={section.key}>
-              <Text style={{ color: palette.mutedText, fontSize: 12, textTransform: "uppercase", marginBottom: spacing(1) }}>
-                {section.label}
-              </Text>
-              {section.exercises.map((exercise, index) => (
-                <TouchableOpacity
-                  key={`${exercise.name}-${index}`}
-                  onPress={() => onSelectExerciseFromList(exercise.name)}
-                  style={[exerciseRow, index !== section.exercises.length - 1 && exerciseRowDivider]}
-                >
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(1) }}>
-                      <View
-                        style={{
-                          width: 8,
-                          height: 8,
-                          borderRadius: 999,
-                          backgroundColor: exercise.color,
-                        }}
-                      />
-                      <Text style={{ color: palette.text, fontSize: 16, fontWeight: "600" }}>{exercise.name}</Text>
-                    </View>
-                    <View style={{ marginTop: spacing(1) }}>
-                      {exercise.sets.map((setItem, chunkIndex) => (
-                        <Text key={`${exercise.name}-${chunkIndex}`} style={{ color: palette.mutedText, fontSize: 12 }}>
-                          {formatSetLabel(setItem)}
-                        </Text>
-                      ))}
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
+
+          {emptyState ? (
+            <Card style={{ paddingVertical: spacing(3), alignItems: "center", gap: spacing(1) }}>
+              <Text style={{ color: palette.text, fontWeight: "700", fontSize: 16 }}>Workout log empty</Text>
+              <Text style={{ color: palette.mutedText, fontSize: 13 }}>Start a quick session for this day.</Text>
+              {showStartCta ? <PrimaryAction label="Log workout" onPress={onStartExercise} /> : null}
             </Card>
-          ))
-        )}
+          ) : (
+            sections.map((section) => (
+              <Card key={section.key}>
+                <View style={{ marginBottom: spacing(1) }}>
+                  <Text style={{ color: palette.mutedText, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase" }}>
+                    {section.label}
+                  </Text>
+                </View>
+                {section.exercises.map((exercise, index) => (
+                  <TouchableOpacity
+                    key={`${exercise.name}-${index}`}
+                    onPress={() => onSelectExerciseFromList(exercise.name)}
+                    style={[exerciseRow, index !== section.exercises.length - 1 && exerciseRowDivider]}
+                  >
+                    <View style={{ flex: 1, gap: spacing(0.75) }}>
+                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+                        <Text style={{ color: palette.text, fontSize: 16, fontWeight: "600" }}>{exercise.name}</Text>
+                        <View style={{ marginLeft: "auto" }}>
+                          <Text style={{ color: palette.mutedText, fontSize: 12 }}>{`${exercise.totalSets} ${
+                            exercise.totalSets === 1 ? "set" : "sets"
+                          }`}</Text>
+                        </View>
+                      </View>
+                      <View style={{ gap: spacing(0.25) }}>
+                        {exercise.sets.map((setItem, chunkIndex) => (
+                          <Text key={`${exercise.name}-${chunkIndex}`} style={{ color: palette.mutedText, fontSize: 12 }}>
+                            {formatSetLabel(setItem)}
+                          </Text>
+                        ))}
+                      </View>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </Card>
+            ))
+          )}
         </ScrollView>
-        <View style={bottomActions}>
-          <PrimaryAction
-            label="Start New Workout"
-            onPress={() => {
-              console.log("Home: start new workout tapped")
-              onStartExercise()
-            }}
-          />
-          <SecondaryAction
-            label="Copy Previous Workout"
-            onPress={() => console.log("Home: copy previous workout tapped")}
-          />
-        </View>
       </View>
     </View>
   )
@@ -181,40 +219,29 @@ const PrimaryAction = ({ label, onPress }: { label: string; onPress: () => void 
   <TouchableOpacity
     onPress={onPress}
     style={{
-      borderRadius: radius.card,
+      borderRadius: radius.pill,
       borderWidth: 1,
       borderColor: palette.primary,
       backgroundColor: palette.primary,
-      paddingVertical: spacing(1.5),
+      paddingVertical: spacing(0.75),
+      paddingHorizontal: spacing(1.5),
       alignItems: "center",
+      flexDirection: "row",
+      gap: spacing(0.5),
     }}
   >
-    <Text style={{ color: "#0f172a", fontWeight: "700", fontSize: fontSizes.actionButton }}>+ {label}</Text>
-  </TouchableOpacity>
-)
-
-const SecondaryAction = ({
-  label,
-  onPress,
-}: {
-  label: string
-  onPress?: () => void
-}) => (
-  <TouchableOpacity
-    onPress={onPress}
-    style={{
-      borderRadius: radius.card,
-      borderWidth: 1,
-      borderColor: palette.border,
-      paddingVertical: spacing(1.5),
-      alignItems: "center",
-    }}
-  >
-    <Text style={{ color: palette.mutedText, fontWeight: "600", fontSize: fontSizes.actionButton }}>{label}</Text>
+    <PlusIcon width={16} height={16} color="#0f172a" />
+    <Text style={{ color: "#0f172a", fontWeight: "700", fontSize: fontSizes.actionButton }}>{label}</Text>
   </TouchableOpacity>
 )
 
 type SetChunk = { description: string; count: number }
+
+const formatMuscleLabel = (label: string) =>
+  label
+    .split("_")
+    .map((part) => (part.length ? part[0].toUpperCase() + part.slice(1) : ""))
+    .join(" ")
 
 const formatValue = (value: unknown): string => {
   if (value === null || value === undefined) {
@@ -274,42 +301,6 @@ const formatSetLabel = (chunk: SetChunk) => {
   return `${chunk.count} sets · ${chunk.description}`
 }
 
-const IconButton = ({ label, onPress }: { label: string; onPress: () => void }) => (
-  <TouchableOpacity onPress={onPress} style={iconButton}>
-    <Text style={{ color: palette.text, fontSize: 16 }}>{label}</Text>
-  </TouchableOpacity>
-)
-
-const toolbarContainer = {
-  flexDirection: "row" as const,
-  alignItems: "center" as const,
-  justifyContent: "space-between" as const,
-  paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1.5),
-  borderBottomWidth: 1,
-  borderColor: palette.border,
-}
-
-const appBadge = {
-  width: 40,
-  height: 40,
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-  backgroundColor: palette.surface,
-}
-
-const iconButton = {
-  paddingHorizontal: spacing(1),
-  paddingVertical: spacing(0.5),
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.surface,
-}
-
 const daySelector = {
   flexDirection: "row" as const,
   alignItems: "center" as const,
@@ -331,8 +322,6 @@ const arrowButton = {
   backgroundColor: palette.surface,
 }
 
-const arrowLabel = { color: palette.text, fontSize: 18 }
-
 const exerciseRow = {
   flexDirection: "row" as const,
   justifyContent: "space-between" as const,
@@ -345,11 +334,81 @@ const exerciseRowDivider = {
   borderColor: palette.border,
 }
 
-const bottomActions = {
-  paddingHorizontal: spacing(2),
-  paddingBottom: spacing(2.5),
-  paddingTop: spacing(1.5),
-  gap: spacing(1.5),
+const chipPill = {
+  borderRadius: radius.pill,
+  paddingHorizontal: spacing(1),
+  paddingVertical: spacing(0.5),
+}
+
+const badge = {
+  paddingHorizontal: spacing(1.25),
+  paddingVertical: spacing(0.5),
+  borderRadius: radius.pill,
+  backgroundColor: palette.mutedSurface,
+  borderWidth: 1,
+  borderColor: palette.border,
+}
+
+const MusclePie = ({ data }: { data: { key: string; label: string; percent: number; color?: string }[] }) => {
+  if (!data.length) return null
+  const radius = 36
+  const center = radius
+  let currentAngle = 0
+  const arcs = data.map((slice) => {
+    const sweep = (slice.percent / 100) * 360
+    const startAngle = currentAngle
+    const endAngle = currentAngle + sweep
+    currentAngle = endAngle
+    return {
+      key: slice.key,
+      label: slice.label,
+      color: slice.color ?? palette.primary,
+      percent: slice.percent,
+      path: describeArc(center, center, radius, startAngle, endAngle),
+      midAngle: startAngle + sweep / 2,
+    }
+  })
+  return (
+    <Svg width={radius * 2} height={radius * 2}>
+      {arcs.map((arc) => {
+        const labelPoint = polarToCartesian(center, center, radius * 0.55, arc.midAngle)
+        const displayLabel = arc.percent >= 20 ? arc.label : arc.label.charAt(0)
+        return (
+          <React.Fragment key={arc.key}>
+            <Path d={arc.path} fill={arc.color} opacity={0.9} />
+            <SvgText
+              x={labelPoint.x}
+              y={labelPoint.y}
+              fontSize={10}
+              fontWeight="600"
+              fill="#0f172a"
+              textAnchor="middle"
+            >
+              {`${arc.percent}%`}
+              <TSpan x={labelPoint.x} dy={12} fontSize={9}>
+                {displayLabel}
+              </TSpan>
+            </SvgText>
+          </React.Fragment>
+        )
+      })}
+    </Svg>
+  )
+}
+
+const polarToCartesian = (centerX: number, centerY: number, radius: number, angleInDegrees: number) => {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians),
+  }
+}
+
+const describeArc = (x: number, y: number, radius: number, startAngle: number, endAngle: number) => {
+  const start = polarToCartesian(x, y, radius, endAngle)
+  const end = polarToCartesian(x, y, radius, startAngle)
+  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
+  return [`M ${x} ${y}`, `L ${start.x} ${start.y}`, `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
 }
 
 

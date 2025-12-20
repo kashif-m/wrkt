@@ -8,12 +8,18 @@ import {
   GestureResponderEvent,
   PanResponderGestureState,
   ViewStyle,
+  TouchableWithoutFeedback,
+  ScrollView,
 } from "react-native"
 import { WorkoutEvent } from "../workoutFlows"
 import { ExerciseCatalogEntry, fetchMergedCatalog } from "../exercise/catalogStorage"
 import { getMuscleColor } from "../ui/muscleColors"
 import { roundToLocalDay } from "../timePolicy"
-import { palette, radius, spacing, typography } from "../ui/theme"
+import { palette, radius, spacing } from "../ui/theme"
+import ChevronLeftIcon from "../assets/chevron-left.svg"
+import ChevronRightIcon from "../assets/chevron-right.svg"
+import TodayIcon from "../assets/today-target.svg"
+import ArrowLeftIcon from "../assets/arrow-left.svg"
 
 type Props = {
   events: WorkoutEvent[]
@@ -25,26 +31,12 @@ type Props = {
 const DAYS_IN_WEEK = 7
 const TOTAL_CELLS = 42
 const DAY_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
-const MONTH_NAMES = [
-  "January",
-  "February",
-  "March",
-  "April",
-  "May",
-  "June",
-  "July",
-  "August",
-  "September",
-  "October",
-  "November",
-  "December",
-]
-
 const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) => {
   const [catalog, setCatalog] = useState<ExerciseCatalogEntry[]>([])
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(selectedDate))
   const monthAnim = useRef(new Animated.Value(1)).current
-  const [activePicker, setActivePicker] = useState<"month" | "year" | null>(null)
+  const [yearSheetOpen, setYearSheetOpen] = useState(false)
+  const [legendExpanded, setLegendExpanded] = useState(false)
 
   useEffect(() => {
     fetchMergedCatalog().then(setCatalog).catch(console.warn)
@@ -99,8 +91,8 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
   const monthLabel = visibleMonth.toLocaleDateString(undefined, { month: "long" })
   const yearLabel = visibleMonth.getFullYear()
   const yearOptions = useMemo(() => {
-    const base = visibleMonth.getFullYear() - 4
-    return Array.from({ length: 9 }, (_, index) => base + index)
+    const base = visibleMonth.getFullYear() - 25
+    return Array.from({ length: 60 }, (_, index) => base + index)
   }, [visibleMonth])
 
   const animateToMonth = useCallback(
@@ -119,24 +111,6 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
     },
     [animateToMonth, visibleMonth],
   )
-
-  const togglePicker = (type: "month" | "year") => {
-    setActivePicker((prev) => (prev === type ? null : type))
-  }
-
-  const handleSelectMonth = (index: number) => {
-    const target = new Date(visibleMonth)
-    target.setMonth(index, 1)
-    animateToMonth(target)
-    setActivePicker(null)
-  }
-
-  const handleSelectYear = (year: number) => {
-    const target = new Date(visibleMonth)
-    target.setFullYear(year, target.getMonth(), 1)
-    animateToMonth(target)
-    setActivePicker(null)
-  }
 
   const panResponder = useMemo(
     () =>
@@ -157,79 +131,34 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={header}>
+      <View style={headerRow}>
         <TouchableOpacity onPress={onClose} style={headerButton}>
-          <Text style={{ color: palette.text, fontSize: 18 }}>{"<"}</Text>
+          <ArrowLeftIcon width={18} height={18} color={palette.text} />
         </TouchableOpacity>
-        <Text style={[typography.title, { fontSize: 20 }]}>{`${monthLabel} ${yearLabel}`}</Text>
-        <View style={{ width: 36 }} />
-      </View>
-
-      <View style={monthControls}>
-        <TouchableOpacity onPress={() => handleShift(-1)} style={iconButton}>
-          <Text style={{ color: palette.text }}>{"<"}</Text>
+        <TouchableOpacity onPress={() => setYearSheetOpen(true)} style={monthTitle}>
+          <Text style={{ color: palette.text, fontSize: 18, fontWeight: "700" }}>{monthLabel}</Text>
+          <Text style={{ color: palette.mutedText, fontSize: 12 }}>{yearLabel}</Text>
         </TouchableOpacity>
-        <View style={{ alignItems: "center" }}>
-          <TouchableOpacity onPress={() => togglePicker("month")}>
-            <Text style={{ color: palette.text, fontSize: 18, fontWeight: "600" }}>{monthLabel}</Text>
+        <View style={headerActions}>
+          <TouchableOpacity onPress={() => handleShift(-1)} style={iconButton}>
+            <ChevronLeftIcon width={18} height={18} color={palette.text} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => togglePicker("year")}>
-            <Text style={{ color: palette.mutedText }}>{yearLabel}</Text>
+          <TouchableOpacity onPress={() => handleShift(1)} style={iconButton}>
+            <ChevronRightIcon width={18} height={18} color={palette.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              const today = new Date()
+              animateToMonth(today)
+              onSelectDate(today)
+            }}
+            style={todayButton}
+          >
+            <TodayIcon width={16} height={16} color={palette.text} />
+            <Text style={{ color: palette.text, fontWeight: "600", fontSize: 12 }}>Today</Text>
           </TouchableOpacity>
         </View>
-        <TouchableOpacity
-          onPress={() => handleShift(1)}
-          style={iconButton}
-        >
-          <Text style={{ color: palette.text }}>{">"}</Text>
-        </TouchableOpacity>
       </View>
-
-      <TouchableOpacity
-        style={todayButton}
-        onPress={() => {
-          const today = new Date()
-          animateToMonth(today)
-          onSelectDate(today)
-        }}
-      >
-        <Text style={{ color: palette.text }}>Today</Text>
-      </TouchableOpacity>
-
-      {activePicker ? (
-        <View style={pickerContainer}>
-          <Text style={{ color: palette.mutedText, marginBottom: spacing(1) }}>
-            Select {activePicker === "month" ? "month" : "year"}
-          </Text>
-          <View style={pickerGrid}>
-            {activePicker === "month"
-              ? MONTH_NAMES.map((name, index) => (
-                  <TouchableOpacity
-                    key={name}
-                    onPress={() => handleSelectMonth(index)}
-                    style={[
-                      pickerOption,
-                      visibleMonth.getMonth() === index && pickerOptionActive,
-                    ]}
-                  >
-                    <Text style={{ color: palette.text }}>{name.slice(0, 3)}</Text>
-                  </TouchableOpacity>
-                ))
-              : yearOptions.map((year) => (
-                  <TouchableOpacity
-                    key={year}
-                    onPress={() => handleSelectYear(year)}
-                    style={[
-                      pickerOption,
-                      visibleMonth.getFullYear() === year && pickerOptionActive,
-                    ]}
-                  >
-                    <Text style={{ color: palette.text }}>{year}</Text>
-                  </TouchableOpacity>
-                ))}
-          </View>
-        </View>
-      ) : null}
 
       <View style={weekdayRow}>
         {DAY_NAMES.map((label) => (
@@ -269,16 +198,62 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
         })}
       </Animated.View>
 
-      {legendEntries.length > 0 && (
-        <View style={legendContainer}>
-          {legendEntries.map((entry) => (
-            <View key={entry.key} style={legendItem}>
-              <View style={[dot, { backgroundColor: entry.color }]} />
-              <Text style={{ color: palette.text }}>{entry.label}</Text>
+      {legendEntries.length > 0 ? (
+        <>
+          <TouchableOpacity
+            onPress={() => setLegendExpanded((prev) => !prev)}
+            style={legendToggle}
+          >
+            <Text style={{ color: palette.primary, fontWeight: "600" }}>
+              {legendExpanded ? "Hide muscle legend" : "Show muscle legend"}
+            </Text>
+          </TouchableOpacity>
+          {legendExpanded ? (
+            <View style={legendContainer}>
+              {legendEntries.map((entry) => (
+                <View key={entry.key} style={legendItem}>
+                  <View style={[dot, { backgroundColor: entry.color }]} />
+                  <Text style={{ color: palette.text }}>{entry.label}</Text>
+                </View>
+              ))}
             </View>
-          ))}
-        </View>
-      )}
+          ) : null}
+        </>
+      ) : null}
+
+      {yearSheetOpen ? (
+        <TouchableWithoutFeedback onPress={() => setYearSheetOpen(false)}>
+          <View style={sheetOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={sheetContainer}>
+                <Text style={{ color: palette.mutedText, marginBottom: spacing(1) }}>Select year</Text>
+                <ScrollView>
+                  {yearOptions.map((year) => (
+                    <TouchableOpacity
+                      key={year}
+                      onPress={() => {
+                        const target = new Date(visibleMonth)
+                        target.setFullYear(year, target.getMonth(), 1)
+                        animateToMonth(target)
+                        setYearSheetOpen(false)
+                      }}
+                      style={[
+                        sheetRow,
+                        visibleMonth.getFullYear() === year && { backgroundColor: palette.mutedSurface },
+                      ]}
+                    >
+                      <Text style={{ color: palette.text, fontSize: 16 }}>{year}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity onPress={() => setYearSheetOpen(false)} style={{ paddingVertical: spacing(1) }}>
+                  <Text style={{ color: palette.primary, fontWeight: "600", textAlign: "center" }}>Close</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      ) : null}
     </View>
   )
 }
@@ -301,7 +276,7 @@ const shiftMonth = (date: Date, delta: number) => {
   return next
 }
 
-const header = {
+const headerRow = {
   flexDirection: "row" as const,
   alignItems: "center" as const,
   justifyContent: "space-between" as const,
@@ -309,6 +284,7 @@ const header = {
   paddingVertical: spacing(1.5),
   borderBottomWidth: 1,
   borderColor: palette.border,
+  gap: spacing(1),
 }
 
 const headerButton = {
@@ -319,14 +295,18 @@ const headerButton = {
   borderColor: palette.border,
   alignItems: "center" as const,
   justifyContent: "center" as const,
+  backgroundColor: palette.surface,
 }
 
-const monthControls = {
+const headerActions = {
   flexDirection: "row" as const,
   alignItems: "center" as const,
-  justifyContent: "space-between" as const,
-  paddingHorizontal: spacing(4),
-  paddingVertical: spacing(1.5),
+  gap: spacing(0.75),
+}
+
+const monthTitle = {
+  flex: 1,
+  alignItems: "center" as const,
 }
 
 const iconButton = {
@@ -338,6 +318,18 @@ const iconButton = {
   alignItems: "center" as const,
   justifyContent: "center" as const,
   backgroundColor: palette.mutedSurface,
+}
+
+const todayButton = {
+  flexDirection: "row" as const,
+  alignItems: "center" as const,
+  gap: spacing(0.5),
+  paddingHorizontal: spacing(1.5),
+  paddingVertical: spacing(0.5),
+  borderRadius: radius.pill,
+  borderWidth: 1,
+  borderColor: palette.border,
+  backgroundColor: palette.surface,
 }
 
 const weekdayRow = {
@@ -367,17 +359,24 @@ const dotRow = {
 }
 
 const dot = {
-  width: 6,
-  height: 6,
+  width: 8,
+  height: 8,
   borderRadius: 999,
 }
 
 const legendContainer = {
   flexDirection: "row" as const,
   flexWrap: "wrap" as const,
-  gap: spacing(1),
-  padding: spacing(2),
+  gap: spacing(1.25),
+  paddingHorizontal: spacing(2),
+  paddingVertical: spacing(1.5),
   justifyContent: "center" as const,
+}
+
+const legendToggle = {
+  paddingHorizontal: spacing(2),
+  paddingTop: spacing(1),
+  alignItems: "center" as const,
 }
 
 const legendItem = {
@@ -386,39 +385,30 @@ const legendItem = {
   gap: spacing(0.5),
 }
 
-const todayButton = {
-  alignSelf: "center" as const,
-  paddingHorizontal: spacing(2.5),
-  paddingVertical: spacing(0.75),
+const sheetOverlay = {
+  position: "absolute" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "#00000099",
+  alignItems: "center" as const,
+  justifyContent: "flex-end" as const,
+}
+
+const sheetContainer: ViewStyle = {
+  width: "100%",
+  maxHeight: "60%",
+  backgroundColor: palette.surface,
+  borderTopLeftRadius: radius.card,
+  borderTopRightRadius: radius.card,
+  padding: spacing(2),
+}
+
+const sheetRow = {
+  paddingVertical: spacing(1),
+  paddingHorizontal: spacing(0.5),
   borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  marginBottom: spacing(1),
-}
-
-const pickerContainer = {
-  paddingHorizontal: spacing(2),
-  paddingBottom: spacing(1.5),
-}
-
-const pickerGrid = {
-  flexDirection: "row" as const,
-  flexWrap: "wrap" as const,
-  gap: spacing(1),
-  justifyContent: "center" as const,
-}
-
-const pickerOption = {
-  paddingVertical: spacing(0.75),
-  paddingHorizontal: spacing(1.25),
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-}
-
-const pickerOptionActive = {
-  backgroundColor: palette.primary,
-  borderColor: palette.primary,
 }
 
 export default CalendarScreen

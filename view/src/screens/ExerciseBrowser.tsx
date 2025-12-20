@@ -1,5 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react"
-import { View, Text, TextInput, FlatList, TouchableOpacity, ListRenderItemInfo, ScrollView } from "react-native"
+import {
+  View,
+  Text,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  ListRenderItemInfo,
+  ScrollView,
+  TouchableWithoutFeedback,
+} from "react-native"
 import {
   ExerciseCatalogEntry,
   fetchMergedCatalog,
@@ -9,10 +18,14 @@ import {
   loadFavoriteExercises,
   setExerciseFavorite,
 } from "../exercise/catalogStorage"
-import { palette, spacing, radius, typography } from "../ui/theme"
+import { palette, spacing, radius } from "../ui/theme"
 import { muscleColorMap } from "../ui/muscleColors"
+import ScreenHeader from "../ui/ScreenHeader"
+import SearchIcon from "../assets/search.svg"
+import SettingsIcon from "../assets/settings.svg"
 
-type ViewMode = "groups" | "exercises" | "favorites" | "manage" | "form"
+type ViewMode = "groups" | "exercises" | "manage" | "form"
+type BrowserTab = "all" | "favorites"
 
 type Props = {
   onSelectExercise?: (exercise: ExerciseCatalogEntry) => void
@@ -27,6 +40,14 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
   const [customExercises, setCustomExercises] = useState<ExerciseCatalogEntry[]>([])
   const [favoriteSlugs, setFavoriteSlugs] = useState<string[]>([])
   const [formEditing, setFormEditing] = useState<ExerciseCatalogEntry | null>(null)
+  const [searchExpanded, setSearchExpanded] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [contextEntry, setContextEntry] = useState<{
+    entry: ExerciseCatalogEntry
+    archived?: boolean
+    custom?: boolean
+  } | null>(null)
+  const [activeTab, setActiveTab] = useState<BrowserTab>("all")
 
   const refreshData = useCallback(async () => {
     try {
@@ -73,31 +94,23 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
     [catalog, favoriteSlugs],
   )
 
+  const filteredFavoriteExercises = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) return favoriteExercises
+    return favoriteExercises.filter((entry) => entry.display_name.toLowerCase().includes(q))
+  }, [favoriteExercises, query])
+
   const headerTitle = useMemo(() => {
-    switch (mode) {
-      case "groups":
-        return "All Exercises"
-      case "exercises":
-        return selectedGroup?.replace(/_/g, " ") ?? "Exercises"
-      case "favorites":
-        return "Favorites"
-      case "manage":
-        return "Manage Exercises"
-      case "form":
-        return formEditing ? "Edit Exercise" : "Add Exercise"
-      default:
-        return "All Exercises"
-    }
+    if (mode === "manage") return "Manage Exercises"
+    if (mode === "form") return formEditing ? "Edit Exercise" : "Add Exercise"
+    if (mode === "exercises") return selectedGroup?.replace(/_/g, " ") ?? "Exercises"
+    return "Exercises"
   }, [mode, selectedGroup, formEditing])
 
   const goBack = () => {
     if (mode === "exercises") {
       setMode("groups")
       setQuery("")
-      return
-    }
-    if (mode === "favorites") {
-      setMode("groups")
       return
     }
     if (mode === "manage") {
@@ -111,6 +124,11 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
     onClose?.()
   }
 
+  const collapseSearch = () => {
+    setSearchExpanded(false)
+    setQuery("")
+  }
+
   const handleFavoriteToggle = async (slug: string) => {
     const isFavorite = favoriteSlugs.includes(slug)
     const next = await setExerciseFavorite(slug, !isFavorite)
@@ -120,53 +138,188 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
   const renderGroupRow = ({ item }: ListRenderItemInfo<string>) => (
     <TouchableOpacity
       onPress={() => {
-        console.log("Browser: muscle group selected", item)
         setSelectedGroup(item)
         setMode("exercises")
         setQuery("")
       }}
       style={rowStyle}
     >
-      <Text style={rowText}>{formatLabel(item)}</Text>
-      <Text style={rowMeta}>⋮</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(1) }}>
+        <View style={[chip, { backgroundColor: muscleColorMap[item] ?? palette.mutedSurface }]}>
+          <Text style={{ color: "#0f172a", fontWeight: "700" as const, fontSize: 12 }}>{formatLabel(item)}</Text>
+        </View>
+        <Text style={{ color: palette.mutedText, fontSize: 12 }}>{countExercises(item, catalog)} exercises</Text>
+      </View>
+      <Text style={{ color: palette.mutedText, fontSize: 12 }}>Open</Text>
     </TouchableOpacity>
   )
 
   const renderExerciseRow = ({ item }: ListRenderItemInfo<ExerciseCatalogEntry>) => (
     <TouchableOpacity
-      onPress={() => {
-        console.log("Browser: exercise selected", item.display_name, item.primary_muscle_group)
-        onSelectExercise?.(item)
-      }}
+      onPress={() => onSelectExercise?.(item)}
+      onLongPress={() => setContextEntry({ entry: item })}
       style={rowStyle}
     >
-      <Text style={rowText}>{item.display_name}</Text>
-      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(1) }}>
-        <Text style={rowMeta}>{item.modality}</Text>
-        <TouchableOpacity onPress={() => handleFavoriteToggle(item.slug)} style={favoriteButton}>
-          <Text style={{ color: favoriteSlugs.includes(item.slug) ? palette.primary : palette.mutedText }}>
-            {favoriteSlugs.includes(item.slug) ? "★" : "☆"}
-          </Text>
-        </TouchableOpacity>
+      <View style={{ flex: 1, gap: spacing(0.25) }}>
+        <Text style={rowText}>{item.display_name}</Text>
+        <Text style={rowMeta}>{`${formatLabel(item.primary_muscle_group)} • ${item.modality}`}</Text>
       </View>
+      <Text style={[rowMeta, { color: favoriteSlugs.includes(item.slug) ? palette.primary : palette.mutedText }]}>
+        {favoriteSlugs.includes(item.slug) ? "Favorite" : ""}
+      </Text>
     </TouchableOpacity>
   )
 
   return (
     <View style={{ flex: 1 }}>
-      <Toolbar
+      <ScreenHeader
         title={headerTitle}
-        showBack={mode !== "groups"}
-        favoritesActive={mode === "favorites"}
-        onBack={goBack}
-        onClose={onClose}
-        onAddExercise={() => {
-          setFormEditing(null)
-          setMode("form")
-        }}
-        onOpenManage={() => setMode("manage")}
-        onToggleFavorites={() => setMode((value) => (value === "favorites" ? "groups" : "favorites"))}
+        subtitle={mode === "groups" ? (activeTab === "favorites" ? "Favorites" : "All exercises") : undefined}
+        onBack={mode !== "groups" ? goBack : onClose}
+        rightSlot={
+          <View style={{ flexDirection: "row", gap: spacing(1) }}>
+            <TouchableOpacity
+              onPress={() => {
+                setSearchExpanded((prev) => {
+                  if (prev) {
+                    setQuery("")
+                  }
+                  return !prev
+                })
+              }}
+              style={[iconButton, searchExpanded && { backgroundColor: palette.primary }]}
+            >
+              <SearchIcon width={16} height={16} color={searchExpanded ? "#0f172a" : palette.text} />
+            </TouchableOpacity>
+            {mode === "groups" ? (
+              <TouchableOpacity onPress={() => setMenuOpen(true)} style={iconButton}>
+                <SettingsIcon width={16} height={16} color={palette.text} />
+              </TouchableOpacity>
+            ) : null}
+          </View>
+        }
       />
+
+      {menuOpen && mode === "groups" && (
+        <TouchableWithoutFeedback onPress={() => setMenuOpen(false)}>
+          <View style={menuOverlay}>
+            <View style={menuCard}>
+              <TouchableOpacity
+                onPress={() => {
+                  setActiveTab((prev) => (prev === "favorites" ? "all" : "favorites"))
+                  setMenuOpen(false)
+                }}
+                style={menuItem}
+              >
+                <Text style={{ color: palette.text, fontWeight: "600" as const }}>
+                  {activeTab === "favorites" ? "Show all" : "Show favorites"}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setMenuOpen(false)
+                  setMode("manage")
+                }}
+                style={menuItem}
+              >
+                <Text style={{ color: palette.text, fontWeight: "600" as const }}>Manage custom exercises</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableWithoutFeedback>
+      )}
+
+      {contextEntry ? (
+        <TouchableWithoutFeedback onPress={() => setContextEntry(null)}>
+          <View style={sheetOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={sheetCard}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <Text style={{ color: palette.text, fontWeight: "700" as const, fontSize: 16 }}>
+                    {contextEntry.entry.display_name}
+                  </Text>
+                  {!contextEntry.custom ? (
+                    <TouchableOpacity onPress={() => handleFavoriteToggle(contextEntry.entry.slug)}>
+                      <Text
+                        style={{
+                          color: favoriteSlugs.includes(contextEntry.entry.slug) ? palette.primary : palette.mutedText,
+                          fontSize: 18,
+                        }}
+                      >
+                        {favoriteSlugs.includes(contextEntry.entry.slug) ? "★" : "☆"}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+
+                {!contextEntry.custom ? (
+                  <>
+                    {onSelectExercise ? (
+                      <TouchableOpacity
+                        onPress={() => {
+                          onSelectExercise(contextEntry.entry)
+                          setContextEntry(null)
+                        }}
+                        style={sheetAction}
+                      >
+                        <Text style={sheetActionLabel}>Select exercise</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      onPress={() => {
+                        setMode("manage")
+                        setMenuOpen(false)
+                        setContextEntry(null)
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={sheetActionLabel}>Manage custom</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        handleFavoriteToggle(contextEntry.entry.slug)
+                        setContextEntry(null)
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={sheetActionLabel}>
+                        {favoriteSlugs.includes(contextEntry.entry.slug) ? "Remove favorite" : "Add to favorites"}
+                      </Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <TouchableOpacity
+                      onPress={() => {
+                        setFormEditing(contextEntry.entry)
+                        setMode("form")
+                        setContextEntry(null)
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={sheetActionLabel}>Edit exercise</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await setCustomExerciseArchived(contextEntry.entry.slug, !contextEntry.archived)
+                        await refreshData()
+                        setContextEntry(null)
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={sheetActionLabel}>{contextEntry.archived ? "Restore" : "Archive"}</Text>
+                    </TouchableOpacity>
+                  </>
+                )}
+
+                <TouchableOpacity onPress={() => setContextEntry(null)} style={[sheetAction, { marginTop: spacing(0.5) }]}>
+                  <Text style={{ color: palette.mutedText, fontWeight: "600" as const, textAlign: "center" }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      ) : null}
 
       {mode === "manage" ? (
         <ManageCustomExercises
@@ -176,14 +329,7 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
             setFormEditing(null)
             setMode("form")
           }}
-          onEdit={(entry) => {
-            setFormEditing(entry)
-            setMode("form")
-          }}
-          onToggleArchive={async (entry, archived) => {
-            await setCustomExerciseArchived(entry.slug, archived)
-            refreshData()
-          }}
+          onLongPress={(entry, archived) => setContextEntry({ entry, archived, custom: true })}
         />
       ) : mode === "form" ? (
         <ExerciseForm
@@ -198,43 +344,65 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
         />
       ) : (
         <>
-          <View style={searchContainer}>
-            <TextInput
-              placeholder="Search"
-              placeholderTextColor={palette.mutedText}
-              value={query}
-              onChangeText={(value) => {
-                console.log("Browser: search query", value)
-                setQuery(value)
-              }}
-              style={searchInput}
-            />
-          </View>
-          {mode === "favorites" ? (
-            <FlatList<ExerciseCatalogEntry>
-              data={favoriteExercises.filter((entry) => entry.display_name.toLowerCase().includes(query.toLowerCase()))}
-              keyExtractor={(item) => item.slug}
-              renderItem={renderExerciseRow}
-              ItemSeparatorComponent={() => <View style={separator} />}
-              ListEmptyComponent={
-                <View style={{ padding: spacing(2) }}>
-                  <Text style={{ color: palette.mutedText }}>No favorites yet. Tap ☆ next to an exercise to star it.</Text>
-                </View>
-              }
-            />
-          ) : mode === "groups" ? (
-            <FlatList<string>
-              data={filteredGroups}
-              keyExtractor={(item) => item}
-              renderItem={renderGroupRow}
-              ItemSeparatorComponent={() => <View style={separator} />}
-              contentContainerStyle={{ paddingBottom: spacing(8) }}
-              ListEmptyComponent={
-                <View style={{ padding: spacing(2) }}>
-                  <Text style={{ color: palette.mutedText }}>No muscle groups match your search.</Text>
-                </View>
-              }
-            />
+          {searchExpanded && (
+            <View style={searchContainer}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(1) }}>
+                <TextInput
+                  placeholder="Search"
+                  placeholderTextColor={palette.mutedText}
+                  value={query}
+                  onChangeText={(value) => setQuery(value)}
+                  style={[searchInput, { flex: 1 }]}
+                  autoFocus
+                />
+                <TouchableOpacity onPress={collapseSearch}>
+                  <Text style={{ color: palette.primary, fontWeight: "700" as const }}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          )}
+          {mode === "groups" && (
+            <View style={tabRow}>
+              {(["all", "favorites"] as const).map((tab) => (
+                <TouchableOpacity
+                  key={tab}
+                  onPress={() => setActiveTab(tab)}
+                  style={[tabButton, activeTab === tab && tabButtonActive]}
+                >
+                  <Text style={{ color: activeTab === tab ? "#0f172a" : palette.text, fontWeight: "600" as const }}>
+                    {tab === "all" ? "All" : "Favorites"}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+          {mode === "groups" ? (
+            activeTab === "favorites" ? (
+              <FlatList<ExerciseCatalogEntry>
+                data={filteredFavoriteExercises}
+                keyExtractor={(item) => item.slug}
+                renderItem={renderExerciseRow}
+                ItemSeparatorComponent={() => <View style={separator} />}
+                ListEmptyComponent={
+                  <View style={{ padding: spacing(2) }}>
+                    <Text style={{ color: palette.mutedText }}>No favorites yet. Tap ☆ next to an exercise to star it.</Text>
+                  </View>
+                }
+              />
+            ) : (
+              <FlatList<string>
+                data={filteredGroups}
+                keyExtractor={(item) => item}
+                renderItem={renderGroupRow}
+                ItemSeparatorComponent={() => <View style={separator} />}
+                contentContainerStyle={{ paddingBottom: spacing(8) }}
+                ListEmptyComponent={
+                  <View style={{ padding: spacing(2) }}>
+                    <Text style={{ color: palette.mutedText }}>No muscle groups match your search.</Text>
+                  </View>
+                }
+              />
+            )
           ) : (
             <FlatList<ExerciseCatalogEntry>
               data={filteredExercises}
@@ -251,62 +419,22 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
           )}
         </>
       )}
+      {mode !== "form" && (
+        <View style={{ padding: spacing(2) }}>
+          <TouchableOpacity
+            onPress={() => {
+              setFormEditing(null)
+              setMode("form")
+            }}
+            style={primaryButton}
+          >
+            <Text style={{ color: "#0f172a", fontWeight: "700" as const }}>+ Add Exercise</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   )
 }
-
-const Toolbar = ({
-  title,
-  showBack,
-  onBack,
-  onClose,
-  onAddExercise,
-  onOpenManage,
-  onToggleFavorites,
-  favoritesActive,
-}: {
-  title: string
-  showBack: boolean
-  onBack: () => void
-  onClose?: () => void
-  onAddExercise: () => void
-  onOpenManage: () => void
-  onToggleFavorites: () => void
-  favoritesActive: boolean
-}) => (
-  <View style={toolbarContainer}>
-    <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(1) }}>
-      {showBack ? (
-        <TouchableOpacity onPress={onBack} style={iconButton}>
-          <Text style={{ color: palette.text }}>{"<"}</Text>
-        </TouchableOpacity>
-      ) : onClose ? (
-        <TouchableOpacity onPress={onClose} style={iconButton}>
-          <Text style={{ color: palette.text }}>{"<"}</Text>
-        </TouchableOpacity>
-      ) : (
-        <View style={iconButton}>
-          <Text style={{ color: palette.text, fontWeight: "600" }}>☰</Text>
-        </View>
-      )}
-      <Text style={[typography.title, { fontSize: 20 }]}>{title}</Text>
-    </View>
-    <View style={{ flexDirection: "row", gap: spacing(1) }}>
-      <TouchableOpacity
-        onPress={onToggleFavorites}
-        style={[iconButton, favoritesActive && { backgroundColor: palette.primary }]}
-      >
-        <Text style={{ color: favoritesActive ? "#0f172a" : palette.text }}>{favoritesActive ? "★" : "☆"}</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={onAddExercise} style={iconButton}>
-        <Text style={{ color: palette.text }}>+</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={onOpenManage} style={iconButton}>
-        <Text style={{ color: palette.text }}>⋮</Text>
-      </TouchableOpacity>
-    </View>
-  </View>
-)
 
 const formatLabel = (label: string) =>
   label
@@ -314,21 +442,12 @@ const formatLabel = (label: string) =>
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ")
 
-const toolbarContainer = {
-  flexDirection: "row" as const,
-  alignItems: "center" as const,
-  justifyContent: "space-between" as const,
-  paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1.5),
-  borderBottomWidth: 1,
-  borderColor: palette.border,
-}
-
 const iconButton = {
   padding: spacing(0.5),
   borderRadius: radius.card,
   borderWidth: 1,
   borderColor: palette.border,
+  backgroundColor: palette.surface,
 }
 
 const searchContainer = {
@@ -346,6 +465,28 @@ const searchInput = {
   paddingHorizontal: spacing(1.5),
   color: palette.text,
   backgroundColor: palette.mutedSurface,
+}
+
+const tabRow = {
+  flexDirection: "row" as const,
+  gap: spacing(1),
+  paddingHorizontal: spacing(2),
+  paddingBottom: spacing(1),
+}
+
+const tabButton = {
+  flex: 1,
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  paddingVertical: spacing(0.75),
+  alignItems: "center" as const,
+  backgroundColor: palette.surface,
+}
+
+const tabButtonActive = {
+  backgroundColor: palette.primary,
+  borderColor: palette.primary,
 }
 
 const rowStyle = {
@@ -533,13 +674,13 @@ const ExerciseForm = ({
           saving ? { backgroundColor: palette.mutedSurface } : { backgroundColor: palette.primary },
         ]}
       >
-        <Text style={{ color: saving ? palette.mutedText : "#0f172a", fontWeight: "600" }}>
+        <Text style={{ color: saving ? palette.mutedText : "#0f172a", fontWeight: "600" as const }}>
           {saving ? "Saving..." : "Save exercise"}
         </Text>
       </TouchableOpacity>
 
       <TouchableOpacity onPress={onCancel} style={secondaryButton}>
-        <Text style={{ color: palette.mutedText, fontWeight: "600" }}>Cancel</Text>
+        <Text style={{ color: palette.mutedText, fontWeight: "600" as const }}>Cancel</Text>
       </TouchableOpacity>
     </ScrollView>
   )
@@ -549,58 +690,50 @@ const ManageCustomExercises = ({
   active,
   archived,
   onAdd,
-  onEdit,
-  onToggleArchive,
+  onLongPress,
 }: {
   active: ExerciseCatalogEntry[]
   archived: ExerciseCatalogEntry[]
   onAdd: () => void
-  onEdit: (entry: ExerciseCatalogEntry) => void
-  onToggleArchive: (entry: ExerciseCatalogEntry, archived: boolean) => Promise<void>
-}) => (
-  <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(2) }}>
-    <TouchableOpacity onPress={onAdd} style={primaryButton}>
-      <Text style={{ color: "#0f172a", fontWeight: "700" }}>+ Add Exercise</Text>
+  onLongPress: (entry: ExerciseCatalogEntry, archived: boolean) => void
+}) => {
+  const renderRow = (entry: ExerciseCatalogEntry, archivedFlag: boolean) => (
+    <TouchableOpacity
+      key={`${archivedFlag ? "archived-" : ""}${entry.slug}`}
+      onPress={() => onLongPress(entry, archivedFlag)}
+      onLongPress={() => onLongPress(entry, archivedFlag)}
+      style={manageRow}
+    >
+      <View>
+        <Text style={{ color: palette.text, fontWeight: "600" as const }}>{entry.display_name}</Text>
+        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+          {archivedFlag ? "Archived" : formatLabel(entry.primary_muscle_group)}
+        </Text>
+      </View>
+      <Text style={{ color: palette.mutedText, fontSize: 12 }}>Long-press</Text>
     </TouchableOpacity>
-    <Text style={sectionLabel}>Active</Text>
-    {active.length === 0 ? (
-      <Text style={{ color: palette.mutedText }}>No custom exercises yet.</Text>
-    ) : (
-      active.map((entry) => (
-        <View key={entry.slug} style={manageRow}>
-          <View>
-            <Text style={{ color: palette.text, fontWeight: "600" }}>{entry.display_name}</Text>
-            <Text style={{ color: palette.mutedText, fontSize: 12 }}>{formatLabel(entry.primary_muscle_group)}</Text>
-          </View>
-          <View style={{ flexDirection: "row", gap: spacing(1) }}>
-            <TouchableOpacity onPress={() => onEdit(entry)} style={iconButton}>
-              <Text style={{ color: palette.text }}>Edit</Text>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => onToggleArchive(entry, true)} style={iconButton}>
-              <Text style={{ color: palette.text }}>Archive</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      ))
-    )}
-    {archived.length > 0 && (
-      <>
-        <Text style={sectionLabel}>Archived</Text>
-        {archived.map((entry) => (
-          <View key={`archived-${entry.slug}`} style={manageRow}>
-            <View>
-              <Text style={{ color: palette.text, fontWeight: "600" }}>{entry.display_name}</Text>
-              <Text style={{ color: palette.mutedText, fontSize: 12 }}>Archived</Text>
-            </View>
-            <TouchableOpacity onPress={() => onToggleArchive(entry, false)} style={iconButton}>
-              <Text style={{ color: palette.text }}>Restore</Text>
-            </TouchableOpacity>
-          </View>
-        ))}
-      </>
-    )}
-  </ScrollView>
-)
+  )
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(2) }}>
+      <TouchableOpacity onPress={onAdd} style={primaryButton}>
+        <Text style={{ color: "#0f172a", fontWeight: "700" as const }}>+ Add Exercise</Text>
+      </TouchableOpacity>
+      <Text style={sectionLabel}>Active</Text>
+      {active.length === 0 ? (
+        <Text style={{ color: palette.mutedText }}>No custom exercises yet.</Text>
+      ) : (
+        active.map((entry) => renderRow(entry, false))
+      )}
+      {archived.length > 0 && (
+        <>
+          <Text style={sectionLabel}>Archived</Text>
+          {archived.map((entry) => renderRow(entry, true))}
+        </>
+      )}
+    </ScrollView>
+  )
+}
 
 const formLabel = {
   color: palette.mutedText,
@@ -673,5 +806,68 @@ const manageRow = {
   justifyContent: "space-between" as const,
   alignItems: "center" as const,
 }
+
+const menuOverlay = {
+  position: "absolute" as const,
+  top: spacing(7),
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(15,23,42,0.55)",
+}
+
+const menuCard = {
+  marginTop: spacing(2),
+  marginHorizontal: spacing(2),
+  alignSelf: "flex-end" as const,
+  width: 220,
+  borderRadius: radius.card,
+  backgroundColor: palette.surface,
+  borderWidth: 1,
+  borderColor: palette.border,
+  paddingVertical: spacing(1),
+  gap: spacing(0.5),
+}
+
+const menuItem = {
+  paddingHorizontal: spacing(1.5),
+  paddingVertical: spacing(0.75),
+}
+
+const sheetOverlay = {
+  position: "absolute" as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: "rgba(15,23,42,0.55)",
+  alignItems: "center" as const,
+  justifyContent: "flex-end" as const,
+  padding: spacing(2),
+}
+
+const sheetCard = {
+  width: "100%" as const,
+  borderRadius: radius.card,
+  backgroundColor: palette.surface,
+  borderWidth: 1,
+  borderColor: palette.border,
+  padding: spacing(1.5),
+  gap: spacing(0.5),
+}
+
+const sheetAction = {
+  paddingVertical: spacing(0.75),
+  paddingHorizontal: spacing(0.5),
+}
+
+const sheetActionLabel = {
+  color: palette.text,
+  fontWeight: "600" as const,
+}
+
+const countExercises = (group: string, catalog: ExerciseCatalogEntry[]) =>
+  catalog.filter((entry) => entry.primary_muscle_group === group).length
+
 
 export default ExerciseBrowser

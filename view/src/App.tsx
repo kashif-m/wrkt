@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react"
-import { Text, TouchableOpacity, View } from "react-native"
+import { View } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import ExerciseBrowser from "./screens/ExerciseBrowser"
 import LoggingScreen, { SessionTab } from "./screens/LoggingScreen"
@@ -10,7 +10,9 @@ import HomeScreen from "./screens/HomeScreen"
 import CalendarScreen from "./screens/CalendarScreen"
 import { WorkoutState, initialState } from "./workoutFlows"
 import { init, fetchEvents } from "./storage"
-import { palette, spacing, radius } from "./ui/theme"
+import { palette } from "./ui/theme"
+import BottomNav, { NavKey } from "./navigation/BottomNav"
+import ScreenHeader from "./ui/ScreenHeader"
 
 type ScreenState =
   | { key: "home" }
@@ -73,7 +75,11 @@ const App = () => {
         console.log("Navigating to logging screen", screen.exerciseName)
         return (
           <View style={{ flex: 1 }}>
-            <ShellHeader title={screen.exerciseName ?? "Log Workout"} onBack={goHome} />
+            <ScreenHeader
+              title={screen.exerciseName ?? "Log workout"}
+              subtitle="Track · History · Trends"
+              onBack={goHome}
+            />
             <LoggingScreen
               state={state}
               onStateChange={(nextState) => setState(nextState)}
@@ -86,9 +92,19 @@ const App = () => {
       case "history":
         return <HistoryScreen state={state} />
       case "analytics":
-        return <AnalyticsScreen state={state} />
+        return (
+          <View style={{ flex: 1 }}>
+            <ScreenHeader title="Trends" subtitle="Charts & records" />
+            <AnalyticsScreen state={state} />
+          </View>
+        )
       case "coach":
-        return <SuggestionsScreen state={state} />
+        return (
+          <View style={{ flex: 1 }}>
+            <ScreenHeader title="Coach" subtitle="Suggestions" />
+            <SuggestionsScreen state={state} />
+          </View>
+        )
       case "calendar":
         return (
           <CalendarScreen
@@ -105,40 +121,32 @@ const App = () => {
     <SafeAreaProvider>
       <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }}>
         <View style={{ flex: 1 }}>{renderScreen()}</View>
+        <BottomNav
+          current={
+            screen.key === "calendar" ||
+            screen.key === "browser" ||
+            screen.key === "analytics" ||
+            screen.key === "coach"
+              ? (screen.key as NavKey)
+              : "home"
+          }
+          onSelect={(key) => {
+            if (key === "home") {
+              setScreen({ key: "home" })
+            } else if (key === "calendar") {
+              setScreen({ key: "calendar" })
+            } else if (key === "browser") {
+              setScreen({ key: "browser" })
+            } else if (key === "analytics") {
+              setScreen({ key: "analytics" })
+            } else if (key === "coach") {
+              setScreen({ key: "coach" })
+            }
+          }}
+        />
       </SafeAreaView>
     </SafeAreaProvider>
   )
 }
 
 export default App
-
-const ShellHeader = ({ title, onBack }: { title: string; onBack: () => void }) => (
-  <View
-    style={{
-      flexDirection: "row",
-      alignItems: "center",
-      paddingHorizontal: spacing(2),
-      paddingVertical: spacing(1.5),
-      borderBottomWidth: 1,
-      borderColor: palette.border,
-      gap: spacing(1),
-    }}
-  >
-    <TouchableOpacity
-      onPress={onBack}
-      style={{
-        width: 36,
-        height: 36,
-        borderRadius: radius.card,
-        borderWidth: 1,
-        borderColor: palette.border,
-        alignItems: "center",
-        justifyContent: "center",
-        backgroundColor: palette.surface,
-      }}
-    >
-      <Text style={{ color: palette.text, fontSize: 18 }}>{"<"}</Text>
-    </TouchableOpacity>
-    <Text style={{ color: palette.text, fontSize: 18, fontWeight: "600" }}>{title}</Text>
-  </View>
-)
