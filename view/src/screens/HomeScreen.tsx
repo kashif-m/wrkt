@@ -5,6 +5,7 @@ import { roundToLocalDay } from "../timePolicy"
 import { palette, radius, spacing, typography, fontSizes } from "../ui/theme"
 import { Card } from "../ui/components"
 import { ExerciseCatalogEntry, fetchMergedCatalog } from "../exercise/catalogStorage"
+import { getMuscleColor } from "../ui/muscleColors"
 
 type Props = {
   events: WorkoutEvent[]
@@ -29,9 +30,12 @@ const HomeScreen = ({
   const dayBucket = roundToLocalDay(selectedDate.getTime())
   const todayBucket = roundToLocalDay(Date.now())
   const isToday = dayBucket === todayBucket
-  const dateLabel = isToday
-    ? "TODAY"
-    : selectedDate.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }).toUpperCase()
+  const monthYearLabel = selectedDate
+    .toLocaleDateString(undefined, { month: "long", year: "numeric" })
+    .toUpperCase()
+  const secondaryLabel = isToday
+    ? "Today"
+    : selectedDate.toLocaleDateString(undefined, { weekday: "long", day: "numeric" })
 
   useEffect(() => {
     fetchMergedCatalog().then(setCatalog).catch(console.warn)
@@ -100,8 +104,9 @@ const HomeScreen = ({
           <Text style={arrowLabel}>{"<"}</Text>
         </TouchableOpacity>
         <TouchableOpacity onPress={onOpenCalendar} style={{ alignItems: "center" }}>
-          <Text style={{ color: palette.text, fontSize: 12, letterSpacing: 1 }}> {dateLabel} </Text>
+          <Text style={{ color: palette.text, fontSize: 12, letterSpacing: 1 }}>{monthYearLabel}</Text>
           <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+            {secondaryLabel} ·{" "}
             {selectedDate.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
           </Text>
         </TouchableOpacity>
@@ -347,23 +352,5 @@ const bottomActions = {
   gap: spacing(1.5),
 }
 
-
-const getMuscleColor = (group?: string | null) => {
-  const colorMap: Record<string, string> = {
-    chest: "#f472b6",
-    back: "#22d3ee",
-    legs: "#34d399",
-    shoulders: "#f97316",
-    triceps: "#fb7185",
-    biceps: "#a78bfa",
-    posterior_chain: "#38bdf8",
-    cardio: "#2dd4bf",
-    core: "#fbbf24",
-    glutes: "#f472b6",
-    grip: "#67e8f9",
-  }
-  if (!group) return palette.primary
-  return colorMap[group] ?? palette.primary
-}
 
 export default HomeScreen

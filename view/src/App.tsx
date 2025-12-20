@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useState } from "react"
-import { Alert, Text, TouchableOpacity, View } from "react-native"
+import { Text, TouchableOpacity, View } from "react-native"
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context"
 import ExerciseBrowser from "./screens/ExerciseBrowser"
-import LoggingScreen from "./screens/LoggingScreen"
+import LoggingScreen, { SessionTab } from "./screens/LoggingScreen"
 import HistoryScreen from "./screens/HistoryScreen"
 import AnalyticsScreen from "./screens/AnalyticsScreen"
 import SuggestionsScreen from "./screens/SuggestionsScreen"
 import HomeScreen from "./screens/HomeScreen"
+import CalendarScreen from "./screens/CalendarScreen"
 import { WorkoutState, initialState } from "./workoutFlows"
 import { init, fetchEvents } from "./storage"
 import { palette, spacing, radius } from "./ui/theme"
@@ -14,10 +15,11 @@ import { palette, spacing, radius } from "./ui/theme"
 type ScreenState =
   | { key: "home" }
   | { key: "browser" }
-  | { key: "log"; exerciseName?: string }
+  | { key: "log"; exerciseName?: string; initialTab: SessionTab }
   | { key: "history" }
   | { key: "analytics" }
   | { key: "coach" }
+  | { key: "calendar" }
 
 const App = () => {
   const [state, setState] = useState<WorkoutState>(initialState)
@@ -37,9 +39,7 @@ const App = () => {
     setSelectedDate((prev) => new Date(prev.getTime() + deltaDays * 24 * 60 * 60 * 1000))
   }
 
-  const handleOpenCalendar = () => {
-    Alert.alert("Calendar", "Calendar view coming soon.")
-  }
+  const handleOpenCalendar = () => setScreen({ key: "calendar" })
 
   const goHome = () => setScreen({ key: "home" })
 
@@ -56,14 +56,16 @@ const App = () => {
             onStartExercise={() => setScreen({ key: "browser" })}
             onSelectExerciseFromList={(exerciseName) => {
               console.log("Home: exercise selected from list", exerciseName)
-              setScreen({ key: "log", exerciseName })
+              setScreen({ key: "log", exerciseName, initialTab: "History" })
             }}
           />
         )
       case "browser":
         return (
           <ExerciseBrowser
-            onSelectExercise={(entry) => setScreen({ key: "log", exerciseName: entry.display_name })}
+            onSelectExercise={(entry) =>
+              setScreen({ key: "log", exerciseName: entry.display_name, initialTab: "Track" })
+            }
             onClose={goHome}
           />
         )
@@ -77,6 +79,7 @@ const App = () => {
               onStateChange={(nextState) => setState(nextState)}
               refreshFromStorage={refreshFromStorage}
               prefillExerciseName={screen.exerciseName}
+              initialTab={screen.initialTab}
             />
           </View>
         )
@@ -86,6 +89,15 @@ const App = () => {
         return <AnalyticsScreen state={state} />
       case "coach":
         return <SuggestionsScreen state={state} />
+      case "calendar":
+        return (
+          <CalendarScreen
+            events={state.events}
+            selectedDate={selectedDate}
+            onSelectDate={(date) => setSelectedDate(date)}
+            onClose={goHome}
+          />
+        )
     }
   }
 

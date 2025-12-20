@@ -34,6 +34,17 @@ export const insertEvent = async (event: WorkoutEvent) => {
   await writeStore(merged)
 }
 
+export const updateEvent = async (updated: WorkoutEvent) => {
+  const events = await readStore()
+  const next = events.map((event) => (event.event_id === updated.event_id ? updated : event))
+  await writeStore(sortEventsByDeterministicOrder(next))
+}
+
+export const removeEvent = async (eventId: string) => {
+  const events = await readStore()
+  await writeStore(events.filter((event) => event.event_id !== eventId))
+}
+
 export const fetchEvents = async (
   trackerId?: string,
   range?: [number, number],

@@ -2,6 +2,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { JsonArray, JsonObject, getExerciseCatalog, validateExercise } from "../TrackerEngine"
 
 const CUSTOM_EXERCISES_KEY = "strata.workout.customExercises"
+const FAVORITES_KEY = "strata.workout.favoriteExercises"
 
 export interface BaseExerciseCatalogEntry {
   slug: string
@@ -14,7 +15,7 @@ export interface BaseExerciseCatalogEntry {
   tags?: string[]
 }
 
-export type ExerciseCatalogEntry = BaseExerciseCatalogEntry & { source: "default" | "custom" }
+export type ExerciseCatalogEntry = BaseExerciseCatalogEntry & { source: "default" | "custom"; archived?: boolean }
 
 const readCustomExercises = async (): Promise<ExerciseCatalogEntry[]> => {
   const raw = await AsyncStorage.getItem(CUSTOM_EXERCISES_KEY)
@@ -31,6 +32,22 @@ const readCustomExercises = async (): Promise<ExerciseCatalogEntry[]> => {
 
 const writeCustomExercises = async (items: ExerciseCatalogEntry[]) => {
   await AsyncStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify(items))
+}
+
+const readFavoriteSlugs = async (): Promise<string[]> => {
+  const raw = await AsyncStorage.getItem(FAVORITES_KEY)
+  if (!raw) return []
+  try {
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed.map((item) => String(item)) : []
+  } catch (error) {
+    console.warn("Failed to parse favorites", error)
+    return []
+  }
+}
+
+const writeFavoriteSlugs = async (slugs: string[]) => {
+  await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(slugs))
 }
 
 const normalizeEntry = (entry: JsonObject): BaseExerciseCatalogEntry => {
@@ -92,33 +109,66 @@ export const fetchMergedCatalog = async (): Promise<ExerciseCatalogEntry[]> => {
   console.debug("Merged default and custom catalog", { baseCount: base.length, customCount: custom.length })
   const merged = [
     ...base.map((entry) => ({ ...entry, source: "default" as const })),
-    ...custom.map((entry) => ({ ...entry, source: "custom" as const })),
+    ...custom
+      .filter((entry) => !entry.archived)
+      .map((entry) => ({ ...entry, source: "custom" as const })),
   ]
   return merged
 }
 
-export const addCustomExercise = async (entry: BaseExerciseCatalogEntry) => {
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40)
+
+export const listCustomExercises = async (includeArchived = true) => {
+  const entries = await readCustomExercises()
+  return includeArchived ? entries : entries.filter((entry) => !entry.archived)
+}
+
+export const saveCustomExercise = async (
+  entry: BaseExerciseCatalogEntry,
+  options?: { originalSlug?: string },
+) => {
   const validated = normalizeEntry(await validateExercise(entry as unknown as JsonObject))
-  const candidates = await readCustomExercises()
-  const slug = String(validated.slug)
-  if (candidates.some((item) => item.slug === slug)) {
+  const slug = slugify(validated.slug || validated.display_name)
+  const existing = await readCustomExercises()
+  const targetSlug = options?.originalSlug ?? slug
+  const remaining = existing.filter((item) => item.slug !== targetSlug)
+  if (remaining.some((item) => item.slug === slug)) {
     throw new Error("Exercise already exists")
   }
+  const archived =
+    existing.find((item) => item.slug === targetSlug)?.archived ??
+    existing.find((item) => item.slug === slug)?.archived ??
+    false
   const merged: ExerciseCatalogEntry[] = [
-    ...candidates,
+    ...remaining,
     {
       ...validated,
       slug,
       source: "custom" as const,
+      archived,
     },
   ]
   await writeCustomExercises(merged)
   return merged
 }
 
-export const removeCustomExercise = async (slug: string) => {
+export const setCustomExerciseArchived = async (slug: string, archived: boolean) => {
   const existing = await readCustomExercises()
-  const filtered = existing.filter((entry) => entry.slug !== slug)
-  await writeCustomExercises(filtered)
-  return filtered
+  const updated = existing.map((entry) => (entry.slug === slug ? { ...entry, archived } : entry))
+  await writeCustomExercises(updated)
+  return updated
+}
+
+export const loadFavoriteExercises = async () => readFavoriteSlugs()
+
+export const setExerciseFavorite = async (slug: string, favorite: boolean) => {
+  const current = await readFavoriteSlugs()
+  const next = favorite ? Array.from(new Set([...current, slug])) : current.filter((item) => item !== slug)
+  await writeFavoriteSlugs(next)
+  return next
 }

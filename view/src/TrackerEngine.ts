@@ -51,7 +51,7 @@ export const compute = async (dsl: string, events: JsonObject[], query: JsonObje
 }
 
 export const suggest = async (dsl: string, events: JsonObject[], planner: string) => {
-  return call<JsonObject>("suggest", dsl, JSON.stringify(events), planner)
+  return call<JsonArray>("suggest", dsl, JSON.stringify(events), planner)
 }
 
 export const simulate = async (

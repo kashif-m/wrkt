@@ -1,4 +1,4 @@
-import { compute, suggest, validateEvent, JsonObject, compileTracker } from "./TrackerEngine"
+import { compute, suggest, validateEvent, JsonObject, JsonValue, compileTracker } from "./TrackerEngine"
 import { getLocalOffsetMinutes, roundToLocalDay, roundToLocalWeek, sortEventsByDeterministicOrder, TimeGrain } from "./timePolicy"
 
 export type WorkoutEvent = JsonObject & {
@@ -65,12 +65,81 @@ export const logSet = async (state: WorkoutState, eventJson: WorkoutEvent): Prom
   return { events: sortEventsByDeterministicOrder([...state.events, annotated]) }
 }
 
+export const updateLoggedSet = async (
+  state: WorkoutState,
+  eventId: string,
+  payload: WorkoutEvent["payload"],
+): Promise<WorkoutState> => {
+  const tracker_id = await getTrackerIdentifier()
+  const target = state.events.find((event) => event.event_id === eventId)
+  if (!target) {
+    return state
+  }
+  const mergedPayload = { ...target.payload, ...payload }
+  let normalized: WorkoutEvent = { ...target, payload: mergedPayload, tracker_id }
+  try {
+    normalized = (await validateEvent(WORKOUT_DSL, normalized)) as WorkoutEvent
+  } catch (error) {
+    console.warn("TrackerEngine validateEvent unavailable during update, persisting raw payload", error)
+  }
+  const annotated = annotateEvent(normalized)
+  const nextEvents = state.events.map((event) => (event.event_id === eventId ? annotated : event))
+  return { events: sortEventsByDeterministicOrder(nextEvents) }
+}
+
+export const deleteLoggedSet = (state: WorkoutState, eventId: string): WorkoutState => ({
+  events: state.events.filter((event) => event.event_id !== eventId),
+})
+
 export const history = (state: WorkoutState) => sortEventsByDeterministicOrder(state.events)
 
 export const computeAnalytics = (state: WorkoutState, query: JsonObject) =>
   compute(WORKOUT_DSL, state.events, query)
 
-export const suggestNext = (state: WorkoutState, planner: string) => suggest(WORKOUT_DSL, state.events, planner)
+export type PlannerKind = "strength" | "hypertrophy" | "conditioning"
+
+export type PlanSuggestion = {
+  title: string
+  explanation: string
+  delta: Record<string, number>
+}
+
+const isRecord = (value: JsonValue): value is Record<string, JsonValue> =>
+  typeof value === "object" && value !== null && !Array.isArray(value)
+
+const toNumberRecord = (value: JsonValue): Record<string, number> => {
+  if (!isRecord(value)) return {}
+  const entries: Record<string, number> = {}
+  Object.entries(value).forEach(([key, raw]) => {
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      entries[key] = raw
+    }
+  })
+  return entries
+}
+
+const normalizeSuggestions = (values: JsonValue[]): PlanSuggestion[] =>
+  values
+    .map((value) => {
+      if (!isRecord(value)) return null
+      const title = typeof value.title === "string" ? value.title : null
+      const explanation = typeof value.explanation === "string" ? value.explanation : null
+      const delta = toNumberRecord(value.delta ?? {})
+      if (!title || !explanation) return null
+      return { title, explanation, delta }
+    })
+    .filter((entry): entry is PlanSuggestion => Boolean(entry))
+
+export const suggestNext = async (state: WorkoutState, planner: PlannerKind): Promise<PlanSuggestion[]> => {
+  try {
+    const raw = await suggest(WORKOUT_DSL, state.events, planner)
+    if (!Array.isArray(raw)) return []
+    return normalizeSuggestions(raw)
+  } catch (error) {
+    console.warn("suggestNext failed", error)
+    return []
+  }
+}
 
 export const buildVolumeQuery = (grain: TimeGrain): JsonObject => {
   const bucketField = grain === "week" ? "week_bucket" : "day_bucket"
