@@ -1,159 +1,169 @@
-import { ExerciseCatalogEntry } from "../exercise/catalogStorage"
-import { PlanSuggestion, PlannerKind, WorkoutEvent } from "../workoutFlows"
+import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import { PlanSuggestion, PlannerKind, WorkoutEvent } from '../workoutFlows';
 
-export type ScreenKey = "home" | "calendar" | "browser" | "log" | "analytics" | "coach" | "history"
-export type ToastTone = "success" | "info" | "danger"
+export type ScreenKey =
+  | 'home'
+  | 'calendar'
+  | 'browser'
+  | 'log'
+  | 'analytics'
+  | 'coach'
+  | 'history';
+export type ToastTone = 'success' | 'info' | 'danger';
 
-export type BrowserMode = "groups" | "exercises" | "manage" | "form"
-export type BrowserTab = "all" | "favorites"
+export type BrowserMode = 'groups' | 'exercises' | 'manage' | 'form';
+export type BrowserTab = 'all' | 'favorites';
 
-export type SessionTab = "Track" | "History" | "Trends"
-export type TrendRangeKey = "1m" | "3m" | "6m" | "1y" | "all"
+export type SessionTab = 'Track' | 'History' | 'Trends';
+export type TrendRangeKey = '1m' | '3m' | '6m' | '1y' | 'all';
 export type TrendMetricKey =
-  | "estimated_1rm"
-  | "max_weight"
-  | "max_reps"
-  | "max_volume"
-  | "workout_volume"
-  | "workout_reps"
+  | 'estimated_1rm'
+  | 'max_weight'
+  | 'max_reps'
+  | 'max_volume'
+  | 'workout_volume'
+  | 'workout_reps';
 
-export type AnalyticsRangeKey = "8w" | "16w" | "6m" | "1y" | "all"
-export type AnalyticsMetricKey = "volume" | "sessions"
+export type AnalyticsRangeKey = '8w' | '16w' | '6m' | '1y' | 'all';
+export type AnalyticsMetricKey = 'volume' | 'sessions';
 
 export type LoggingFields = {
-  reps: string
-  weight: string
-  duration: string
-  distance: string
-}
+  reps: string;
+  weight: string;
+  duration: string;
+  distance: string;
+};
 
 export type RootState = {
-  nav: { screen: ScreenKey }
-  selectedDate: Date
-  events: WorkoutEvent[]
+  nav: { screen: ScreenKey };
+  selectedDate: Date;
+  events: WorkoutEvent[];
   catalog: {
-    entries: ExerciseCatalogEntry[]
-    favorites: string[]
-    custom: ExerciseCatalogEntry[]
-  }
+    entries: ExerciseCatalogEntry[];
+    favorites: string[];
+    custom: ExerciseCatalogEntry[];
+  };
   browser: {
-    mode: BrowserMode
-    selectedGroup: string | null
-    query: string
-    searchExpanded: boolean
-    menuOpen: boolean
-    contextEntry:
-      | {
-          entry: ExerciseCatalogEntry
-          archived?: boolean
-          custom?: boolean
-        }
-      | null
-    activeTab: BrowserTab
-    formEditing: ExerciseCatalogEntry | null
+    mode: BrowserMode;
+    selectedGroup: string | null;
+    query: string;
+    searchExpanded: boolean;
+    menuOpen: boolean;
+    contextEntry: {
+      entry: ExerciseCatalogEntry;
+      archived?: boolean;
+      custom?: boolean;
+    } | null;
+    activeTab: BrowserTab;
+    formEditing: ExerciseCatalogEntry | null;
     formDraft: {
-      displayName: string
-      slug: string
-      primary: string
-      secondary: string[]
-      modality: string
-      loggingMode: string
-      minLoad: string
-      maxLoad: string
-      saving: boolean
-      error: string | null
-    }
-  }
+      displayName: string;
+      slug: string;
+      primary: string;
+      secondary: string[];
+      modality: string;
+      loggingMode: string;
+      minLoad: string;
+      maxLoad: string;
+      saving: boolean;
+      error: string | null;
+    };
+  };
   calendar: {
-    visibleMonth: Date
-    legendExpanded: boolean
-    yearSheetOpen: boolean
-  }
+    visibleMonth: Date;
+    legendExpanded: boolean;
+    yearSheetOpen: boolean;
+  };
   logging: {
-    logDate: Date
-    exerciseName?: string
-    fields: LoggingFields
-    tab: SessionTab
-    selectedTrendRange: TrendRangeKey
-    selectedMetric: TrendMetricKey
-    editingEventId: string | null
-    status: { text: string; tone: ToastTone } | null
-  }
+    logDate: Date;
+    exerciseName?: string;
+    fields: LoggingFields;
+    tab: SessionTab;
+    selectedTrendRange: TrendRangeKey;
+    selectedMetric: TrendMetricKey;
+    editingEventId: string | null;
+    status: { text: string; tone: ToastTone } | null;
+  };
   analytics: {
-    selectedRange: AnalyticsRangeKey
-    selectedMetric: AnalyticsMetricKey
-  }
+    selectedRange: AnalyticsRangeKey;
+    selectedMetric: AnalyticsMetricKey;
+  };
   suggestions: {
-    planner: PlannerKind
-    loading: boolean
-    items: PlanSuggestion[]
-  }
-}
+    planner: PlannerKind;
+    loading: boolean;
+    items: PlanSuggestion[];
+  };
+};
 
 export type Action =
-  | { type: "nav/set"; screen: ScreenKey }
-  | { type: "date/set"; date: Date }
-  | { type: "date/shift"; deltaDays: number }
-  | { type: "events/set"; events: WorkoutEvent[] }
-  | { type: "catalog/set"; entries: ExerciseCatalogEntry[] }
-  | { type: "catalog/favorites"; favorites: string[] }
-  | { type: "catalog/custom"; custom: ExerciseCatalogEntry[] }
-  | { type: "browser/mode"; mode: BrowserMode }
-  | { type: "browser/group"; group: string | null }
-  | { type: "browser/query"; query: string }
-  | { type: "browser/search"; expanded: boolean }
-  | { type: "browser/menu"; open: boolean }
-  | { type: "browser/context"; context: RootState["browser"]["contextEntry"] }
-  | { type: "browser/tab"; tab: BrowserTab }
-  | { type: "browser/form"; entry: ExerciseCatalogEntry | null }
+  | { type: 'nav/set'; screen: ScreenKey }
+  | { type: 'date/set'; date: Date }
+  | { type: 'date/shift'; deltaDays: number }
+  | { type: 'events/set'; events: WorkoutEvent[] }
+  | { type: 'catalog/set'; entries: ExerciseCatalogEntry[] }
+  | { type: 'catalog/favorites'; favorites: string[] }
+  | { type: 'catalog/custom'; custom: ExerciseCatalogEntry[] }
+  | { type: 'browser/mode'; mode: BrowserMode }
+  | { type: 'browser/group'; group: string | null }
+  | { type: 'browser/query'; query: string }
+  | { type: 'browser/search'; expanded: boolean }
+  | { type: 'browser/menu'; open: boolean }
+  | { type: 'browser/context'; context: RootState['browser']['contextEntry'] }
+  | { type: 'browser/tab'; tab: BrowserTab }
+  | { type: 'browser/form'; entry: ExerciseCatalogEntry | null }
   | {
-      type: "browser/formDraft"
-      draft: RootState["browser"]["formDraft"]
+      type: 'browser/formDraft';
+      draft: RootState['browser']['formDraft'];
     }
-  | { type: "calendar/visibleMonth"; date: Date }
-  | { type: "calendar/legend"; expanded: boolean }
-  | { type: "calendar/yearSheet"; open: boolean }
-  | { type: "log/date"; date: Date }
-  | { type: "log/exercise"; exerciseName?: string }
-  | { type: "log/fields"; fields: LoggingFields }
-  | { type: "log/tab"; tab: SessionTab }
-  | { type: "log/trendRange"; range: TrendRangeKey }
-  | { type: "log/trendMetric"; metric: TrendMetricKey }
-  | { type: "log/editing"; eventId: string | null }
-  | { type: "log/status"; status: RootState["logging"]["status"] }
-  | { type: "analytics/range"; range: AnalyticsRangeKey }
-  | { type: "analytics/metric"; metric: AnalyticsMetricKey }
-  | { type: "suggestions/planner"; planner: PlannerKind }
-  | { type: "suggestions/loading"; loading: boolean }
-  | { type: "suggestions/items"; items: PlanSuggestion[] }
+  | { type: 'calendar/visibleMonth'; date: Date }
+  | { type: 'calendar/legend'; expanded: boolean }
+  | { type: 'calendar/yearSheet'; open: boolean }
+  | { type: 'log/date'; date: Date }
+  | { type: 'log/exercise'; exerciseName?: string }
+  | { type: 'log/fields'; fields: LoggingFields }
+  | { type: 'log/tab'; tab: SessionTab }
+  | { type: 'log/trendRange'; range: TrendRangeKey }
+  | { type: 'log/trendMetric'; metric: TrendMetricKey }
+  | { type: 'log/editing'; eventId: string | null }
+  | { type: 'log/status'; status: RootState['logging']['status'] }
+  | { type: 'analytics/range'; range: AnalyticsRangeKey }
+  | { type: 'analytics/metric'; metric: AnalyticsMetricKey }
+  | { type: 'suggestions/planner'; planner: PlannerKind }
+  | { type: 'suggestions/loading'; loading: boolean }
+  | { type: 'suggestions/items'; items: PlanSuggestion[] };
 
-export const initialFields: LoggingFields = { reps: "", weight: "", duration: "", distance: "" }
+export const initialFields: LoggingFields = {
+  reps: '',
+  weight: '',
+  duration: '',
+  distance: '',
+};
 
 export const createInitialState = (): RootState => {
-  const today = new Date()
+  const today = new Date();
   return {
-    nav: { screen: "home" },
+    nav: { screen: 'home' },
     selectedDate: today,
     events: [],
     catalog: { entries: [], favorites: [], custom: [] },
     browser: {
-      mode: "groups",
+      mode: 'groups',
       selectedGroup: null,
-      query: "",
+      query: '',
       searchExpanded: false,
       menuOpen: false,
       contextEntry: null,
-      activeTab: "all",
+      activeTab: 'all',
       formEditing: null,
       formDraft: {
-        displayName: "",
-        slug: "",
-        primary: "chest",
+        displayName: '',
+        slug: '',
+        primary: 'chest',
         secondary: [],
-        modality: "strength",
-        loggingMode: "reps_weight",
-        minLoad: "",
-        maxLoad: "",
+        modality: 'strength',
+        loggingMode: 'reps_weight',
+        minLoad: '',
+        maxLoad: '',
         saving: false,
         error: null,
       },
@@ -167,93 +177,160 @@ export const createInitialState = (): RootState => {
       logDate: today,
       exerciseName: undefined,
       fields: { ...initialFields },
-      tab: "Track",
-      selectedTrendRange: "3m",
-      selectedMetric: "estimated_1rm",
+      tab: 'Track',
+      selectedTrendRange: '3m',
+      selectedMetric: 'estimated_1rm',
       editingEventId: null,
       status: null,
     },
     analytics: {
-      selectedRange: "16w",
-      selectedMetric: "volume",
+      selectedRange: '16w',
+      selectedMetric: 'volume',
     },
     suggestions: {
-      planner: "strength",
+      planner: 'strength',
       loading: false,
       items: [],
     },
-  }
-}
+  };
+};
 
 export const reducer = (state: RootState, action: Action): RootState => {
   switch (action.type) {
-    case "nav/set":
-      return { ...state, nav: { screen: action.screen } }
-    case "date/set":
-      return { ...state, selectedDate: action.date, calendar: { ...state.calendar, visibleMonth: action.date } }
-    case "date/shift": {
-      const nextDate = new Date(state.selectedDate.getTime() + action.deltaDays * 24 * 60 * 60 * 1000)
-      return { ...state, selectedDate: nextDate, calendar: { ...state.calendar, visibleMonth: nextDate } }
+    case 'nav/set':
+      return { ...state, nav: { screen: action.screen } };
+    case 'date/set':
+      return {
+        ...state,
+        selectedDate: action.date,
+        calendar: { ...state.calendar, visibleMonth: action.date },
+      };
+    case 'date/shift': {
+      const nextDate = new Date(
+        state.selectedDate.getTime() + action.deltaDays * 24 * 60 * 60 * 1000,
+      );
+      return {
+        ...state,
+        selectedDate: nextDate,
+        calendar: { ...state.calendar, visibleMonth: nextDate },
+      };
     }
-    case "events/set":
-      return { ...state, events: action.events }
-    case "catalog/set":
-      return { ...state, catalog: { ...state.catalog, entries: action.entries } }
-    case "catalog/favorites":
-      return { ...state, catalog: { ...state.catalog, favorites: action.favorites } }
-    case "catalog/custom":
-      return { ...state, catalog: { ...state.catalog, custom: action.custom } }
-    case "browser/mode":
-      return { ...state, browser: { ...state.browser, mode: action.mode } }
-    case "browser/group":
-      return { ...state, browser: { ...state.browser, selectedGroup: action.group } }
-    case "browser/query":
-      return { ...state, browser: { ...state.browser, query: action.query } }
-    case "browser/search":
-      return { ...state, browser: { ...state.browser, searchExpanded: action.expanded } }
-    case "browser/menu":
-      return { ...state, browser: { ...state.browser, menuOpen: action.open } }
-    case "browser/context":
-      return { ...state, browser: { ...state.browser, contextEntry: action.context } }
-    case "browser/tab":
-      return { ...state, browser: { ...state.browser, activeTab: action.tab } }
-    case "browser/form":
-      return { ...state, browser: { ...state.browser, formEditing: action.entry } }
-    case "browser/formDraft":
-      return { ...state, browser: { ...state.browser, formDraft: action.draft } }
-    case "calendar/visibleMonth":
-      return { ...state, calendar: { ...state.calendar, visibleMonth: action.date } }
-    case "calendar/legend":
-      return { ...state, calendar: { ...state.calendar, legendExpanded: action.expanded } }
-    case "calendar/yearSheet":
-      return { ...state, calendar: { ...state.calendar, yearSheetOpen: action.open } }
-    case "log/date":
-      return { ...state, logging: { ...state.logging, logDate: action.date } }
-    case "log/exercise":
-      return { ...state, logging: { ...state.logging, exerciseName: action.exerciseName } }
-    case "log/fields":
-      return { ...state, logging: { ...state.logging, fields: action.fields } }
-    case "log/tab":
-      return { ...state, logging: { ...state.logging, tab: action.tab } }
-    case "log/trendRange":
-      return { ...state, logging: { ...state.logging, selectedTrendRange: action.range } }
-    case "log/trendMetric":
-      return { ...state, logging: { ...state.logging, selectedMetric: action.metric } }
-    case "log/editing":
-      return { ...state, logging: { ...state.logging, editingEventId: action.eventId } }
-    case "log/status":
-      return { ...state, logging: { ...state.logging, status: action.status } }
-    case "analytics/range":
-      return { ...state, analytics: { ...state.analytics, selectedRange: action.range } }
-    case "analytics/metric":
-      return { ...state, analytics: { ...state.analytics, selectedMetric: action.metric } }
-    case "suggestions/planner":
-      return { ...state, suggestions: { ...state.suggestions, planner: action.planner } }
-    case "suggestions/loading":
-      return { ...state, suggestions: { ...state.suggestions, loading: action.loading } }
-    case "suggestions/items":
-      return { ...state, suggestions: { ...state.suggestions, items: action.items } }
+    case 'events/set':
+      return { ...state, events: action.events };
+    case 'catalog/set':
+      return {
+        ...state,
+        catalog: { ...state.catalog, entries: action.entries },
+      };
+    case 'catalog/favorites':
+      return {
+        ...state,
+        catalog: { ...state.catalog, favorites: action.favorites },
+      };
+    case 'catalog/custom':
+      return { ...state, catalog: { ...state.catalog, custom: action.custom } };
+    case 'browser/mode':
+      return { ...state, browser: { ...state.browser, mode: action.mode } };
+    case 'browser/group':
+      return {
+        ...state,
+        browser: { ...state.browser, selectedGroup: action.group },
+      };
+    case 'browser/query':
+      return { ...state, browser: { ...state.browser, query: action.query } };
+    case 'browser/search':
+      return {
+        ...state,
+        browser: { ...state.browser, searchExpanded: action.expanded },
+      };
+    case 'browser/menu':
+      return { ...state, browser: { ...state.browser, menuOpen: action.open } };
+    case 'browser/context':
+      return {
+        ...state,
+        browser: { ...state.browser, contextEntry: action.context },
+      };
+    case 'browser/tab':
+      return { ...state, browser: { ...state.browser, activeTab: action.tab } };
+    case 'browser/form':
+      return {
+        ...state,
+        browser: { ...state.browser, formEditing: action.entry },
+      };
+    case 'browser/formDraft':
+      return {
+        ...state,
+        browser: { ...state.browser, formDraft: action.draft },
+      };
+    case 'calendar/visibleMonth':
+      return {
+        ...state,
+        calendar: { ...state.calendar, visibleMonth: action.date },
+      };
+    case 'calendar/legend':
+      return {
+        ...state,
+        calendar: { ...state.calendar, legendExpanded: action.expanded },
+      };
+    case 'calendar/yearSheet':
+      return {
+        ...state,
+        calendar: { ...state.calendar, yearSheetOpen: action.open },
+      };
+    case 'log/date':
+      return { ...state, logging: { ...state.logging, logDate: action.date } };
+    case 'log/exercise':
+      return {
+        ...state,
+        logging: { ...state.logging, exerciseName: action.exerciseName },
+      };
+    case 'log/fields':
+      return { ...state, logging: { ...state.logging, fields: action.fields } };
+    case 'log/tab':
+      return { ...state, logging: { ...state.logging, tab: action.tab } };
+    case 'log/trendRange':
+      return {
+        ...state,
+        logging: { ...state.logging, selectedTrendRange: action.range },
+      };
+    case 'log/trendMetric':
+      return {
+        ...state,
+        logging: { ...state.logging, selectedMetric: action.metric },
+      };
+    case 'log/editing':
+      return {
+        ...state,
+        logging: { ...state.logging, editingEventId: action.eventId },
+      };
+    case 'log/status':
+      return { ...state, logging: { ...state.logging, status: action.status } };
+    case 'analytics/range':
+      return {
+        ...state,
+        analytics: { ...state.analytics, selectedRange: action.range },
+      };
+    case 'analytics/metric':
+      return {
+        ...state,
+        analytics: { ...state.analytics, selectedMetric: action.metric },
+      };
+    case 'suggestions/planner':
+      return {
+        ...state,
+        suggestions: { ...state.suggestions, planner: action.planner },
+      };
+    case 'suggestions/loading':
+      return {
+        ...state,
+        suggestions: { ...state.suggestions, loading: action.loading },
+      };
+    case 'suggestions/items':
+      return {
+        ...state,
+        suggestions: { ...state.suggestions, items: action.items },
+      };
     default:
-      return state
+      return state;
   }
-}
+};

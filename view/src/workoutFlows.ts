@@ -1,47 +1,61 @@
-import { compute, suggest, validateEvent, JsonObject, JsonValue, compileTracker } from "./TrackerEngine"
-import { getLocalOffsetMinutes, roundToLocalDay, roundToLocalWeek, sortEventsByDeterministicOrder, TimeGrain } from "./timePolicy"
+import {
+  compute,
+  suggest,
+  validateEvent,
+  JsonObject,
+  JsonValue,
+  compileTracker,
+} from './TrackerEngine';
+import {
+  getLocalOffsetMinutes,
+  roundToLocalDay,
+  roundToLocalWeek,
+  sortEventsByDeterministicOrder,
+  TimeGrain,
+} from './timePolicy';
 
 export type WorkoutEvent = JsonObject & {
-  event_id: string
-  tracker_id: string
-  ts: number
-  payload: JsonObject
-  meta: JsonObject
-}
+  event_id: string;
+  tracker_id: string;
+  ts: number;
+  payload: JsonObject;
+  meta: JsonObject;
+};
 
-export type WorkoutState = { events: WorkoutEvent[] }
+export type WorkoutState = { events: WorkoutEvent[] };
 
-export const WORKOUT_DSL = "tracker \"workout\" v1 {\n  fields {\n    exercise: text\n    reps: int optional\n    weight: float optional\n  }\n}"
+export const WORKOUT_DSL =
+  'tracker "workout" v1 {\n  fields {\n    exercise: text\n    reps: int optional\n    weight: float optional\n  }\n}';
 
-const TRACKER_ID_FALLBACK = "workout"
-let trackerIdentifier = TRACKER_ID_FALLBACK
-let trackerIdPromise: Promise<string> | null = null
+const TRACKER_ID_FALLBACK = 'workout';
+let trackerIdentifier = TRACKER_ID_FALLBACK;
+let trackerIdPromise: Promise<string> | null = null;
 
 const resolveTrackerIdentifier = async () => {
   try {
-    const compiled = await compileTracker(WORKOUT_DSL)
-    if (compiled && typeof compiled === "object" && "tracker_id" in compiled) {
-      trackerIdentifier = String((compiled as JsonObject)["tracker_id"])
+    const compiled = await compileTracker(WORKOUT_DSL);
+    if (compiled && typeof compiled === 'object' && 'tracker_id' in compiled) {
+      trackerIdentifier = String((compiled as JsonObject)['tracker_id']);
     }
   } catch (error) {
-    console.warn("Failed to compile tracker", error)
+    console.warn('Failed to compile tracker', error);
   }
-  return trackerIdentifier
-}
+  return trackerIdentifier;
+};
 
 export const getTrackerIdentifier = () => {
   if (!trackerIdPromise) {
-    trackerIdPromise = resolveTrackerIdentifier()
+    trackerIdPromise = resolveTrackerIdentifier();
   }
-  return trackerIdPromise
-}
+  return trackerIdPromise;
+};
 
-export const initialEvents: WorkoutEvent[] = []
+export const initialEvents: WorkoutEvent[] = [];
 
-export const initialState: WorkoutState = { events: initialEvents }
+export const initialState: WorkoutState = { events: initialEvents };
 
 const annotateEvent = (event: WorkoutEvent): WorkoutEvent => {
-  const offsetMinutes = getLocalOffsetMinutes()
+  const offsetMinutes = getLocalOffsetMinutes();
   return {
     ...event,
     meta: {
@@ -50,101 +64,129 @@ const annotateEvent = (event: WorkoutEvent): WorkoutEvent => {
       day_bucket: roundToLocalDay(event.ts, offsetMinutes),
       week_bucket: roundToLocalWeek(event.ts, offsetMinutes),
     },
-  }
-}
+  };
+};
 
-export const logSet = async (state: WorkoutState, eventJson: WorkoutEvent): Promise<WorkoutState> => {
-  const tracker_id = await getTrackerIdentifier()
-  let normalized: WorkoutEvent = { ...eventJson, tracker_id }
+export const logSet = async (
+  state: WorkoutState,
+  eventJson: WorkoutEvent,
+): Promise<WorkoutState> => {
+  const tracker_id = await getTrackerIdentifier();
+  let normalized: WorkoutEvent = { ...eventJson, tracker_id };
   try {
-    normalized = (await validateEvent(WORKOUT_DSL, { ...eventJson, tracker_id })) as WorkoutEvent
+    normalized = (await validateEvent(WORKOUT_DSL, {
+      ...eventJson,
+      tracker_id,
+    })) as WorkoutEvent;
   } catch (error) {
-    console.warn("TrackerEngine validateEvent unavailable, persisting raw payload", error)
+    console.warn(
+      'TrackerEngine validateEvent unavailable, persisting raw payload',
+      error,
+    );
   }
-  const annotated = annotateEvent(normalized)
-  return { events: sortEventsByDeterministicOrder([...state.events, annotated]) }
-}
+  const annotated = annotateEvent(normalized);
+  return {
+    events: sortEventsByDeterministicOrder([...state.events, annotated]),
+  };
+};
 
 export const updateLoggedSet = async (
   state: WorkoutState,
   eventId: string,
-  payload: WorkoutEvent["payload"],
+  payload: WorkoutEvent['payload'],
 ): Promise<WorkoutState> => {
-  const tracker_id = await getTrackerIdentifier()
-  const target = state.events.find((event) => event.event_id === eventId)
+  const tracker_id = await getTrackerIdentifier();
+  const target = state.events.find(event => event.event_id === eventId);
   if (!target) {
-    return state
+    return state;
   }
-  const mergedPayload = { ...target.payload, ...payload }
-  let normalized: WorkoutEvent = { ...target, payload: mergedPayload, tracker_id }
+  const mergedPayload = { ...target.payload, ...payload };
+  let normalized: WorkoutEvent = {
+    ...target,
+    payload: mergedPayload,
+    tracker_id,
+  };
   try {
-    normalized = (await validateEvent(WORKOUT_DSL, normalized)) as WorkoutEvent
+    normalized = (await validateEvent(WORKOUT_DSL, normalized)) as WorkoutEvent;
   } catch (error) {
-    console.warn("TrackerEngine validateEvent unavailable during update, persisting raw payload", error)
+    console.warn(
+      'TrackerEngine validateEvent unavailable during update, persisting raw payload',
+      error,
+    );
   }
-  const annotated = annotateEvent(normalized)
-  const nextEvents = state.events.map((event) => (event.event_id === eventId ? annotated : event))
-  return { events: sortEventsByDeterministicOrder(nextEvents) }
-}
+  const annotated = annotateEvent(normalized);
+  const nextEvents = state.events.map(event =>
+    event.event_id === eventId ? annotated : event,
+  );
+  return { events: sortEventsByDeterministicOrder(nextEvents) };
+};
 
-export const deleteLoggedSet = (state: WorkoutState, eventId: string): WorkoutState => ({
-  events: state.events.filter((event) => event.event_id !== eventId),
-})
+export const deleteLoggedSet = (
+  state: WorkoutState,
+  eventId: string,
+): WorkoutState => ({
+  events: state.events.filter(event => event.event_id !== eventId),
+});
 
-export const history = (state: WorkoutState) => sortEventsByDeterministicOrder(state.events)
+export const history = (state: WorkoutState) =>
+  sortEventsByDeterministicOrder(state.events);
 
 export const computeAnalytics = (state: WorkoutState, query: JsonObject) =>
-  compute(WORKOUT_DSL, state.events, query)
+  compute(WORKOUT_DSL, state.events, query);
 
-export type PlannerKind = "strength" | "hypertrophy" | "conditioning"
+export type PlannerKind = 'strength' | 'hypertrophy' | 'conditioning';
 
 export type PlanSuggestion = {
-  title: string
-  explanation: string
-  delta: Record<string, number>
-}
+  title: string;
+  explanation: string;
+  delta: Record<string, number>;
+};
 
 const isRecord = (value: JsonValue): value is Record<string, JsonValue> =>
-  typeof value === "object" && value !== null && !Array.isArray(value)
+  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const toNumberRecord = (value: JsonValue): Record<string, number> => {
-  if (!isRecord(value)) return {}
-  const entries: Record<string, number> = {}
+  if (!isRecord(value)) return {};
+  const entries: Record<string, number> = {};
   Object.entries(value).forEach(([key, raw]) => {
-    if (typeof raw === "number" && Number.isFinite(raw)) {
-      entries[key] = raw
+    if (typeof raw === 'number' && Number.isFinite(raw)) {
+      entries[key] = raw;
     }
-  })
-  return entries
-}
+  });
+  return entries;
+};
 
 const normalizeSuggestions = (values: JsonValue[]): PlanSuggestion[] =>
   values
-    .map((value) => {
-      if (!isRecord(value)) return null
-      const title = typeof value.title === "string" ? value.title : null
-      const explanation = typeof value.explanation === "string" ? value.explanation : null
-      const delta = toNumberRecord(value.delta ?? {})
-      if (!title || !explanation) return null
-      return { title, explanation, delta }
+    .map(value => {
+      if (!isRecord(value)) return null;
+      const title = typeof value.title === 'string' ? value.title : null;
+      const explanation =
+        typeof value.explanation === 'string' ? value.explanation : null;
+      const delta = toNumberRecord(value.delta ?? {});
+      if (!title || !explanation) return null;
+      return { title, explanation, delta };
     })
-    .filter((entry): entry is PlanSuggestion => Boolean(entry))
+    .filter((entry): entry is PlanSuggestion => Boolean(entry));
 
-export const suggestNext = async (state: WorkoutState, planner: PlannerKind): Promise<PlanSuggestion[]> => {
+export const suggestNext = async (
+  state: WorkoutState,
+  planner: PlannerKind,
+): Promise<PlanSuggestion[]> => {
   try {
-    const raw = await suggest(WORKOUT_DSL, state.events, planner)
-    if (!Array.isArray(raw)) return []
-    return normalizeSuggestions(raw)
+    const raw = await suggest(WORKOUT_DSL, state.events, planner);
+    if (!Array.isArray(raw)) return [];
+    return normalizeSuggestions(raw);
   } catch (error) {
-    console.warn("suggestNext failed", error)
-    return []
+    console.warn('suggestNext failed', error);
+    return [];
   }
-}
+};
 
 export const buildVolumeQuery = (grain: TimeGrain): JsonObject => {
-  const bucketField = grain === "week" ? "week_bucket" : "day_bucket"
+  const bucketField = grain === 'week' ? 'week_bucket' : 'day_bucket';
   return {
-    metric: "total_volume",
-    group_by: ["exercise", bucketField],
-  }
-}
+    metric: 'total_volume',
+    group_by: ['exercise', bucketField],
+  };
+};

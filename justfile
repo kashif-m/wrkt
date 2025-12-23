@@ -50,3 +50,12 @@ metro:
 
 pods:
 	cd {{view_dir}}/ios && pod install
+
+fmt-ts:
+	cd {{view_dir}} && npx prettier --write "src/**/*.{ts,tsx,js,jsx,json,md}"
+
+fmt-rs:
+	cd {{strata_dir}} && cargo fmt
+	cd workout-pack && cargo fmt
+
+fmt: fmt-ts fmt-rs
