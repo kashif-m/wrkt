@@ -91,3 +91,5 @@ view/coverage
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+/llm

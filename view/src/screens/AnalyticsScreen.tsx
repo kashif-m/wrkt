@@ -1,11 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from "react"
+import React, { useEffect, useMemo, useRef } from "react"
 import { ScrollView, View, Text, Animated, TouchableOpacity } from "react-native"
-import { WorkoutEvent, WorkoutState } from "../workoutFlows"
+import { WorkoutEvent } from "../workoutFlows"
 import { Card, SectionHeading, BodyText } from "../ui/components"
 import { palette, spacing, radius } from "../ui/theme"
 import { roundToLocalWeek, roundToLocalDay } from "../timePolicy"
-
-type Props = { state: WorkoutState }
+import { useAppDispatch, useAppState } from "../state/appContext"
 
 type VolumePoint = { label: string; value: number }
 type PersonalRecord = { exercise: string; weight: number; reps: number; oneRm: number }
@@ -314,9 +313,11 @@ const segmentedActive = {
   backgroundColor: palette.primary,
 }
 
-const AnalyticsScreen = ({ state }: Props) => {
-  const [selectedRange, setSelectedRange] = useState<RangeKey>("16w")
-  const [selectedMetric, setSelectedMetric] = useState<MetricKey>("volume")
+const AnalyticsScreen = () => {
+  const state = useAppState()
+  const dispatch = useAppDispatch()
+  const selectedRange = state.analytics.selectedRange
+  const selectedMetric = state.analytics.selectedMetric
   const volumeSeries = useMemo(
     () => computeSeries(state.events, selectedMetric, selectedRange),
     [state.events, selectedMetric, selectedRange],
@@ -333,9 +334,13 @@ const AnalyticsScreen = ({ state }: Props) => {
         <SegmentedControl
           options={metricOptions}
           selected={selectedMetric}
-          onSelect={setSelectedMetric}
+          onSelect={(metric) => dispatch({ type: "analytics/metric", metric })}
         />
-        <SegmentedControl options={rangeOptions} selected={selectedRange} onSelect={setSelectedRange} />
+        <SegmentedControl
+          options={rangeOptions}
+          selected={selectedRange}
+          onSelect={(range) => dispatch({ type: "analytics/range", range })}
+        />
         <MetricChart
           data={volumeSeries}
           metricLabel={metricOptions.find((opt) => opt.key === selectedMetric)?.label ?? "Metric"}

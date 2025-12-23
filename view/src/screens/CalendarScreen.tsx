@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useEffect, useMemo, useRef } from "react"
 import {
   View,
   Text,
@@ -11,8 +11,6 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
 } from "react-native"
-import { WorkoutEvent } from "../workoutFlows"
-import { ExerciseCatalogEntry, fetchMergedCatalog } from "../exercise/catalogStorage"
 import { getMuscleColor } from "../ui/muscleColors"
 import { roundToLocalDay } from "../timePolicy"
 import { palette, radius, spacing } from "../ui/theme"
@@ -20,32 +18,24 @@ import ChevronLeftIcon from "../assets/chevron-left.svg"
 import ChevronRightIcon from "../assets/chevron-right.svg"
 import TodayIcon from "../assets/today-target.svg"
 import ArrowLeftIcon from "../assets/arrow-left.svg"
-
-type Props = {
-  events: WorkoutEvent[]
-  selectedDate: Date
-  onSelectDate: (date: Date) => void
-  onClose: () => void
-}
+import { useAppActions, useAppDispatch, useAppState } from "../state/appContext"
+import { ExerciseCatalogEntry } from "../exercise/catalogStorage"
 
 const DAYS_IN_WEEK = 7
 const TOTAL_CELLS = 42
 const DAY_NAMES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
-const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) => {
-  const [catalog, setCatalog] = useState<ExerciseCatalogEntry[]>([])
-  const [visibleMonth, setVisibleMonth] = useState(() => new Date(selectedDate))
+const CalendarScreen = () => {
+  const state = useAppState()
+  const dispatch = useAppDispatch()
+  const actions = useAppActions()
+  const events = state.events
+  const selectedDate = state.selectedDate
+  const catalog = state.catalog.entries
+  const visibleMonth = state.calendar.visibleMonth
+  const yearSheetOpen = state.calendar.yearSheetOpen
+  const legendExpanded = state.calendar.legendExpanded
   const monthAnim = useRef(new Animated.Value(1)).current
-  const [yearSheetOpen, setYearSheetOpen] = useState(false)
-  const [legendExpanded, setLegendExpanded] = useState(false)
   const sheetTranslate = useRef(new Animated.Value(0)).current
-
-  useEffect(() => {
-    fetchMergedCatalog().then(setCatalog).catch(console.warn)
-  }, [])
-
-  useEffect(() => {
-    setVisibleMonth(new Date(selectedDate))
-  }, [selectedDate])
 
   useEffect(() => {
     if (yearSheetOpen) {
@@ -105,11 +95,11 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
   const animateToMonth = useCallback(
     (target: Date) => {
       Animated.timing(monthAnim, { toValue: 0, duration: 150, useNativeDriver: true }).start(() => {
-        setVisibleMonth(target)
+        dispatch({ type: "calendar/visibleMonth", date: target })
         Animated.timing(monthAnim, { toValue: 1, duration: 150, useNativeDriver: true }).start()
       })
     },
-    [monthAnim],
+    [dispatch, monthAnim],
   )
 
   const handleShift = useCallback(
@@ -148,23 +138,23 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
         },
         onPanResponderRelease: (_: GestureResponderEvent, gesture: PanResponderGestureState) => {
           if (gesture.dy > 80) {
-            setYearSheetOpen(false)
+            dispatch({ type: "calendar/yearSheet", open: false })
             sheetTranslate.setValue(0)
             return
           }
           Animated.timing(sheetTranslate, { toValue: 0, duration: 150, useNativeDriver: true }).start()
         },
       }),
-    [sheetTranslate],
+    [dispatch, sheetTranslate],
   )
 
   return (
-    <View style={{ flex: 1 }}>
+      <View style={{ flex: 1 }}>
       <View style={headerRow}>
-        <TouchableOpacity onPress={onClose} style={headerButton}>
+        <TouchableOpacity onPress={() => actions.navigate("home")} style={headerButton}>
           <ArrowLeftIcon width={18} height={18} color={palette.text} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={() => setYearSheetOpen(true)} style={monthTitle}>
+        <TouchableOpacity onPress={() => dispatch({ type: "calendar/yearSheet", open: true })} style={monthTitle}>
           <Text style={{ color: palette.text, fontSize: 18, fontWeight: "700" }}>{monthLabel}</Text>
           <Text style={{ color: palette.mutedText, fontSize: 12 }}>{yearLabel}</Text>
         </TouchableOpacity>
@@ -179,7 +169,7 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
             onPress={() => {
               const today = new Date()
               animateToMonth(today)
-              onSelectDate(today)
+              actions.setSelectedDate(today)
             }}
             style={todayButton}
           >
@@ -212,8 +202,8 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
                 isSelected && { borderColor: palette.primary, borderWidth: 2 },
               ]}
               onPress={() => {
-                onSelectDate(day)
-                onClose()
+                actions.setSelectedDate(day)
+                actions.navigate("home")
               }}
             >
               <Text style={{ color: palette.text, fontWeight: "600" }}>{day.getDate()}</Text>
@@ -230,7 +220,7 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
       {legendEntries.length > 0 ? (
         <>
           <TouchableOpacity
-            onPress={() => setLegendExpanded((prev) => !prev)}
+            onPress={() => dispatch({ type: "calendar/legend", expanded: !legendExpanded })}
             style={legendToggle}
           >
             <Text style={{ color: palette.primary, fontWeight: "600" }}>
@@ -251,7 +241,7 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
       ) : null}
 
       {yearSheetOpen ? (
-        <TouchableWithoutFeedback onPress={() => setYearSheetOpen(false)}>
+        <TouchableWithoutFeedback onPress={() => dispatch({ type: "calendar/yearSheet", open: false })}>
           <View style={sheetOverlay}>
             <TouchableWithoutFeedback>
               <Animated.View
@@ -267,7 +257,7 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
                         const target = new Date(visibleMonth)
                         target.setFullYear(year, target.getMonth(), 1)
                         animateToMonth(target)
-                        setYearSheetOpen(false)
+                        dispatch({ type: "calendar/yearSheet", open: false })
                       }}
                       style={[
                         sheetRow,
@@ -278,7 +268,10 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
-                <TouchableOpacity onPress={() => setYearSheetOpen(false)} style={{ paddingVertical: spacing(1) }}>
+                <TouchableOpacity
+                  onPress={() => dispatch({ type: "calendar/yearSheet", open: false })}
+                  style={{ paddingVertical: spacing(1) }}
+                >
                   <Text style={{ color: palette.primary, fontWeight: "600", textAlign: "center" }}>Close</Text>
                 </TouchableOpacity>
               </Animated.View>

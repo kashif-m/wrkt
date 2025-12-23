@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useMemo } from "react"
+import React, { useMemo } from "react"
 import { ScrollView, Text, TouchableOpacity, View } from "react-native"
-import { WorkoutState, suggestNext, PlanSuggestion, PlannerKind } from "../workoutFlows"
+import { PlanSuggestion, PlannerKind } from "../workoutFlows"
 import { Card, SectionHeading, BodyText } from "../ui/components"
 import { palette, spacing, radius } from "../ui/theme"
-
-type Props = { state: WorkoutState }
+import { useAppDispatch, useAppState } from "../state/appContext"
 
 const plannerOptions: { key: PlannerKind; label: string; copy: string }[] = [
   { key: "strength", label: "Strength", copy: "Focus on load and estimated 1RM jumps." },
@@ -12,30 +11,12 @@ const plannerOptions: { key: PlannerKind; label: string; copy: string }[] = [
   { key: "conditioning", label: "Conditioning", copy: "Increase work duration or total distance." },
 ]
 
-const SuggestionsScreen = ({ state }: Props) => {
-  const [planner, setPlanner] = useState<PlannerKind>("strength")
-  const [suggestions, setSuggestions] = useState<PlanSuggestion[]>([])
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    suggestNext(state, planner)
-      .then((items) => {
-        if (!cancelled) {
-          setSuggestions(items)
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setSuggestions([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [state.events, planner])
+const SuggestionsScreen = () => {
+  const state = useAppState()
+  const dispatch = useAppDispatch()
+  const planner = state.suggestions.planner
+  const suggestions = state.suggestions.items
+  const loading = state.suggestions.loading
 
   const activePlanner = useMemo(() => plannerOptions.find((option) => option.key === planner), [planner])
 
@@ -55,7 +36,7 @@ const SuggestionsScreen = ({ state }: Props) => {
             return (
               <TouchableOpacity
                 key={option.key}
-                onPress={() => setPlanner(option.key)}
+                onPress={() => dispatch({ type: "suggestions/planner", planner: option.key })}
                 style={[
                   {
                     paddingVertical: spacing(0.75),

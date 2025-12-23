@@ -1,39 +1,23 @@
-import React, { useEffect, useMemo, useState } from "react"
+import React, { useMemo } from "react"
 import { ScrollView, Text, TouchableOpacity, View } from "react-native"
 import Svg, { Path } from "react-native-svg"
-import { WorkoutEvent } from "../workoutFlows"
 import { roundToLocalDay } from "../timePolicy"
 import { palette, radius, spacing, typography, fontSizes } from "../ui/theme"
 import { Card } from "../ui/components"
-import { ExerciseCatalogEntry, fetchMergedCatalog } from "../exercise/catalogStorage"
 import { getMuscleColor } from "../ui/muscleColors"
 import ChevronLeftIcon from "../assets/chevron-left.svg"
 import ChevronRightIcon from "../assets/chevron-right.svg"
 import PlusIcon from "../assets/plus.svg"
 import TodayIcon from "../assets/today-target.svg"
+import { useAppActions, useAppState } from "../state/appContext"
+import { WorkoutEvent } from "../workoutFlows"
 
-type Props = {
-  events: WorkoutEvent[]
-  selectedDate: Date
-  onSelectPreviousDay: () => void
-  onSelectNextDay: () => void
-  onOpenCalendar: () => void
-  onJumpToToday: () => void
-  onStartExercise: () => void
-  onSelectExerciseFromList: (exerciseName: string) => void
-}
-
-const HomeScreen = ({
-  events,
-  selectedDate,
-  onSelectPreviousDay,
-  onSelectNextDay,
-  onOpenCalendar,
-  onJumpToToday,
-  onStartExercise,
-  onSelectExerciseFromList,
-}: Props) => {
-  const [catalog, setCatalog] = useState<ExerciseCatalogEntry[]>([])
+const HomeScreen = () => {
+  const state = useAppState()
+  const actions = useAppActions()
+  const { events } = state
+  const selectedDate = state.selectedDate
+  const catalog = state.catalog.entries
   const dayBucket = roundToLocalDay(selectedDate.getTime())
   const todayBucket = roundToLocalDay(Date.now())
   const isToday = dayBucket === todayBucket
@@ -44,12 +28,8 @@ const HomeScreen = ({
     year: "numeric",
   })
 
-  useEffect(() => {
-    fetchMergedCatalog().then(setCatalog).catch(console.warn)
-  }, [])
-
   const catalogMap = useMemo(() => {
-    const map = new Map<string, ExerciseCatalogEntry>()
+    const map = new Map<string, (typeof catalog)[number]>()
     catalog.forEach((entry) => map.set(entry.display_name, entry))
     return map
   }, [catalog])
@@ -152,19 +132,19 @@ const HomeScreen = ({
   return (
     <View style={{ flex: 1 }}>
       <View style={daySelector}>
-        <TouchableOpacity onPress={onSelectPreviousDay} style={arrowButton}>
+        <TouchableOpacity onPress={() => actions.shiftDate(-1)} style={arrowButton}>
           <ChevronLeftIcon width={20} height={20} color={palette.text} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={onOpenCalendar} style={{ alignItems: "center" }}>
+        <TouchableOpacity onPress={() => actions.navigate("calendar")} style={{ alignItems: "center" }}>
           <Text style={{ color: palette.text, fontSize: 18, fontWeight: "600" }}>{primaryLabel}</Text>
           <Text style={{ color: palette.mutedText, fontSize: 12 }}>{secondaryLabel}</Text>
         </TouchableOpacity>
         <View style={{ flexDirection: "row", gap: spacing(0.75) }}>
-          <TouchableOpacity onPress={onSelectNextDay} style={arrowButton}>
+          <TouchableOpacity onPress={() => actions.shiftDate(1)} style={arrowButton}>
             <ChevronRightIcon width={20} height={20} color={palette.text} />
           </TouchableOpacity>
           <TouchableOpacity
-            onPress={onJumpToToday}
+            onPress={() => actions.setSelectedDate(new Date())}
             style={[arrowButton, isToday && { opacity: 0.4 }]}
             disabled={isToday}
           >
@@ -183,7 +163,7 @@ const HomeScreen = ({
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(0.5) }}>
                 {showStartCta ? (
-                  <PrimaryAction label="Start workout" onPress={onStartExercise} />
+                  <PrimaryAction label="Start workout" onPress={() => actions.startWorkoutForDate(selectedDate)} />
                 ) : (
                   <View style={badge}>
                     <Text style={{ color: palette.text, fontWeight: "600", fontSize: 12 }}>
@@ -223,7 +203,7 @@ const HomeScreen = ({
             <Card style={{ paddingVertical: spacing(3), alignItems: "center", gap: spacing(1) }}>
               <Text style={{ color: palette.text, fontWeight: "700", fontSize: 16 }}>Workout log empty</Text>
               <Text style={{ color: palette.mutedText, fontSize: 13 }}>Start a quick session for this day.</Text>
-              {showStartCta ? <PrimaryAction label="Log workout" onPress={onStartExercise} /> : null}
+              {showStartCta ? <PrimaryAction label="Log workout" onPress={() => actions.startWorkoutForDate(selectedDate)} /> : null}
             </Card>
           ) : (
             <View style={listContainer}>
@@ -233,7 +213,7 @@ const HomeScreen = ({
                   {section.exercises.map((exercise, index) => (
                     <TouchableOpacity
                       key={`${exercise.name}-${index}`}
-                      onPress={() => onSelectExerciseFromList(exercise.name)}
+                      onPress={() => actions.openLogForExercise(exercise.name, selectedDate, "Track")}
                       style={[listRow, index !== section.exercises.length - 1 && listRowDivider]}
                     >
                       <View style={{ flex: 1, gap: spacing(0.5) }}>

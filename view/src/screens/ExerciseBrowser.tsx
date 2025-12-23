@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react"
+import React, { useCallback, useMemo } from "react"
 import {
   View,
   Text,
@@ -9,62 +9,33 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
 } from "react-native"
-import {
-  ExerciseCatalogEntry,
-  fetchMergedCatalog,
-  listCustomExercises,
-  saveCustomExercise,
-  setCustomExerciseArchived,
-  loadFavoriteExercises,
-  setExerciseFavorite,
-} from "../exercise/catalogStorage"
+import { ExerciseCatalogEntry } from "../exercise/catalogStorage"
 import { palette, spacing, radius } from "../ui/theme"
 import { muscleColorMap } from "../ui/muscleColors"
 import ScreenHeader from "../ui/ScreenHeader"
 import SearchIcon from "../assets/search.svg"
 import SettingsIcon from "../assets/settings.svg"
+import { useAppActions, useAppDispatch, useAppState } from "../state/appContext"
+import { RootState } from "../state/appState"
 
-type ViewMode = "groups" | "exercises" | "manage" | "form"
-type BrowserTab = "all" | "favorites"
-
-type Props = {
-  onSelectExercise?: (exercise: ExerciseCatalogEntry) => void
-  onClose?: () => void
-}
-
-const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
-  const [catalog, setCatalog] = useState<ExerciseCatalogEntry[]>([])
-  const [mode, setMode] = useState<ViewMode>("groups")
-  const [selectedGroup, setSelectedGroup] = useState<string | null>(null)
-  const [query, setQuery] = useState("")
-  const [customExercises, setCustomExercises] = useState<ExerciseCatalogEntry[]>([])
-  const [favoriteSlugs, setFavoriteSlugs] = useState<string[]>([])
-  const [formEditing, setFormEditing] = useState<ExerciseCatalogEntry | null>(null)
-  const [searchExpanded, setSearchExpanded] = useState(false)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [contextEntry, setContextEntry] = useState<{
-    entry: ExerciseCatalogEntry
-    archived?: boolean
-    custom?: boolean
-  } | null>(null)
-  const [activeTab, setActiveTab] = useState<BrowserTab>("all")
-
-  const refreshData = useCallback(async () => {
-    try {
-      const merged = await fetchMergedCatalog()
-      setCatalog(merged)
-      const customList = await listCustomExercises(true)
-      setCustomExercises(customList)
-      const favorites = await loadFavoriteExercises()
-      setFavoriteSlugs(favorites)
-    } catch (error) {
-      console.warn("ExerciseBrowser: failed to refresh catalog", error)
-    }
-  }, [])
-
-  useEffect(() => {
-    refreshData()
-  }, [refreshData])
+const ExerciseBrowser = () => {
+  const state = useAppState()
+  const dispatch = useAppDispatch()
+  const actions = useAppActions()
+  const catalog = state.catalog.entries
+  const customExercises = state.catalog.custom
+  const favoriteSlugs = state.catalog.favorites
+  const {
+    mode,
+    selectedGroup,
+    query,
+    formEditing,
+    searchExpanded,
+    menuOpen,
+    contextEntry,
+    activeTab,
+    formDraft,
+  } = state.browser
 
   const muscleGroups = useMemo(() => {
     const groups = Array.from(new Set(catalog.map((entry) => entry.primary_muscle_group)))
@@ -107,40 +78,46 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
     return "Exercises"
   }, [mode, selectedGroup, formEditing])
 
+  const updateFormDraft = useCallback(
+    (partial: Partial<typeof formDraft>) => {
+      dispatch({ type: "browser/formDraft", draft: { ...formDraft, ...partial } })
+    },
+    [dispatch, formDraft],
+  )
+
   const goBack = () => {
     if (mode === "exercises") {
-      setMode("groups")
-      setQuery("")
+      dispatch({ type: "browser/mode", mode: "groups" })
+      dispatch({ type: "browser/query", query: "" })
       return
     }
     if (mode === "manage") {
-      setMode("groups")
+      dispatch({ type: "browser/mode", mode: "groups" })
       return
     }
     if (mode === "form") {
-      setMode(customExercises.length ? "manage" : "groups")
+      dispatch({ type: "browser/mode", mode: customExercises.length ? "manage" : "groups" })
       return
     }
-    onClose?.()
+    actions.navigate("home")
   }
 
   const collapseSearch = () => {
-    setSearchExpanded(false)
-    setQuery("")
+    dispatch({ type: "browser/search", expanded: false })
+    dispatch({ type: "browser/query", query: "" })
   }
 
   const handleFavoriteToggle = async (slug: string) => {
     const isFavorite = favoriteSlugs.includes(slug)
-    const next = await setExerciseFavorite(slug, !isFavorite)
-    setFavoriteSlugs(next)
+    await actions.toggleFavorite(slug, !isFavorite)
   }
 
   const renderGroupRow = ({ item }: ListRenderItemInfo<string>) => (
     <TouchableOpacity
       onPress={() => {
-        setSelectedGroup(item)
-        setMode("exercises")
-        setQuery("")
+        dispatch({ type: "browser/group", group: item })
+        dispatch({ type: "browser/mode", mode: "exercises" })
+        dispatch({ type: "browser/query", query: "" })
       }}
       style={rowStyle}
     >
@@ -156,8 +133,8 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
 
   const renderExerciseRow = ({ item }: ListRenderItemInfo<ExerciseCatalogEntry>) => (
     <TouchableOpacity
-      onPress={() => onSelectExercise?.(item)}
-      onLongPress={() => setContextEntry({ entry: item })}
+      onPress={() => actions.openLogForExercise(item.display_name, state.selectedDate, "Track")}
+      onLongPress={() => dispatch({ type: "browser/context", context: { entry: item } })}
       style={rowStyle}
     >
       <View style={{ flex: 1, gap: spacing(0.25) }}>
@@ -175,24 +152,22 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
       <ScreenHeader
         title={headerTitle}
         subtitle={mode === "groups" ? (activeTab === "favorites" ? "Favorites" : "All exercises") : undefined}
-        onBack={mode !== "groups" ? goBack : onClose}
+        onBack={goBack}
         rightSlot={
           <View style={{ flexDirection: "row", gap: spacing(1) }}>
             <TouchableOpacity
               onPress={() => {
-                setSearchExpanded((prev) => {
-                  if (prev) {
-                    setQuery("")
-                  }
-                  return !prev
-                })
+                if (searchExpanded) {
+                  dispatch({ type: "browser/query", query: "" })
+                }
+                dispatch({ type: "browser/search", expanded: !searchExpanded })
               }}
               style={[iconButton, searchExpanded && { backgroundColor: palette.primary }]}
             >
               <SearchIcon width={16} height={16} color={searchExpanded ? "#0f172a" : palette.text} />
             </TouchableOpacity>
             {mode === "groups" ? (
-              <TouchableOpacity onPress={() => setMenuOpen(true)} style={iconButton}>
+              <TouchableOpacity onPress={() => dispatch({ type: "browser/menu", open: true })} style={iconButton}>
                 <SettingsIcon width={16} height={16} color={palette.text} />
               </TouchableOpacity>
             ) : null}
@@ -201,13 +176,13 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
       />
 
       {menuOpen && mode === "groups" && (
-        <TouchableWithoutFeedback onPress={() => setMenuOpen(false)}>
+        <TouchableWithoutFeedback onPress={() => dispatch({ type: "browser/menu", open: false })}>
           <View style={menuOverlay}>
             <View style={menuCard}>
               <TouchableOpacity
                 onPress={() => {
-                  setActiveTab((prev) => (prev === "favorites" ? "all" : "favorites"))
-                  setMenuOpen(false)
+                  dispatch({ type: "browser/tab", tab: activeTab === "favorites" ? "all" : "favorites" })
+                  dispatch({ type: "browser/menu", open: false })
                 }}
                 style={menuItem}
               >
@@ -217,8 +192,8 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={() => {
-                  setMenuOpen(false)
-                  setMode("manage")
+                  dispatch({ type: "browser/menu", open: false })
+                  dispatch({ type: "browser/mode", mode: "manage" })
                 }}
                 style={menuItem}
               >
@@ -230,7 +205,7 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
       )}
 
       {contextEntry ? (
-        <TouchableWithoutFeedback onPress={() => setContextEntry(null)}>
+        <TouchableWithoutFeedback onPress={() => dispatch({ type: "browser/context", context: null })}>
           <View style={sheetOverlay}>
             <TouchableWithoutFeedback>
               <View style={sheetCard}>
@@ -254,22 +229,20 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
 
                 {!contextEntry.custom ? (
                   <>
-                    {onSelectExercise ? (
-                      <TouchableOpacity
-                        onPress={() => {
-                          onSelectExercise(contextEntry.entry)
-                          setContextEntry(null)
-                        }}
-                        style={sheetAction}
-                      >
-                        <Text style={sheetActionLabel}>Select exercise</Text>
-                      </TouchableOpacity>
-                    ) : null}
                     <TouchableOpacity
                       onPress={() => {
-                        setMode("manage")
-                        setMenuOpen(false)
-                        setContextEntry(null)
+                        actions.openLogForExercise(contextEntry.entry.display_name, state.selectedDate, "Track")
+                        dispatch({ type: "browser/context", context: null })
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={sheetActionLabel}>Select exercise</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        dispatch({ type: "browser/mode", mode: "manage" })
+                        dispatch({ type: "browser/menu", open: false })
+                        dispatch({ type: "browser/context", context: null })
                       }}
                       style={sheetAction}
                     >
@@ -278,7 +251,7 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
                     <TouchableOpacity
                       onPress={() => {
                         handleFavoriteToggle(contextEntry.entry.slug)
-                        setContextEntry(null)
+                        dispatch({ type: "browser/context", context: null })
                       }}
                       style={sheetAction}
                     >
@@ -291,9 +264,10 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
                   <>
                     <TouchableOpacity
                       onPress={() => {
-                        setFormEditing(contextEntry.entry)
-                        setMode("form")
-                        setContextEntry(null)
+                        dispatch({ type: "browser/form", entry: contextEntry.entry })
+                        dispatch({ type: "browser/formDraft", draft: draftFromEntry(contextEntry.entry) })
+                        dispatch({ type: "browser/mode", mode: "form" })
+                        dispatch({ type: "browser/context", context: null })
                       }}
                       style={sheetAction}
                     >
@@ -301,9 +275,8 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
                     </TouchableOpacity>
                     <TouchableOpacity
                       onPress={async () => {
-                        await setCustomExerciseArchived(contextEntry.entry.slug, !contextEntry.archived)
-                        await refreshData()
-                        setContextEntry(null)
+                        await actions.archiveCustomExercise(contextEntry.entry.slug, !contextEntry.archived)
+                        dispatch({ type: "browser/context", context: null })
                       }}
                       style={sheetAction}
                     >
@@ -312,7 +285,10 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
                   </>
                 )}
 
-                <TouchableOpacity onPress={() => setContextEntry(null)} style={[sheetAction, { marginTop: spacing(0.5) }]}>
+                <TouchableOpacity
+                  onPress={() => dispatch({ type: "browser/context", context: null })}
+                  style={[sheetAction, { marginTop: spacing(0.5) }]}
+                >
                   <Text style={{ color: palette.mutedText, fontWeight: "600" as const, textAlign: "center" }}>Cancel</Text>
                 </TouchableOpacity>
               </View>
@@ -326,20 +302,64 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
           active={customExercises.filter((entry) => !entry.archived)}
           archived={customExercises.filter((entry) => entry.archived)}
           onAdd={() => {
-            setFormEditing(null)
-            setMode("form")
+            dispatch({ type: "browser/form", entry: null })
+            dispatch({
+              type: "browser/formDraft",
+              draft: {
+                displayName: "",
+                slug: "",
+                primary: "chest",
+                secondary: [],
+                modality: "strength",
+                loggingMode: "reps_weight",
+                minLoad: "",
+                maxLoad: "",
+                saving: false,
+                error: null,
+              },
+            })
+            dispatch({ type: "browser/mode", mode: "form" })
           }}
-          onLongPress={(entry, archived) => setContextEntry({ entry, archived, custom: true })}
+          onLongPress={(entry, archived) =>
+            dispatch({ type: "browser/context", context: { entry, archived, custom: true } })
+          }
         />
       ) : mode === "form" ? (
         <ExerciseForm
-          initial={formEditing ?? undefined}
-          onCancel={() => setMode(customExercises.length ? "manage" : "groups")}
+          draft={formDraft}
+          updateDraft={updateFormDraft}
+          onCancel={() => dispatch({ type: "browser/mode", mode: customExercises.length ? "manage" : "groups" })}
           onSubmit={async (values) => {
-            await saveCustomExercise(values, { originalSlug: formEditing?.slug })
-            setFormEditing(null)
-            await refreshData()
-            setMode("manage")
+            updateFormDraft({ saving: true, error: null })
+            try {
+              await actions.saveCustomExercise(
+                {
+                  ...values,
+                  source: "custom",
+                  archived: formEditing?.archived,
+                },
+                formEditing?.slug,
+              )
+              dispatch({ type: "browser/form", entry: null })
+              dispatch({ type: "browser/mode", mode: "manage" })
+              updateFormDraft({
+                displayName: "",
+                slug: "",
+                primary: "chest",
+                secondary: [],
+                modality: "strength",
+                loggingMode: "reps_weight",
+                minLoad: "",
+                maxLoad: "",
+                saving: false,
+                error: null,
+              })
+            } catch (error) {
+              updateFormDraft({
+                saving: false,
+                error: error instanceof Error ? error.message : "Failed to save exercise.",
+              })
+            }
           }}
         />
       ) : (
@@ -351,7 +371,7 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
                   placeholder="Search"
                   placeholderTextColor={palette.mutedText}
                   value={query}
-                  onChangeText={(value) => setQuery(value)}
+                  onChangeText={(value) => dispatch({ type: "browser/query", query: value })}
                   style={[searchInput, { flex: 1 }]}
                   autoFocus
                 />
@@ -366,7 +386,7 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
               {(["all", "favorites"] as const).map((tab) => (
                 <TouchableOpacity
                   key={tab}
-                  onPress={() => setActiveTab(tab)}
+                  onPress={() => dispatch({ type: "browser/tab", tab })}
                   style={[tabButton, activeTab === tab && tabButtonActive]}
                 >
                   <Text style={{ color: activeTab === tab ? "#0f172a" : palette.text, fontWeight: "600" as const }}>
@@ -425,8 +445,23 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
         <View style={{ padding: spacing(2) }}>
           <TouchableOpacity
             onPress={() => {
-              setFormEditing(null)
-              setMode("form")
+              dispatch({ type: "browser/form", entry: null })
+              dispatch({
+                type: "browser/formDraft",
+                draft: {
+                  displayName: "",
+                  slug: "",
+                  primary: "chest",
+                  secondary: [],
+                  modality: "strength",
+                  loggingMode: "reps_weight",
+                  minLoad: "",
+                  maxLoad: "",
+                  saving: false,
+                  error: null,
+                },
+              })
+              dispatch({ type: "browser/mode", mode: "form" })
             }}
             style={primaryButton}
           >
@@ -443,6 +478,19 @@ const formatLabel = (label: string) =>
     .split("_")
     .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(" ")
+
+const draftFromEntry = (entry: ExerciseCatalogEntry): BrowserFormDraft => ({
+  displayName: entry.display_name ?? "",
+  slug: entry.slug ?? "",
+  primary: entry.primary_muscle_group ?? "chest",
+  secondary: entry.secondary_groups ?? [],
+  modality: entry.modality ?? "strength",
+  loggingMode: entry.logging_mode ?? "reps_weight",
+  minLoad: entry.suggested_load_range?.min?.toString() ?? "",
+  maxLoad: entry.suggested_load_range?.max?.toString() ?? "",
+  saving: false,
+  error: null,
+})
 
 const iconButton = {
   padding: spacing(0.5),
@@ -531,80 +579,87 @@ type ExerciseFormValues = {
   tags?: string[]
 }
 
+type BrowserFormDraft = RootState["browser"]["formDraft"]
+
 const ExerciseForm = ({
-  initial,
+  draft,
+  updateDraft,
   onSubmit,
   onCancel,
 }: {
-  initial?: ExerciseCatalogEntry
+  draft: BrowserFormDraft
+  updateDraft: (partial: Partial<BrowserFormDraft>) => void
   onSubmit: (values: ExerciseFormValues) => Promise<void>
   onCancel: () => void
 }) => {
-  const [displayName, setDisplayName] = useState(initial?.display_name ?? "")
-  const [slug, setSlug] = useState(initial?.slug ?? "")
-  const [primary, setPrimary] = useState(initial?.primary_muscle_group ?? "chest")
-  const [secondary, setSecondary] = useState<string[]>(initial?.secondary_groups ?? [])
-  const [modality, setModality] = useState(initial?.modality ?? "strength")
-  const [loggingMode, setLoggingMode] = useState(initial?.logging_mode ?? "reps_weight")
-  const [minLoad, setMinLoad] = useState(initial?.suggested_load_range.min?.toString() ?? "")
-  const [maxLoad, setMaxLoad] = useState(initial?.suggested_load_range.max?.toString() ?? "")
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const {
+    displayName,
+    slug,
+    primary,
+    secondary,
+    modality,
+    loggingMode,
+    minLoad,
+    maxLoad,
+    saving,
+    error,
+  } = draft
 
   const muscleOptions = Object.keys(muscleColorMap)
   const modalityOptions = ["strength", "hypertrophy", "conditioning", "bodyweight", "mobility"]
   const loggingOptions = ["reps_weight", "reps", "time_distance", "distance_time"]
 
   const toggleSecondary = (group: string) => {
-    setSecondary((prev) => (prev.includes(group) ? prev.filter((item) => item !== group) : [...prev, group]))
+    updateDraft({
+      secondary: secondary.includes(group)
+        ? secondary.filter((item) => item !== group)
+        : [...secondary, group],
+    })
   }
 
   const handleSave = async () => {
-    setError(null)
+    updateDraft({ error: null })
     if (!displayName.trim()) {
-      setError("Display name is required.")
+      updateDraft({ error: "Display name is required." })
       return
     }
     if (!primary) {
-      setError("Primary muscle group is required.")
+      updateDraft({ error: "Primary muscle group is required." })
       return
     }
-    setSaving(true)
-    try {
-      await onSubmit({
-        display_name: displayName.trim(),
-        slug: slug.trim().length ? slug.trim() : displayName.trim(),
-        primary_muscle_group: primary,
-        secondary_groups: secondary,
-        modality,
-        logging_mode: loggingMode,
-        suggested_load_range: {
-          min: Number(minLoad) || 0,
-          max: Number(maxLoad) || 0,
-        },
-      })
-    } catch (err) {
-      console.warn("ExerciseForm: failed to save", err)
-      setError(err instanceof Error ? err.message : "Failed to save exercise.")
-    } finally {
-      setSaving(false)
-    }
+    await onSubmit({
+      display_name: displayName.trim(),
+      slug: slug.trim().length ? slug.trim() : displayName.trim(),
+      primary_muscle_group: primary,
+      secondary_groups: secondary,
+      modality,
+      logging_mode: loggingMode,
+      suggested_load_range: {
+        min: Number(minLoad) || 0,
+        max: Number(maxLoad) || 0,
+      },
+    })
   }
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing(2), gap: spacing(1.5) }}>
       <Text style={formLabel}>Display name</Text>
-      <TextInput value={displayName} onChangeText={setDisplayName} style={formInput} placeholder="Back Squat" />
+      <TextInput
+        value={displayName}
+        onChangeText={(value) => updateDraft({ displayName: value })}
+        style={formInput}
+        placeholder="Back Squat"
+      />
 
       <Text style={formLabel}>Slug</Text>
-      <TextInput value={slug} onChangeText={setSlug} style={formInput} placeholder="back_squat" />
+      <TextInput value={slug} onChangeText={(value) => updateDraft({ slug: value })} style={formInput} placeholder="back_squat" />
 
       <Text style={formLabel}>Primary muscle group</Text>
       <View style={chipGrid}>
         {muscleOptions.map((group) => (
           <TouchableOpacity
             key={group}
-            onPress={() => setPrimary(group)}
+            onPress={() => updateDraft({ primary: group })}
             style={[chip, primary === group && chipActive]}
           >
             <Text style={{ color: primary === group ? "#0f172a" : palette.text }}>{formatLabel(group)}</Text>
@@ -630,7 +685,7 @@ const ExerciseForm = ({
         {modalityOptions.map((option) => (
           <TouchableOpacity
             key={option}
-            onPress={() => setModality(option)}
+            onPress={() => updateDraft({ modality: option })}
             style={[chip, modality === option && chipActive]}
           >
             <Text style={{ color: modality === option ? "#0f172a" : palette.text }}>{formatLabel(option)}</Text>
@@ -643,7 +698,7 @@ const ExerciseForm = ({
         {loggingOptions.map((option) => (
           <TouchableOpacity
             key={option}
-            onPress={() => setLoggingMode(option)}
+            onPress={() => updateDraft({ loggingMode: option })}
             style={[chip, loggingMode === option && chipActive]}
           >
             <Text style={{ color: loggingMode === option ? "#0f172a" : palette.text }}>{formatLabel(option)}</Text>
@@ -654,11 +709,11 @@ const ExerciseForm = ({
       <View style={{ flexDirection: "row", gap: spacing(1) }}>
         <View style={{ flex: 1 }}>
           <Text style={formLabel}>Suggested min (kg)</Text>
-          <TextInput value={minLoad} onChangeText={setMinLoad} style={formInput} keyboardType="numeric" />
+          <TextInput value={minLoad} onChangeText={(value) => updateDraft({ minLoad: value })} style={formInput} keyboardType="numeric" />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={formLabel}>Suggested max (kg)</Text>
-          <TextInput value={maxLoad} onChangeText={setMaxLoad} style={formInput} keyboardType="numeric" />
+          <TextInput value={maxLoad} onChangeText={(value) => updateDraft({ maxLoad: value })} style={formInput} keyboardType="numeric" />
         </View>
       </View>
 

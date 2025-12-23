@@ -1,13 +1,13 @@
 import React, { useMemo } from "react"
 import { ScrollView, View, Text } from "react-native"
-import { WorkoutEvent, WorkoutState } from "../workoutFlows"
+import { WorkoutEvent } from "../workoutFlows"
 import { Card, SectionHeading, EmptyState, ListRow } from "../ui/components"
 import { spacing, palette, radius } from "../ui/theme"
 import { roundToLocalDay } from "../timePolicy"
+import { useAppState } from "../state/appContext"
 
-type Props = { state: WorkoutState }
-
-const HistoryScreen = ({ state }: Props) => {
+const HistoryScreen = () => {
+  const state = useAppState()
   const groupedDays = useMemo(() => {
     const buckets = new Map<number, WorkoutEvent[]>()
     state.events.forEach((event) => {

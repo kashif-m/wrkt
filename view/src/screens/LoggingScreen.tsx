@@ -1,32 +1,18 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import React, { useCallback, useMemo } from "react"
 import { ScrollView, Text, TextInput, View, TouchableOpacity } from "react-native"
 import Svg, { Polyline, Circle } from "react-native-svg"
-import { insertEvent, updateEvent as persistUpdatedEvent, removeEvent } from "../storage"
-import { WorkoutEvent, WorkoutState, logSet, updateLoggedSet, deleteLoggedSet } from "../workoutFlows"
+import { WorkoutEvent } from "../workoutFlows"
 import { Card, Divider, PrimaryButton, BodyText, ToastBanner } from "../ui/components"
 import { palette, radius, spacing } from "../ui/theme"
-import {
-  ExerciseCatalogEntry,
-  fetchMergedCatalog,
-  loadFavoriteExercises,
-  setExerciseFavorite,
-} from "../exercise/catalogStorage"
 import { roundToLocalDay } from "../timePolicy"
 import { getMuscleColor } from "../ui/muscleColors"
-
-type Props = {
-  state: WorkoutState
-  onStateChange: (state: WorkoutState) => void
-  refreshFromStorage: () => Promise<void>
-  prefillExerciseName?: string
-  initialTab?: SessionTab
-  logDate?: Date
-}
+import { useAppActions, useAppDispatch, useAppState } from "../state/appContext"
+import { LoggingFields } from "../state/appState"
 
 const sessionTabs = ["Track", "History", "Trends"] as const
 export type SessionTab = (typeof sessionTabs)[number]
 
-const INITIAL_FIELDS = { reps: "", weight: "", duration: "", distance: "" }
+const INITIAL_FIELDS: LoggingFields = { reps: "", weight: "", duration: "", distance: "" }
 type FieldKey = keyof typeof INITIAL_FIELDS
 type FieldConfig = {
   key: FieldKey
@@ -135,75 +121,30 @@ const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
   ],
 }
 
-const LoggingScreen = ({
-  state,
-  onStateChange,
-  refreshFromStorage,
-  prefillExerciseName,
-  initialTab = "Track",
-  logDate,
-}: Props) => {
-  const [catalog, setCatalog] = useState<ExerciseCatalogEntry[]>([])
-  const [selectedExercise, setSelectedExercise] = useState<ExerciseCatalogEntry | null>(null)
-  const [fields, setFields] = useState(INITIAL_FIELDS)
-  const [sessionTab, setSessionTab] = useState<SessionTab>(initialTab)
-  const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeKey>("3m")
-  const [selectedMetric, setSelectedMetric] = useState<TrendMetricKey>("estimated_1rm")
-  const [loggingDate] = useState(() => logDate ?? new Date())
-  const [prefillApplied, setPrefillApplied] = useState(false)
-  const [editingEventId, setEditingEventId] = useState<string | null>(null)
-  const [statusBanner, setStatusBanner] = useState<{ text: string; tone: "success" | "info" | "danger" } | null>(null)
-  const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const [favoriteSlugs, setFavoriteSlugs] = useState<string[]>([])
+const LoggingScreen = () => {
+  const state = useAppState()
+  const dispatch = useAppDispatch()
+  const actions = useAppActions()
+  const catalog = state.catalog.entries
+  const favoriteSlugs = state.catalog.favorites
+  const selectedExercise = useMemo(
+    () => catalog.find((entry) => entry.display_name === state.logging.exerciseName) ?? null,
+    [catalog, state.logging.exerciseName],
+  )
+  const fields = state.logging.fields
+  const sessionTab = state.logging.tab
+  const selectedTrendRange = state.logging.selectedTrendRange
+  const selectedMetric = state.logging.selectedMetric
+  const loggingDate = state.logging.logDate
+  const editingEventId = state.logging.editingEventId
+  const statusBanner = state.logging.status
 
-  useEffect(() => {
-    fetchMergedCatalog()
-      .then((list) => {
-        console.log("LoggingScreen: catalog loaded", list.length)
-        setCatalog(list)
-      })
-      .catch((error) => console.warn("Failed to load catalog", error))
-    loadFavoriteExercises().then(setFavoriteSlugs).catch((error) => console.warn("Failed to load favorites", error))
-  }, [])
-
-  useEffect(() => {
-    setPrefillApplied(false)
-  }, [prefillExerciseName])
-
-  useEffect(() => {
-    setEditingEventId(null)
-  }, [selectedExercise])
-
-  useEffect(() => {
-    return () => {
-      if (statusTimerRef.current) {
-        clearTimeout(statusTimerRef.current)
-      }
-    }
-  }, [])
-
-  const showStatus = useCallback((text: string, tone: "success" | "info" | "danger" = "success") => {
-    if (statusTimerRef.current) {
-      clearTimeout(statusTimerRef.current)
-    }
-    setStatusBanner({ text, tone })
-    statusTimerRef.current = setTimeout(() => {
-      setStatusBanner(null)
-    }, 2500)
-  }, [])
-
-  useEffect(() => {
-    setSessionTab(initialTab)
-  }, [initialTab])
-
-  useEffect(() => {
-    if (!prefillExerciseName || prefillApplied || catalog.length === 0) return
-    const match = catalog.find((entry) => entry.display_name === prefillExerciseName)
-    if (match) {
-      setSelectedExercise(match)
-      setPrefillApplied(true)
-    }
-  }, [prefillExerciseName, prefillApplied, catalog])
+  const showStatus = useCallback(
+    (text: string, tone: "success" | "info" | "danger" = "success") => {
+      dispatch({ type: "log/status", status: { text, tone } })
+    },
+    [dispatch],
+  )
 
   const fieldDefinitions = useMemo(() => {
     return selectedExercise
@@ -233,20 +174,6 @@ const LoggingScreen = ({
       (event) => formatValue(event.payload?.exercise) === selectedExercise.display_name,
     )
   }, [state.events, selectedExercise])
-
-  useEffect(() => {
-    if (!selectedExercise) {
-      setFields(INITIAL_FIELDS)
-      return
-    }
-    const sorted = [...historySets].sort((a, b) => b.ts - a.ts)
-    const lastEvent = sorted[0]
-    if (!lastEvent) {
-      setFields(INITIAL_FIELDS)
-      return
-    }
-    setFields(fieldsFromEvent(lastEvent))
-  }, [selectedExercise, historySets])
 
   const groupedHistory = useMemo(() => {
     const groups = new Map<number, WorkoutEvent[]>()
@@ -314,64 +241,45 @@ const LoggingScreen = ({
     if (!selectedExercise) return
     const payload = buildPayloadFromFields(fields, selectedExercise.display_name)
     console.log("LoggingScreen: submitting payload", payload)
-    const event = logSet(state, {
-      event_id: `evt-${Date.now()}`,
-      tracker_id: "workout",
-      ts: loggingDate.getTime(),
-      payload,
-      meta: {},
-    })
-    const nextState = await event
-    onStateChange(nextState)
-    await insertEvent(nextState.events[nextState.events.length - 1])
-    await refreshFromStorage()
+    await actions.logSet(payload)
     const nextFields = { ...fields }
     if (typeof payload.reps === "number") nextFields.reps = payload.reps.toString()
     if (typeof payload.weight === "number") nextFields.weight = payload.weight.toString()
     if (typeof payload.duration === "number") nextFields.duration = payload.duration.toString()
     if (typeof payload.distance === "number") nextFields.distance = payload.distance.toString()
-    setFields(nextFields)
-    setSessionTab("Track")
+    dispatch({ type: "log/fields", fields: nextFields })
+    dispatch({ type: "log/tab", tab: "Track" })
     showStatus("Training saved", "success")
   }
 
   const handleSelectSet = (event: WorkoutEvent) => {
-    setEditingEventId(event.event_id)
-    setFields(fieldsFromEvent(event))
-    setSessionTab("Track")
+    dispatch({ type: "log/editing", eventId: event.event_id })
+    dispatch({ type: "log/fields", fields: fieldsFromEvent(event) })
+    dispatch({ type: "log/tab", tab: "Track" })
   }
 
   const handleUpdateSet = async () => {
     if (!selectedExercise || !editingEventId) return
     const payload = buildPayloadFromFields(fields, selectedExercise.display_name)
-    const nextState = await updateLoggedSet(state, editingEventId, payload)
-    onStateChange(nextState)
-    const updatedEvent = nextState.events.find((event) => event.event_id === editingEventId)
-    if (updatedEvent) {
-      await persistUpdatedEvent(updatedEvent)
-    }
-    await refreshFromStorage()
-    setEditingEventId(null)
+    await actions.updateSet(editingEventId, payload)
+    dispatch({ type: "log/editing", eventId: null })
     showStatus("Set updated", "info")
   }
 
   const handleDeleteSet = async () => {
     if (!editingEventId) return
-    const nextState = deleteLoggedSet(state, editingEventId)
-    onStateChange(nextState)
-    await removeEvent(editingEventId)
-    await refreshFromStorage()
-    setEditingEventId(null)
-    setFields(INITIAL_FIELDS)
+    await actions.deleteSet(editingEventId)
+    dispatch({ type: "log/editing", eventId: null })
+    dispatch({ type: "log/fields", fields: { ...INITIAL_FIELDS } })
     showStatus("Set deleted", "danger")
   }
 
   const setFieldValue = (key: FieldKey, delta: number) => {
-    setFields((prev) => {
-      const current = parseFloat(prev[key]) || 0
-      const next = Math.max(0, Math.round((current + delta) * 100) / 100)
-      return { ...prev, [key]: next === 0 ? "" : next.toString() }
-    })
+    const nextFields = { ...fields }
+    const current = parseFloat(nextFields[key]) || 0
+    const next = Math.max(0, Math.round((current + delta) * 100) / 100)
+    nextFields[key] = next === 0 ? "" : next.toString()
+    dispatch({ type: "log/fields", fields: nextFields })
   }
 
   return (
@@ -395,13 +303,9 @@ const LoggingScreen = ({
                 <Text style={{ color: palette.text, fontSize: 18, fontWeight: "700" }}>
                   {selectedExercise.display_name}
                 </Text>
-                <TouchableOpacity onPress={async () => {
-                  const next = await setExerciseFavorite(
-                    selectedExercise.slug,
-                    !favoriteSlugs.includes(selectedExercise.slug),
-                  )
-                  setFavoriteSlugs(next)
-                }}>
+                <TouchableOpacity
+                  onPress={() => actions.toggleFavorite(selectedExercise.slug, !favoriteSlugs.includes(selectedExercise.slug))}
+                >
                   <Text style={{ fontSize: 18, color: favoriteSlugs.includes(selectedExercise.slug) ? palette.primary : palette.mutedText }}>
                     {favoriteSlugs.includes(selectedExercise.slug) ? "★" : "☆"}
                   </Text>
@@ -427,7 +331,7 @@ const LoggingScreen = ({
               {sessionTabs.map((tab) => (
                 <TouchableOpacity
                   key={tab}
-                  onPress={() => setSessionTab(tab)}
+                  onPress={() => dispatch({ type: "log/tab", tab })}
                   style={{
                     flex: 1,
                     paddingVertical: spacing(1),
@@ -455,7 +359,9 @@ const LoggingScreen = ({
                       step={definition.step}
                       onIncrement={() => setFieldValue(definition.key, definition.step)}
                       onDecrement={() => setFieldValue(definition.key, -definition.step)}
-                      onChange={(value) => setFields((prev) => ({ ...prev, [definition.key]: value }))}
+                      onChange={(value) =>
+                        dispatch({ type: "log/fields", fields: { ...fields, [definition.key]: value } })
+                      }
                     />
                   ))}
                 </View>
@@ -516,7 +422,7 @@ const LoggingScreen = ({
                     {Object.entries(metricDefinitions).map(([key, def]) => (
                       <TouchableOpacity
                         key={key}
-                        onPress={() => setSelectedMetric(key as TrendMetricKey)}
+                        onPress={() => dispatch({ type: "log/trendMetric", metric: key as TrendMetricKey })}
                         style={[
                           pillStyle,
                           selectedMetric === key && { backgroundColor: palette.primary },
@@ -543,7 +449,7 @@ const LoggingScreen = ({
                     {trendRangeOptions.map((option) => (
                       <TouchableOpacity
                         key={option.key}
-                        onPress={() => setSelectedTrendRange(option.key)}
+                        onPress={() => dispatch({ type: "log/trendRange", range: option.key })}
                         style={[
                           pillStyle,
                           {
@@ -717,6 +623,14 @@ const readNumber = (value: unknown): number | undefined => {
 }
 
 type LoggedSetPayload = {
+  exercise: string
+  reps?: number
+  weight?: number
+  duration?: number
+  distance?: number
+}
+
+type LoggedSetRead = {
   exercise?: string
   reps?: number
   weight?: number
@@ -724,7 +638,7 @@ type LoggedSetPayload = {
   distance?: number
 }
 
-const readLoggedSetPayload = (event: WorkoutEvent): LoggedSetPayload => ({
+const readLoggedSetPayload = (event: WorkoutEvent): LoggedSetRead => ({
   exercise: typeof event.payload?.exercise === "string" ? event.payload.exercise : undefined,
   reps: readNumber(event.payload?.reps),
   weight: readNumber(event.payload?.weight),
