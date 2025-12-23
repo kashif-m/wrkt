@@ -1,25 +1,38 @@
 import React, { useMemo } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import { PlanSuggestion, PlannerKind } from '../workoutFlows';
+import { PlanSuggestion } from '../workoutFlows';
 import { Card, SectionHeading, BodyText } from '../ui/components';
 import { palette, spacing, radius } from '../ui/theme';
 import { useAppDispatch, useAppState } from '../state/appContext';
+import {
+  LabelText,
+  MetricKey,
+  PlannerKind,
+  asColorHex,
+  asLabelText,
+  asMetricKey,
+  asPlannerKind,
+} from '../domain/types';
 
-const plannerOptions: { key: PlannerKind; label: string; copy: string }[] = [
+const plannerOptions: {
+  key: PlannerKind;
+  label: LabelText;
+  copy: LabelText;
+}[] = [
   {
-    key: 'strength',
-    label: 'Strength',
-    copy: 'Focus on load and estimated 1RM jumps.',
+    key: asPlannerKind('strength'),
+    label: asLabelText('Strength'),
+    copy: asLabelText('Focus on load and estimated 1RM jumps.'),
   },
   {
-    key: 'hypertrophy',
-    label: 'Hypertrophy',
-    copy: 'Prioritize extra sets or reps for volume.',
+    key: asPlannerKind('hypertrophy'),
+    label: asLabelText('Hypertrophy'),
+    copy: asLabelText('Prioritize extra sets or reps for volume.'),
   },
   {
-    key: 'conditioning',
-    label: 'Conditioning',
-    copy: 'Increase work duration or total distance.',
+    key: asPlannerKind('conditioning'),
+    label: asLabelText('Conditioning'),
+    copy: asLabelText('Increase work duration or total distance.'),
   },
 ];
 
@@ -45,11 +58,13 @@ const SuggestionsScreen = () => {
       }}
     >
       <Card>
-        <SectionHeading label="Planner focus" />
+        <SectionHeading label={asLabelText('Planner focus')} />
         <BodyText
           style={{ color: palette.mutedText, marginBottom: spacing(1) }}
         >
-          Pick which coaching style should drive the next recommendations.
+          {asLabelText(
+            'Pick which coaching style should drive the next recommendations.',
+          )}
         </BodyText>
         <View
           style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing(1) }}
@@ -77,7 +92,7 @@ const SuggestionsScreen = () => {
               >
                 <Text
                   style={{
-                    color: active ? '#0f172a' : palette.text,
+                    color: active ? asColorHex('#0f172a') : palette.text,
                     fontWeight: '600',
                   }}
                 >
@@ -95,14 +110,14 @@ const SuggestionsScreen = () => {
       </Card>
 
       <Card>
-        <SectionHeading label="Next session suggestions" />
+        <SectionHeading label={asLabelText('Next session suggestions')} />
         {loading ? (
           <BodyText style={{ color: palette.mutedText }}>
-            Crunching the last few sessions…
+            {asLabelText('Crunching the last few sessions…')}
           </BodyText>
         ) : suggestions.length === 0 ? (
           <BodyText style={{ color: palette.mutedText }}>
-            Log a recent set for this focus to unlock coaching tips.
+            {asLabelText('Log a recent set for this focus to unlock coaching tips.')}
           </BodyText>
         ) : (
           suggestions.map(suggestion => (
@@ -118,7 +133,7 @@ const SuggestionCard = ({ suggestion }: { suggestion: PlanSuggestion }) => {
   const deltaEntries = Object.entries(suggestion.delta ?? {})
     .filter(([, value]) => typeof value === 'number')
     .map(([metric, value]) => ({
-      metric,
+      metric: asMetricKey(metric),
       value,
     }));
 
@@ -165,13 +180,15 @@ const SuggestionCard = ({ suggestion }: { suggestion: PlanSuggestion }) => {
   );
 };
 
-const formatMetric = (metric: string) =>
-  metric
-    .split('_')
-    .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1))
-    .join(' ');
+const formatMetric = (metric: MetricKey) =>
+  asLabelText(
+    String(metric)
+      .split('_')
+      .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1))
+      .join(' '),
+  );
 
 const formatDeltaValue = (value: number) =>
-  `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
+  asLabelText(`${value >= 0 ? '+' : ''}${value.toFixed(1)}`);
 
 export default SuggestionsScreen;

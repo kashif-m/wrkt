@@ -5,6 +5,7 @@ import { Card, SectionHeading, EmptyState, ListRow } from '../ui/components';
 import { spacing, palette, radius } from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { useAppState } from '../state/appContext';
+import { ExerciseName, LabelText, asExerciseName, asLabelText } from '../domain/types';
 
 const HistoryScreen = () => {
   const state = useAppState();
@@ -28,12 +29,12 @@ const HistoryScreen = () => {
         gap: spacing(1.5),
       }}
     >
-      <SectionHeading label="Workout history" />
+      <SectionHeading label={asLabelText('Workout history')} />
       {groupedDays.length === 0 ? (
         <Card>
           <EmptyState
-            title="No workouts yet"
-            subtitle="Log a session to start building your history."
+            title={asLabelText('No workouts yet')}
+            subtitle={asLabelText('Log a session to start building your history.')}
           />
         </Card>
       ) : (
@@ -71,9 +72,11 @@ const HistoryScreen = () => {
 export default HistoryScreen;
 
 const summarizeDay = (events: WorkoutEvent[]) => {
-  const byExercise = new Map<string, WorkoutEvent[]>();
+  const byExercise = new Map<ExerciseName, WorkoutEvent[]>();
   events.forEach(event => {
-    const exercise = String(event.payload?.exercise ?? 'Unlabeled');
+    const exercise = asExerciseName(
+      String(event.payload?.exercise ?? 'Unlabeled'),
+    );
     const bucket = byExercise.get(exercise) ?? [];
     bucket.push(event);
     byExercise.set(exercise, bucket);
@@ -98,9 +101,11 @@ const summarizeDay = (events: WorkoutEvent[]) => {
         ? detailParts.join(' · ')
         : 'Logged sets';
       return {
-        exercise,
-        detail,
-        setsLabel: `${sets.length} ${sets.length === 1 ? 'set' : 'sets'}`,
+        exercise: asLabelText(String(exercise)),
+        detail: asLabelText(detail),
+        setsLabel: asLabelText(
+          `${sets.length} ${sets.length === 1 ? 'set' : 'sets'}`,
+        ),
         volume: totals.volume,
       };
     })

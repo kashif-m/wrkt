@@ -9,6 +9,24 @@ import {
   TextStyle,
 } from 'react-native';
 import { palette, radius, spacing, typography } from './theme';
+import {
+  ColorHex,
+  ColorValue,
+  DisplayLabel,
+  LabelText,
+  NumericInput,
+  PlaceholderText,
+  ToastText,
+  ToastTone,
+  asColorValue,
+  asToastTone,
+  unwrapToastTone,
+  unwrapColorHex,
+  unwrapColorValue,
+  unwrapLabelText,
+  unwrapPlaceholderText,
+  unwrapToastText,
+} from '../domain/types';
 
 export const ScreenContainer = ({
   children,
@@ -43,9 +61,9 @@ export const Card = ({
   </View>
 );
 
-export const SectionHeading = ({ label }: { label: string }) => (
+export const SectionHeading = ({ label }: { label: LabelText }) => (
   <Text style={[typography.section, { marginBottom: spacing(1) }]}>
-    {label}
+    {unwrapLabelText(label)}
   </Text>
 );
 
@@ -61,12 +79,14 @@ export const LabeledText = ({
   label,
   value,
 }: {
-  label: string;
-  value: string;
+  label: LabelText;
+  value: LabelText;
 }) => (
   <View>
-    <Text style={typography.label}>{label.toUpperCase()}</Text>
-    <Text style={[typography.body, { fontWeight: '600' }]}>{value}</Text>
+    <Text style={typography.label}>{unwrapLabelText(label).toUpperCase()}</Text>
+    <Text style={[typography.body, { fontWeight: '600' }]}>
+      {unwrapLabelText(value)}
+    </Text>
   </View>
 );
 
@@ -77,9 +97,9 @@ export const ListRow = ({
   onPress,
   showDivider = true,
 }: {
-  title: string;
-  subtitle?: string;
-  value?: string;
+  title: LabelText;
+  subtitle?: LabelText;
+  value?: LabelText;
   onPress?: () => void;
   showDivider?: boolean;
 }) => (
@@ -96,15 +116,19 @@ export const ListRow = ({
     }}
   >
     <View style={{ flex: 1, marginRight: spacing(1) }}>
-      <Text style={{ color: palette.text, fontWeight: '600' }}>{title}</Text>
+      <Text style={{ color: palette.text, fontWeight: '600' }}>
+        {unwrapLabelText(title)}
+      </Text>
       {subtitle ? (
         <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-          {subtitle}
+          {unwrapLabelText(subtitle)}
         </Text>
       ) : null}
     </View>
     {value ? (
-      <Text style={{ color: palette.mutedText, fontSize: 12 }}>{value}</Text>
+      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+        {unwrapLabelText(value)}
+      </Text>
     ) : null}
   </TouchableOpacity>
 );
@@ -115,35 +139,35 @@ export const EmptyState = ({
   actionLabel,
   onPress,
 }: {
-  title: string;
-  subtitle?: string;
-  actionLabel?: string;
+  title: LabelText;
+  subtitle?: LabelText;
+  actionLabel?: LabelText;
   onPress?: () => void;
 }) => (
   <View style={{ alignItems: 'center', gap: spacing(0.5) }}>
     <Text style={{ color: palette.text, fontWeight: '700', fontSize: 16 }}>
-      {title}
+      {unwrapLabelText(title)}
     </Text>
     {subtitle ? (
-      <Text style={{ color: palette.mutedText, fontSize: 13 }}>{subtitle}</Text>
+      <Text style={{ color: palette.mutedText, fontSize: 13 }}>
+        {unwrapLabelText(subtitle)}
+      </Text>
     ) : null}
     {actionLabel && onPress ? (
       <TouchableOpacity onPress={onPress} style={{ marginTop: spacing(0.5) }}>
         <Text style={{ color: palette.primary, fontWeight: '600' }}>
-          {actionLabel}
+          {unwrapLabelText(actionLabel)}
         </Text>
       </TouchableOpacity>
     ) : null}
   </View>
 );
 
-type ToastTone = 'success' | 'info' | 'danger';
-
 export const ToastBanner = ({
   text,
-  tone = 'info',
+  tone,
 }: {
-  text: string;
+  text: ToastText;
   tone?: ToastTone;
 }) => {
   const toneColors = {
@@ -151,19 +175,22 @@ export const ToastBanner = ({
     info: palette.primary,
     danger: palette.danger,
   } as const;
-  const color = toneColors[tone];
+  const toneKey = unwrapToastTone(tone ?? asToastTone('info'));
+  const color = toneColors[toneKey] as unknown as ColorHex;
   return (
     <View
       style={{
         padding: spacing(1),
         borderRadius: radius.card,
         borderWidth: 1,
-        borderColor: color,
-        backgroundColor: addAlpha(color, 0.18),
+        borderColor: unwrapColorHex(color),
+        backgroundColor: unwrapColorValue(addAlpha(color, 0.18)),
         marginBottom: spacing(1),
       }}
     >
-      <Text style={{ color: palette.text, fontWeight: '600' }}>{text}</Text>
+      <Text style={{ color: palette.text, fontWeight: '600' }}>
+        {unwrapToastText(text)}
+      </Text>
     </View>
   );
 };
@@ -194,7 +221,7 @@ export const PillButton = ({
   active = false,
   onPress,
 }: {
-  label: string;
+  label: LabelText;
   active?: boolean;
   onPress: () => void;
 }) => (
@@ -212,7 +239,7 @@ export const PillButton = ({
     <Text
       style={{ color: active ? '#0f172a' : palette.text, fontWeight: '600' }}
     >
-      {label}
+      {unwrapLabelText(label)}
     </Text>
   </TouchableOpacity>
 );
@@ -222,7 +249,7 @@ export const PrimaryButton = ({
   onPress,
   disabled = false,
 }: {
-  label: string;
+  label: LabelText;
   onPress: () => void;
   disabled?: boolean;
 }) => (
@@ -243,7 +270,7 @@ export const PrimaryButton = ({
         fontWeight: '600',
       }}
     >
-      {label}
+      {unwrapLabelText(label)}
     </Text>
   </TouchableOpacity>
 );
@@ -255,18 +282,18 @@ export const InputField = ({
   onChangeText,
   keyboardType = 'default',
 }: {
-  label: string;
-  value: string;
-  placeholder?: string;
-  onChangeText: (text: string) => void;
+  label: LabelText;
+  value: NumericInput;
+  placeholder?: PlaceholderText;
+  onChangeText: (text: NumericInput) => void;
   keyboardType?: 'default' | 'numeric';
 }) => (
   <View style={{ marginBottom: spacing(1.5) }}>
-    <Text style={typography.label}>{label.toUpperCase()}</Text>
+    <Text style={typography.label}>{unwrapLabelText(label).toUpperCase()}</Text>
     <TextInput
       value={value}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
+      onChangeText={text => onChangeText(text as NumericInput)}
+      placeholder={placeholder ? unwrapPlaceholderText(placeholder) : undefined}
       placeholderTextColor={palette.mutedText}
       keyboardType={keyboardType}
       style={{
@@ -310,11 +337,11 @@ const sheetCard = {
   padding: spacing(2),
 };
 
-const addAlpha = (hex: string, alpha: number) => {
-  const sanitized = hex.replace('#', '');
-  if (sanitized.length !== 6) return hex;
+const addAlpha = (hex: ColorHex, alpha: number): ColorValue => {
+  const sanitized = unwrapColorHex(hex).replace('#', '');
+  if (sanitized.length !== 6) return asColorValue(unwrapColorHex(hex));
   const r = parseInt(sanitized.slice(0, 2), 16);
   const g = parseInt(sanitized.slice(2, 4), 16);
   const b = parseInt(sanitized.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})` as ColorValue;
 };

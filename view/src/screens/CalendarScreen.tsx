@@ -24,7 +24,14 @@ import {
   useAppState,
 } from '../state/appContext';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
-import { ExerciseName, asDisplayLabel, asExerciseName } from '../domain/types';
+import {
+  ColorHex,
+  ExerciseName,
+  MuscleGroup,
+  asDisplayLabel,
+  asExerciseName,
+  asScreenKey,
+} from '../domain/types';
 
 const DAYS_IN_WEEK = 7;
 const TOTAL_CELLS = 42;
@@ -55,7 +62,7 @@ const CalendarScreen = () => {
   }, [catalog]);
 
   const dayColorMap = useMemo(() => {
-    const buckets = new Map<number, string[]>();
+    const buckets = new Map<number, ColorHex[]>();
     events.forEach(event => {
       const day = roundToLocalDay(event.ts);
       const exerciseName =
@@ -74,7 +81,7 @@ const CalendarScreen = () => {
   }, [events, catalogMap]);
 
   const legendEntries = useMemo(() => {
-    const groups = new Map<string, string>();
+    const groups = new Map<MuscleGroup, ColorHex>();
     events.forEach(event => {
       const exerciseName =
         typeof event.payload?.exercise === 'string'
@@ -194,7 +201,7 @@ const CalendarScreen = () => {
     <View style={{ flex: 1 }}>
       <View style={headerRow}>
         <TouchableOpacity
-          onPress={() => actions.navigate('home')}
+          onPress={() => actions.navigate(asScreenKey('home'))}
           style={headerButton}
         >
           <ArrowLeftIcon width={18} height={18} color={palette.text} />
@@ -273,7 +280,7 @@ const CalendarScreen = () => {
               ]}
               onPress={() => {
                 actions.setSelectedDate(day);
-                actions.navigate('home');
+                actions.navigate(asScreenKey('home'));
               }}
             >
               <Text style={{ color: palette.text, fontWeight: '600' }}>

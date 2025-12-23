@@ -8,8 +8,7 @@ import DumbbellIcon from '../assets/dumbbell.svg';
 import ChartIcon from '../assets/chart.svg';
 import SettingsIcon from '../assets/settings.svg';
 import { palette, spacing } from '../ui/theme';
-
-export type NavKey = 'home' | 'calendar' | 'browser' | 'analytics' | 'coach';
+import { LabelText, NavKey, asLabelText, asNavKey } from '../domain/types';
 
 type Props = {
   current: NavKey;
@@ -18,16 +17,32 @@ type Props = {
 
 const BottomNav = ({ current, onSelect }: Props) => {
   type IconPair = { outline: React.FC<SvgProps>; filled?: React.FC<SvgProps> };
-  const items: Array<{ key: NavKey; label: string; icon: IconPair }> = [
+  const items: Array<{ key: NavKey; label: LabelText; icon: IconPair }> = [
     {
-      key: 'home',
-      label: 'Home',
+      key: asNavKey('home'),
+      label: asLabelText('Home'),
       icon: { outline: HomeOutlineIcon, filled: HomeFilledIcon },
     },
-    { key: 'calendar', label: 'Calendar', icon: { outline: CalendarIcon } },
-    { key: 'browser', label: 'Browse', icon: { outline: DumbbellIcon } },
-    { key: 'analytics', label: 'Trends', icon: { outline: ChartIcon } },
-    { key: 'coach', label: 'More', icon: { outline: SettingsIcon } },
+    {
+      key: asNavKey('calendar'),
+      label: asLabelText('Calendar'),
+      icon: { outline: CalendarIcon },
+    },
+    {
+      key: asNavKey('browser'),
+      label: asLabelText('Browse'),
+      icon: { outline: DumbbellIcon },
+    },
+    {
+      key: asNavKey('analytics'),
+      label: asLabelText('Trends'),
+      icon: { outline: ChartIcon },
+    },
+    {
+      key: asNavKey('coach'),
+      label: asLabelText('More'),
+      icon: { outline: SettingsIcon },
+    },
   ];
 
   return (

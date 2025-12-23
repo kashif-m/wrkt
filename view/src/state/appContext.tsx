@@ -1,6 +1,6 @@
 import React, { createContext, useContext } from 'react';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
-import { ExerciseName, ExerciseSlug } from '../domain/types';
+import { EventId, ExerciseName, ExerciseSlug } from '../domain/types';
 import { RootState, Action } from './appState';
 
 export type AppDispatch = React.Dispatch<Action>;
@@ -28,7 +28,7 @@ export type RootStateActions = {
     distance?: number;
   }) => Promise<void>;
   updateSet: (
-    eventId: string,
+    eventId: EventId,
     payload: {
       exercise: ExerciseName;
       reps?: number;
@@ -37,7 +37,7 @@ export type RootStateActions = {
       distance?: number;
     },
   ) => Promise<void>;
-  deleteSet: (eventId: string) => Promise<void>;
+  deleteSet: (eventId: EventId) => Promise<void>;
   saveCustomExercise: (
     values: ExerciseCatalogEntry,
     originalSlug?: ExerciseSlug,

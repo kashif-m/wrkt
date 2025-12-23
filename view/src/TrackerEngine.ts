@@ -1,26 +1,30 @@
+import { BrandedString, DslText, JsonText, PlannerKind } from './domain/types';
+
 export type JsonValue =
   | null
   | boolean
   | number
-  | string
+  | BrandedString
   | JsonValue[]
-  | { [key: string]: JsonValue };
-export type JsonObject = { [key: string]: JsonValue };
+  | JsonObject;
+export interface JsonObject {
+  [key: string]: JsonValue;
+}
 export type JsonArray = JsonValue[];
 
 interface TrackerEngineBinding {
-  compileTracker: (dsl: string) => string;
-  validateEvent: (dsl: string, event: string) => string;
-  compute: (dsl: string, events: string, query: string) => string;
+  compileTracker: (dsl: DslText) => JsonText;
+  validateEvent: (dsl: DslText, event: JsonText) => JsonText;
+  compute: (dsl: DslText, events: JsonText, query: JsonText) => JsonText;
   simulate: (
-    dsl: string,
-    base: string,
-    hypotheticals: string,
-    query: string,
-  ) => string;
-  suggest: (dsl: string, events: string, planner: string) => string;
-  getExerciseCatalog: () => string;
-  validateExercise: (entry: string) => string;
+    dsl: DslText,
+    base: JsonText,
+    hypotheticals: JsonText,
+    query: JsonText,
+  ) => JsonText;
+  suggest: (dsl: DslText, events: JsonText, planner: PlannerKind) => JsonText;
+  getExerciseCatalog: () => JsonText;
+  validateExercise: (entry: JsonText) => JsonText;
 }
 
 declare global {
@@ -45,46 +49,50 @@ const ensureBinding = (): TrackerEngineBinding => {
   return binding;
 };
 
-const parse = <T extends JsonValue>(value: string): T => JSON.parse(value) as T;
-const stringify = (value: JsonValue) => JSON.stringify(value);
+const parse = <T extends JsonValue>(value: JsonText): T =>
+  JSON.parse(value) as T;
+const stringify = (value: JsonValue): JsonText =>
+  JSON.stringify(value) as JsonText;
 
 const call = <T extends JsonValue>(
   fn: keyof TrackerEngineBinding,
-  ...args: string[]
+  ...args: Array<DslText | JsonText | PlannerKind>
 ): T => {
   const engine = ensureBinding();
-  const method = engine[fn] as (...inner: string[]) => string;
+  const method = engine[fn] as (
+    ...inner: Array<DslText | JsonText | PlannerKind>
+  ) => JsonText;
   const raw = method(...args);
   return parse<T>(raw);
 };
 
-export const validateEvent = async (dsl: string, event: JsonObject) => {
+export const validateEvent = async (dsl: DslText, event: JsonObject) => {
   return call<JsonObject>('validateEvent', dsl, stringify(event));
 };
 
 export const compute = async (
-  dsl: string,
+  dsl: DslText,
   events: JsonObject[],
   query: JsonObject,
 ) => {
   return call<JsonObject>(
     'compute',
     dsl,
-    JSON.stringify(events),
+    JSON.stringify(events) as JsonText,
     stringify(query),
   );
 };
 
 export const suggest = async (
-  dsl: string,
+  dsl: DslText,
   events: JsonObject[],
-  planner: string,
+  planner: PlannerKind,
 ) => {
-  return call<JsonArray>('suggest', dsl, JSON.stringify(events), planner);
+  return call<JsonArray>('suggest', dsl, JSON.stringify(events) as JsonText, planner);
 };
 
 export const simulate = async (
-  dsl: string,
+  dsl: DslText,
   baseEvents: JsonObject[],
   hypotheticals: JsonObject[],
   query: JsonObject,
@@ -92,12 +100,12 @@ export const simulate = async (
   call<JsonObject>(
     'simulate',
     dsl,
-    JSON.stringify(baseEvents),
-    JSON.stringify(hypotheticals),
+    JSON.stringify(baseEvents) as JsonText,
+    JSON.stringify(hypotheticals) as JsonText,
     stringify(query),
   );
 
-export const compileTracker = async (dsl: string) =>
+export const compileTracker = async (dsl: DslText) =>
   call<JsonObject>('compileTracker', dsl);
 
 export const getExerciseCatalog = async () =>

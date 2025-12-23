@@ -1,15 +1,31 @@
-export const palette = {
-  background: '#0b1120',
-  surface: '#111b32',
-  mutedSurface: '#18213d',
-  primary: '#60a5fa',
-  primaryMuted: '#1d4ed8',
-  text: '#f1f5f9',
-  mutedText: '#93a4c3',
-  border: '#1f2a44',
-  success: '#4ade80',
-  warning: '#facc15',
-  danger: '#f87171',
+import { ColorHex, asColorHex } from '../domain/types';
+
+type Palette = {
+  background: ColorHex;
+  surface: ColorHex;
+  mutedSurface: ColorHex;
+  primary: ColorHex;
+  primaryMuted: ColorHex;
+  text: ColorHex;
+  mutedText: ColorHex;
+  border: ColorHex;
+  success: ColorHex;
+  warning: ColorHex;
+  danger: ColorHex;
+};
+
+export const palette: Palette = {
+  background: asColorHex('#0b1120'),
+  surface: asColorHex('#111b32'),
+  mutedSurface: asColorHex('#18213d'),
+  primary: asColorHex('#60a5fa'),
+  primaryMuted: asColorHex('#1d4ed8'),
+  text: asColorHex('#f1f5f9'),
+  mutedText: asColorHex('#93a4c3'),
+  border: asColorHex('#1f2a44'),
+  success: asColorHex('#4ade80'),
+  warning: asColorHex('#facc15'),
+  danger: asColorHex('#f87171'),
 };
 
 export const spacing = (factor: number) => factor * 8;

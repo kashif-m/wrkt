@@ -25,14 +25,21 @@ import {
 } from '../state/appContext';
 import { LoggingFields } from '../state/appState';
 import {
+  ColorHex,
+  ColorValue,
   DisplayLabel,
-  asExerciseName,
   ExerciseName,
   LoggingMode,
   LoggingModeValue,
   NumericInput,
+  ToastText,
+  ToastTone,
   asDisplayLabel,
+  asExerciseName,
+  asLabelText,
   asNumericInput,
+  asToastText,
+  asToastTone,
   unwrapLoggingMode,
 } from '../domain/types';
 
@@ -247,7 +254,7 @@ const LoggingScreen = () => {
   const statusBanner = state.logging.status;
 
   const showStatus = useCallback(
-    (text: string, tone: 'success' | 'info' | 'danger' = 'success') => {
+    (text: ToastText, tone: ToastTone = asToastTone('success')) => {
       dispatch({ type: 'log/status', status: { text, tone } });
     },
     [dispatch],
@@ -376,7 +383,7 @@ const LoggingScreen = () => {
       nextFields.distance = asNumericInput(payload.distance.toString());
     dispatch({ type: 'log/fields', fields: nextFields });
     dispatch({ type: 'log/tab', tab: 'Track' });
-    showStatus('Training saved', 'success');
+    showStatus(asToastText('Training saved'), asToastTone('success'));
   };
 
   const handleSelectSet = (event: WorkoutEvent) => {
@@ -393,7 +400,7 @@ const LoggingScreen = () => {
     );
     await actions.updateSet(editingEventId, payload);
     dispatch({ type: 'log/editing', eventId: null });
-    showStatus('Set updated', 'info');
+    showStatus(asToastText('Set updated'), asToastTone('info'));
   };
 
   const handleDeleteSet = async () => {
@@ -401,7 +408,7 @@ const LoggingScreen = () => {
     await actions.deleteSet(editingEventId);
     dispatch({ type: 'log/editing', eventId: null });
     dispatch({ type: 'log/fields', fields: { ...INITIAL_FIELDS } });
-    showStatus('Set deleted', 'danger');
+    showStatus(asToastText('Set deleted'), asToastTone('danger'));
   };
 
   const setFieldValue = (key: FieldKey, delta: number) => {
@@ -596,8 +603,8 @@ const LoggingScreen = () => {
                       pr={prEventIds.has(set.event_id)}
                       onPrPress={() =>
                         showStatus(
-                          'Personal record set for this exercise.',
-                          'info',
+                          asToastText('Personal record set for this exercise.'),
+                          asToastTone('info'),
                         )
                       }
                     />
@@ -636,8 +643,8 @@ const LoggingScreen = () => {
                           pr={prEventIds.has(event.event_id)}
                           onPrPress={() =>
                             showStatus(
-                              'Personal record set for this exercise.',
-                              'info',
+                              asToastText('Personal record set for this exercise.'),
+                              asToastTone('info'),
                             )
                           }
                         />
@@ -770,7 +777,7 @@ const LoggingScreen = () => {
           {editingEventId ? (
             <>
               <PrimaryButton
-                label="Update set"
+                label={asLabelText('Update set')}
                 onPress={handleUpdateSet}
                 disabled={trackDisabled}
               />
@@ -782,7 +789,7 @@ const LoggingScreen = () => {
             </>
           ) : (
             <PrimaryButton
-              label="Log set"
+              label={asLabelText('Log set')}
               onPress={handleAddSet}
               disabled={trackDisabled}
             />
@@ -984,7 +991,7 @@ const SetRow = ({
   onPrPress,
 }: {
   event: WorkoutEvent;
-  highlightColor?: string;
+  highlightColor?: ColorHex;
   compact?: boolean;
   active?: boolean;
   onPress?: () => void;
@@ -1059,15 +1066,15 @@ const SetRow = ({
   );
 };
 
-const formatDateLabel = (date: Date) => {
+const formatDateLabel = (date: Date): DisplayLabel => {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const target = new Date(date.getFullYear(), date.getMonth(), date.getDate());
   const diff = (target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24);
-  if (diff === 0) return 'Today';
-  if (diff === -1) return 'Yesterday';
-  if (diff === 1) return 'Tomorrow';
-  return target.toLocaleDateString();
+  if (diff === 0) return asDisplayLabel('Today');
+  if (diff === -1) return asDisplayLabel('Yesterday');
+  if (diff === 1) return asDisplayLabel('Tomorrow');
+  return asDisplayLabel(target.toLocaleDateString());
 };
 
 const formatNumberInput = (value: unknown): NumericInput => {
@@ -1106,12 +1113,12 @@ const parseNumericField = (value: NumericInput): number | undefined => {
   return Number.isNaN(parsed) ? undefined : parsed;
 };
 
-const addAlpha = (hex: string, alpha: number) => {
+const addAlpha = (hex: ColorHex, alpha: number): ColorValue => {
   const normalized = Math.max(0, Math.min(1, alpha));
   const alphaHex = Math.round(normalized * 255)
     .toString(16)
     .padStart(2, '0');
-  return `${hex}${alphaHex}`;
+  return `${hex}${alphaHex}` as ColorValue;
 };
 
 const TrendChart = ({
@@ -1122,7 +1129,7 @@ const TrendChart = ({
   rangeLabel,
 }: {
   data: { label: DisplayLabel; value: number }[];
-  muscleColor: string;
+  muscleColor: ColorHex;
   metricLabel: DisplayLabel;
   metricDescription: DisplayLabel;
   rangeLabel: DisplayLabel;

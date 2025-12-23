@@ -1,3 +1,5 @@
+import { EventId, unwrapEventId } from './domain/types';
+
 export type TimeGrain = 'day' | 'week';
 
 const MINUTE = 60 * 1000;
@@ -27,14 +29,14 @@ export const roundToLocalWeek = (
 };
 
 export const sortEventsByDeterministicOrder = <
-  T extends { ts?: number; event_id?: string },
+  T extends { ts?: number; event_id?: EventId },
 >(
   events: T[],
 ) =>
   [...events].sort((a, b) => {
     const delta = (a.ts ?? 0) - (b.ts ?? 0);
     if (delta !== 0) return delta;
-    const aId = a.event_id ?? '';
-    const bId = b.event_id ?? '';
+    const aId = a.event_id ? unwrapEventId(a.event_id) : '';
+    const bId = b.event_id ? unwrapEventId(b.event_id) : '';
     return aId.localeCompare(bId);
   });

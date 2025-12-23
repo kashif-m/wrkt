@@ -2,10 +2,11 @@ import React from 'react';
 import { Text, TouchableOpacity, View } from 'react-native';
 import { palette, spacing, typography } from './theme';
 import ArrowLeftIcon from '../assets/arrow-left.svg';
+import { LabelText, unwrapLabelText } from '../domain/types';
 
 type Props = {
-  title: string;
-  subtitle?: string;
+  title: LabelText;
+  subtitle?: LabelText;
   onBack?: () => void;
   rightSlot?: React.ReactNode;
   onTitlePress?: () => void;
@@ -57,10 +58,12 @@ const ScreenHeader = ({
         }}
         disabled={!onTitlePress}
       >
-        <Text style={[typography.title, { fontSize: 20 }]}>{title}</Text>
+        <Text style={[typography.title, { fontSize: 20 }]}>
+          {unwrapLabelText(title)}
+        </Text>
         {subtitle ? (
           <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-            {subtitle}
+            {unwrapLabelText(subtitle)}
           </Text>
         ) : null}
       </TitleComponent>

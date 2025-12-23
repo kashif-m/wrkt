@@ -24,7 +24,7 @@ import {
   removeEvent,
 } from './storage';
 import { palette } from './ui/theme';
-import BottomNav, { NavKey } from './navigation/BottomNav';
+import BottomNav from './navigation/BottomNav';
 import ScreenHeader from './ui/ScreenHeader';
 import { AppProvider } from './state/appContext';
 import { createInitialState, initialFields, reducer } from './state/appState';
@@ -42,6 +42,14 @@ import {
   ExerciseSlug,
   asExerciseName,
   asNumericInput,
+  asLabelText,
+  LabelText,
+  asEventId,
+  asTrackerId,
+  EventId,
+  NavKey,
+  asScreenKey,
+  asNavKey,
 } from './domain/types';
 
 const App = () => {
@@ -123,7 +131,7 @@ const App = () => {
         dispatch({ type: 'log/exercise', exerciseName: undefined });
         dispatch({ type: 'log/fields', fields: { ...initialFields } });
         dispatch({ type: 'log/tab', tab: 'Track' });
-        dispatch({ type: 'nav/set', screen: 'browser' });
+        dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
       },
       openLogForExercise: (
         exerciseName: ExerciseName | undefined,
@@ -168,7 +176,7 @@ const App = () => {
         } else {
           dispatch({ type: 'log/fields', fields: { ...initialFields } });
         }
-        dispatch({ type: 'nav/set', screen: 'log' });
+        dispatch({ type: 'nav/set', screen: asScreenKey('log') });
       },
       logSet: async (payload: {
         exercise: ExerciseName;
@@ -178,8 +186,8 @@ const App = () => {
         distance?: number;
       }) => {
         const event = await logSet({ events: state.events } as WorkoutState, {
-          event_id: `evt-${Date.now()}`,
-          tracker_id: 'workout',
+          event_id: asEventId(`evt-${Date.now()}`),
+          tracker_id: asTrackerId('workout'),
           ts: state.logging.logDate.getTime(),
           payload,
           meta: {},
@@ -189,7 +197,7 @@ const App = () => {
         await insertEvent(nextEvents[nextEvents.length - 1]);
       },
       updateSet: async (
-        eventId: string,
+        eventId: EventId,
         payload: {
           exercise: ExerciseName;
           reps?: number;
@@ -211,7 +219,7 @@ const App = () => {
           await persistUpdatedEvent(updated);
         }
       },
-      deleteSet: async (eventId: string) => {
+      deleteSet: async (eventId: EventId) => {
         const nextState = deleteLoggedSet(
           { events: state.events } as WorkoutState,
           eventId,
@@ -245,42 +253,51 @@ const App = () => {
     ],
   );
 
-  const goHome = () => dispatch({ type: 'nav/set', screen: 'home' });
+  const goHome = () => dispatch({ type: 'nav/set', screen: asScreenKey('home') });
 
   const renderScreen = () => {
     switch (state.nav.screen) {
-      case 'home':
+      case asScreenKey('home'):
         return <HomeScreen />;
-      case 'browser':
+      case asScreenKey('browser'):
         return <ExerciseBrowser />;
-      case 'log':
+      case asScreenKey('log'):
         return (
           <View style={{ flex: 1 }}>
             <ScreenHeader
-              title={state.logging.exerciseName ?? 'Log workout'}
-              subtitle="Track · History · Trends"
+              title={
+                (state.logging.exerciseName as unknown as LabelText) ??
+                asLabelText('Log workout')
+              }
+              subtitle={asLabelText('Track · History · Trends')}
               onBack={goHome}
             />
             <LoggingScreen />
           </View>
         );
-      case 'history':
+      case asScreenKey('history'):
         return <HistoryScreen />;
-      case 'analytics':
+      case asScreenKey('analytics'):
         return (
           <View style={{ flex: 1 }}>
-            <ScreenHeader title="Trends" subtitle="Charts & records" />
+            <ScreenHeader
+              title={asLabelText('Trends')}
+              subtitle={asLabelText('Charts & records')}
+            />
             <AnalyticsScreen />
           </View>
         );
-      case 'coach':
+      case asScreenKey('coach'):
         return (
           <View style={{ flex: 1 }}>
-            <ScreenHeader title="Coach" subtitle="Suggestions" />
+            <ScreenHeader
+              title={asLabelText('Coach')}
+              subtitle={asLabelText('Suggestions')}
+            />
             <SuggestionsScreen />
           </View>
         );
-      case 'calendar':
+      case asScreenKey('calendar'):
         return <CalendarScreen />;
     }
   };
@@ -292,24 +309,24 @@ const App = () => {
           <View style={{ flex: 1 }}>{renderScreen()}</View>
           <BottomNav
             current={
-              state.nav.screen === 'calendar' ||
-              state.nav.screen === 'browser' ||
-              state.nav.screen === 'analytics' ||
-              state.nav.screen === 'coach'
-                ? (state.nav.screen as NavKey)
-                : 'home'
+              state.nav.screen === asScreenKey('calendar') ||
+              state.nav.screen === asScreenKey('browser') ||
+              state.nav.screen === asScreenKey('analytics') ||
+              state.nav.screen === asScreenKey('coach')
+                ? (state.nav.screen as unknown as NavKey)
+                : asNavKey('home')
             }
             onSelect={key => {
-              if (key === 'home') {
-                dispatch({ type: 'nav/set', screen: 'home' });
-              } else if (key === 'calendar') {
-                dispatch({ type: 'nav/set', screen: 'calendar' });
-              } else if (key === 'browser') {
-                dispatch({ type: 'nav/set', screen: 'browser' });
-              } else if (key === 'analytics') {
-                dispatch({ type: 'nav/set', screen: 'analytics' });
-              } else if (key === 'coach') {
-                dispatch({ type: 'nav/set', screen: 'coach' });
+              if (key === asNavKey('home')) {
+                dispatch({ type: 'nav/set', screen: asScreenKey('home') });
+              } else if (key === asNavKey('calendar')) {
+                dispatch({ type: 'nav/set', screen: asScreenKey('calendar') });
+              } else if (key === asNavKey('browser')) {
+                dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
+              } else if (key === asNavKey('analytics')) {
+                dispatch({ type: 'nav/set', screen: asScreenKey('analytics') });
+              } else if (key === asNavKey('coach')) {
+                dispatch({ type: 'nav/set', screen: asScreenKey('coach') });
               }
             }}
           />

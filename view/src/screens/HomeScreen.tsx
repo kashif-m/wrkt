@@ -12,12 +12,17 @@ import TodayIcon from '../assets/today-target.svg';
 import { useAppActions, useAppState } from '../state/appContext';
 import { WorkoutEvent } from '../workoutFlows';
 import {
+  ColorHex,
   DisplayLabel,
   ExerciseName,
+  LabelText,
   MuscleGroup,
   asDisplayLabel,
   asExerciseName,
+  asLabelText,
   asMuscleGroup,
+  asScreenKey,
+  unwrapLabelText,
 } from '../domain/types';
 
 const HomeScreen = () => {
@@ -63,7 +68,7 @@ const HomeScreen = () => {
         exercises: {
           name: ExerciseName;
           sets: { description: DisplayLabel; count: number }[];
-          color: string;
+          color: ColorHex;
           totalSets: number;
         }[];
       }
@@ -83,7 +88,7 @@ const HomeScreen = () => {
       const bucket = groupMap.get(groupKey) ?? {
         label,
         firstTs: event.ts,
-        exerciseOrder: [],
+        exerciseOrder: [] as ExerciseName[],
         exerciseSets: new Map<ExerciseName, WorkoutEvent[]>(),
         exercises: [],
       };
@@ -162,7 +167,7 @@ const HomeScreen = () => {
           <ChevronLeftIcon width={20} height={20} color={palette.text} />
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => actions.navigate('calendar')}
+          onPress={() => actions.navigate(asScreenKey('calendar'))}
           style={{ alignItems: 'center' }}
         >
           <Text
@@ -218,7 +223,7 @@ const HomeScreen = () => {
               >
                 {showStartCta ? (
                   <PrimaryAction
-                    label="Start workout"
+                    label={asLabelText('Start workout')}
                     onPress={() => actions.startWorkoutForDate(selectedDate)}
                   />
                 ) : (
@@ -319,7 +324,7 @@ const HomeScreen = () => {
               </Text>
               {showStartCta ? (
                 <PrimaryAction
-                  label="Log workout"
+                  label={asLabelText('Log workout')}
                   onPress={() => actions.startWorkoutForDate(selectedDate)}
                 />
               ) : null}
@@ -402,7 +407,7 @@ const PrimaryAction = ({
   label,
   onPress,
 }: {
-  label: string;
+  label: LabelText;
   onPress: () => void;
 }) => (
   <TouchableOpacity
@@ -427,7 +432,7 @@ const PrimaryAction = ({
         fontSize: fontSizes.actionButton,
       }}
     >
-      {label}
+      {unwrapLabelText(label)}
     </Text>
   </TouchableOpacity>
 );
@@ -574,7 +579,7 @@ const MusclePie = ({
     key: DisplayLabel;
     label: DisplayLabel;
     percent: number;
-    color?: string;
+    color?: ColorHex;
   }[];
   radius?: number;
 }) => {

@@ -14,6 +14,7 @@ import {
   Modality,
   MuscleGroup,
   Tag,
+  JsonText,
   asDisplayLabel,
   asExerciseName,
   asExerciseSlug,
@@ -120,7 +121,7 @@ const normalizeEntry = (entry: JsonObject): BaseExerciseCatalogEntry => {
 };
 
 const parseCatalog = (
-  data: JsonArray | string | undefined,
+  data: JsonArray | JsonText | undefined,
 ): Array<BaseExerciseCatalogEntry> => {
   console.log(
     'parseCatalog: raw payload type',

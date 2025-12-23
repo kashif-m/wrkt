@@ -13,6 +13,7 @@ import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
 import {
   ExerciseName,
   ExerciseSlug,
+  LabelText,
   LoggingMode,
   LoggingModeValue,
   Modality,
@@ -24,11 +25,13 @@ import {
   asExerciseSource,
   asExerciseName,
   asExerciseSlug,
+  asLabelText,
   asLoggingMode,
   asModality,
   asMuscleGroup,
   asNumericInput,
   asSearchQuery,
+  asScreenKey,
   asErrorMessage,
 } from '../domain/types';
 import { palette, spacing, radius } from '../ui/theme';
@@ -100,12 +103,13 @@ const ExerciseBrowser = () => {
     );
   }, [favoriteExercises, query]);
 
-  const headerTitle = useMemo(() => {
-    if (mode === 'manage') return 'Manage Exercises';
-    if (mode === 'form') return formEditing ? 'Edit Exercise' : 'Add Exercise';
+  const headerTitle = useMemo((): LabelText => {
+    if (mode === 'manage') return asLabelText('Manage Exercises');
+    if (mode === 'form')
+      return asLabelText(formEditing ? 'Edit Exercise' : 'Add Exercise');
     if (mode === 'exercises')
-      return selectedGroup?.replace(/_/g, ' ') ?? 'Exercises';
-    return 'Exercises';
+      return asLabelText(selectedGroup?.replace(/_/g, ' ') ?? 'Exercises');
+    return asLabelText('Exercises');
   }, [mode, selectedGroup, formEditing]);
 
   const updateFormDraft = useCallback(
@@ -135,7 +139,7 @@ const ExerciseBrowser = () => {
       });
       return;
     }
-    actions.navigate('home');
+    actions.navigate(asScreenKey('home'));
   };
 
   const collapseSearch = () => {
@@ -237,8 +241,8 @@ const ExerciseBrowser = () => {
         subtitle={
           mode === 'groups'
             ? activeTab === 'favorites'
-              ? 'Favorites'
-              : 'All exercises'
+              ? asLabelText('Favorites')
+              : asLabelText('All exercises')
             : undefined
         }
         onBack={goBack}

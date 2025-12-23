@@ -5,8 +5,16 @@ import {
   getTrackerIdentifier,
 } from './workoutFlows';
 import { sortEventsByDeterministicOrder } from './timePolicy';
+import {
+  EventId,
+  TrackerId,
+  StorageKey,
+  asEventId,
+  asTrackerId,
+  asStorageKey,
+} from './domain/types';
 
-const STORAGE_KEY = 'strata.workout.events';
+const STORAGE_KEY: StorageKey = asStorageKey('strata.workout.events');
 
 const readStore = async (): Promise<WorkoutEvent[]> => {
   const raw = await AsyncStorage.getItem(STORAGE_KEY);
@@ -14,7 +22,12 @@ const readStore = async (): Promise<WorkoutEvent[]> => {
     return [];
   }
   try {
-    return JSON.parse(raw) as WorkoutEvent[];
+    const parsed = JSON.parse(raw) as WorkoutEvent[];
+    return parsed.map(event => ({
+      ...event,
+      event_id: asEventId(String(event.event_id)),
+      tracker_id: asTrackerId(String(event.tracker_id)),
+    }));
   } catch (error) {
     console.warn('Failed to parse workout cache, resetting', error);
     return [];
@@ -46,13 +59,13 @@ export const updateEvent = async (updated: WorkoutEvent) => {
   await writeStore(sortEventsByDeterministicOrder(next));
 };
 
-export const removeEvent = async (eventId: string) => {
+export const removeEvent = async (eventId: EventId) => {
   const events = await readStore();
   await writeStore(events.filter(event => event.event_id !== eventId));
 };
 
 export const fetchEvents = async (
-  trackerId?: string,
+  trackerId?: TrackerId,
   range?: [number, number],
 ): Promise<WorkoutEvent[]> => {
   const events = await readStore();

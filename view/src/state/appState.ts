@@ -1,32 +1,33 @@
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
 import {
+  AnalyticsMetricKey,
+  AnalyticsRangeKey,
+  ErrorMessage,
+  EventId,
   ExerciseName,
   ExerciseSlug,
   LoggingMode,
   Modality,
   MuscleGroup,
   NumericInput,
+  ScreenKey,
   SearchQuery,
-  ErrorMessage,
+  asAnalyticsMetricKey,
+  asAnalyticsRangeKey,
   asExerciseName,
   asExerciseSlug,
   asLoggingMode,
   asModality,
   asMuscleGroup,
   asNumericInput,
+  asPlannerKind,
+  asScreenKey,
   asSearchQuery,
 } from '../domain/types';
-import { PlanSuggestion, PlannerKind, WorkoutEvent } from '../workoutFlows';
+import { PlanSuggestion, WorkoutEvent } from '../workoutFlows';
+import { PlannerKind } from '../domain/types';
 
-export type ScreenKey =
-  | 'home'
-  | 'calendar'
-  | 'browser'
-  | 'log'
-  | 'analytics'
-  | 'coach'
-  | 'history';
-export type ToastTone = 'success' | 'info' | 'danger';
+import { ToastText, ToastTone } from '../domain/types';
 
 export type BrowserMode = 'groups' | 'exercises' | 'manage' | 'form';
 export type BrowserTab = 'all' | 'favorites';
@@ -41,8 +42,6 @@ export type TrendMetricKey =
   | 'workout_volume'
   | 'workout_reps';
 
-export type AnalyticsRangeKey = '8w' | '16w' | '6m' | '1y' | 'all';
-export type AnalyticsMetricKey = 'volume' | 'sessions';
 
 export type LoggingFields = {
   reps: NumericInput;
@@ -52,7 +51,7 @@ export type LoggingFields = {
 };
 
 export type RootState = {
-  nav: { screen: ScreenKey };
+    nav: { screen: ScreenKey };
   selectedDate: Date;
   events: WorkoutEvent[];
   catalog: {
@@ -98,8 +97,8 @@ export type RootState = {
     tab: SessionTab;
     selectedTrendRange: TrendRangeKey;
     selectedMetric: TrendMetricKey;
-    editingEventId: string | null;
-    status: { text: string; tone: ToastTone } | null;
+    editingEventId: EventId | null;
+    status: { text: ToastText; tone: ToastTone } | null;
   };
   analytics: {
     selectedRange: AnalyticsRangeKey;
@@ -141,7 +140,7 @@ export type Action =
   | { type: 'log/tab'; tab: SessionTab }
   | { type: 'log/trendRange'; range: TrendRangeKey }
   | { type: 'log/trendMetric'; metric: TrendMetricKey }
-  | { type: 'log/editing'; eventId: string | null }
+  | { type: 'log/editing'; eventId: EventId | null }
   | { type: 'log/status'; status: RootState['logging']['status'] }
   | { type: 'analytics/range'; range: AnalyticsRangeKey }
   | { type: 'analytics/metric'; metric: AnalyticsMetricKey }
@@ -159,7 +158,7 @@ export const initialFields: LoggingFields = {
 export const createInitialState = (): RootState => {
   const today = new Date();
   return {
-    nav: { screen: 'home' },
+    nav: { screen: asScreenKey('home') },
     selectedDate: today,
     events: [],
     catalog: { entries: [], favorites: [], custom: [] },
@@ -201,11 +200,11 @@ export const createInitialState = (): RootState => {
       status: null,
     },
     analytics: {
-      selectedRange: '16w',
-      selectedMetric: 'volume',
+      selectedRange: asAnalyticsRangeKey('16w'),
+      selectedMetric: asAnalyticsMetricKey('volume'),
     },
     suggestions: {
-      planner: 'strength',
+      planner: asPlannerKind('strength'),
       loading: false,
       items: [],
     },

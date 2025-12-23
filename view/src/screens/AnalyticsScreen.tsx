@@ -11,47 +11,76 @@ import { Card, SectionHeading, BodyText } from '../ui/components';
 import { palette, spacing, radius } from '../ui/theme';
 import { roundToLocalWeek, roundToLocalDay } from '../timePolicy';
 import { useAppDispatch, useAppState } from '../state/appContext';
+import {
+  AnalyticsMetricKey,
+  AnalyticsRangeKey,
+  ColorHex,
+  DisplayLabel,
+  ExerciseName,
+  LabelText,
+  asAnalyticsMetricKey,
+  asAnalyticsRangeKey,
+  asColorHex,
+  asDisplayLabel,
+  asLabelText,
+} from '../domain/types';
 
-type VolumePoint = { label: string; value: number };
+type VolumePoint = { label: DisplayLabel; value: number };
 type PersonalRecord = {
-  exercise: string;
+  exercise: ExerciseName;
   weight: number;
   reps: number;
   oneRm: number;
 };
 
 const WEEK = 7 * 24 * 60 * 60 * 1000;
-const rangeOptions = [
-  { key: '8w', label: '8w', weeks: 8 },
-  { key: '16w', label: '16w', weeks: 16 },
-  { key: '6m', label: '6m', weeks: 26 },
-  { key: '1y', label: '1y', weeks: 52 },
-  { key: 'all', label: 'All', weeks: null },
-] as const;
-type RangeKey = (typeof rangeOptions)[number]['key'];
+const rangeOptions: ReadonlyArray<{
+  key: AnalyticsRangeKey;
+  label: LabelText;
+  weeks: number | null;
+}> = [
+  { key: asAnalyticsRangeKey('8w'), label: asLabelText('8w'), weeks: 8 },
+  { key: asAnalyticsRangeKey('16w'), label: asLabelText('16w'), weeks: 16 },
+  { key: asAnalyticsRangeKey('6m'), label: asLabelText('6m'), weeks: 26 },
+  { key: asAnalyticsRangeKey('1y'), label: asLabelText('1y'), weeks: 52 },
+  { key: asAnalyticsRangeKey('all'), label: asLabelText('All'), weeks: null },
+];
 
-const metricOptions = [
-  { key: 'volume', label: 'Volume', unit: 'kg·reps' },
-  { key: 'sessions', label: 'Sessions', unit: 'sets' },
-] as const;
-type MetricKey = (typeof metricOptions)[number]['key'];
+const metricOptions: ReadonlyArray<{
+  key: AnalyticsMetricKey;
+  label: LabelText;
+  unit: LabelText;
+}> = [
+  {
+    key: asAnalyticsMetricKey('volume'),
+    label: asLabelText('Volume'),
+    unit: asLabelText('kg·reps'),
+  },
+  {
+    key: asAnalyticsMetricKey('sessions'),
+    label: asLabelText('Sessions'),
+    unit: asLabelText('sets'),
+  },
+];
 
-const formatWeekLabel = (ts: number) => {
+const formatWeekLabel = (ts: number): DisplayLabel => {
   const start = new Date(ts);
   const end = new Date(ts + WEEK - 1);
-  return `${start.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  })} – ${end.toLocaleDateString(undefined, {
-    month: 'short',
-    day: 'numeric',
-  })}`;
+  return asDisplayLabel(
+    `${start.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    })} – ${end.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    })}`,
+  );
 };
 
 const computeSeries = (
   events: WorkoutEvent[],
-  metric: MetricKey,
-  range: RangeKey,
+  metric: AnalyticsMetricKey,
+  range: AnalyticsRangeKey,
 ): VolumePoint[] => {
   const rangeConfig =
     rangeOptions.find(option => option.key === range) ?? rangeOptions[0];
@@ -75,7 +104,8 @@ const computeSeries = (
     .sort((a, b) => a[0] - b[0])
     .map(([bucket, value]) => ({
       label: formatWeekLabel(bucket),
-      value: metric === 'volume' ? value.volume : value.count,
+      value:
+        metric === asAnalyticsMetricKey('volume') ? value.volume : value.count,
     }));
 };
 
@@ -83,10 +113,12 @@ const estimateOneRm = (weight: number, reps: number) =>
   weight * (1 + reps / 30);
 
 const computePRs = (events: WorkoutEvent[]): PersonalRecord[] => {
-  const best = new Map<string, PersonalRecord>();
+  const best = new Map<ExerciseName, PersonalRecord>();
   events.forEach(event => {
     if (event.payload?.pr !== true) return;
-    const exercise = String(event.payload?.exercise ?? 'Unknown');
+    const exercise = asLabelText(
+      String(event.payload?.exercise ?? 'Unknown'),
+    ) as unknown as ExerciseName;
     const reps = Number(event.payload?.reps ?? 0);
     const weight = Number(event.payload?.weight ?? 0);
     if (!weight) return;
@@ -105,13 +137,13 @@ const MetricChart = ({
   metricUnit,
 }: {
   data: VolumePoint[];
-  metricLabel: string;
-  metricUnit: string;
+  metricLabel: LabelText;
+  metricUnit: LabelText;
 }) => {
   if (data.length === 0) {
     return (
       <BodyText style={{ color: palette.mutedText }}>
-        Log a few sessions to unlock this view.
+        {asLabelText('Log a few sessions to unlock this view.')}
       </BodyText>
     );
   }
@@ -119,9 +151,11 @@ const MetricChart = ({
   return (
     <View style={{ gap: spacing(0.75) }}>
       <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-        <Text style={{ fontSize: 12, color: palette.mutedText }}>0</Text>
         <Text style={{ fontSize: 12, color: palette.mutedText }}>
-          {Math.round(max)} {metricUnit}
+          {asDisplayLabel('0')}
+        </Text>
+        <Text style={{ fontSize: 12, color: palette.mutedText }}>
+          {asDisplayLabel(`${Math.round(max)} ${metricUnit}`)}
         </Text>
       </View>
       {data.map((point, index) => (
@@ -198,7 +232,7 @@ const Bar = ({
 
 const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
   <Card>
-    <SectionHeading label="Estimated PRs" />
+    <SectionHeading label={asLabelText('Estimated PRs')} />
     {prs.length === 0 ? (
       <BodyText style={{ color: palette.mutedText }}>
         Log sets to see personal records.
@@ -230,12 +264,12 @@ const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
   </Card>
 );
 
-const SegmentedControl = <T extends string>({
+const SegmentedControl = <T extends AnalyticsRangeKey | AnalyticsMetricKey>({
   options,
   selected,
   onSelect,
 }: {
-  options: ReadonlyArray<{ key: T; label: string }>;
+  options: ReadonlyArray<{ key: T; label: LabelText }>;
   selected: T;
   onSelect: (key: T) => void;
 }) => (
@@ -253,7 +287,7 @@ const SegmentedControl = <T extends string>({
       >
         <Text
           style={{
-            color: selected === option.key ? '#0f172a' : palette.text,
+            color: selected === option.key ? asColorHex('#0f172a') : palette.text,
             fontWeight: '600',
           }}
         >
@@ -281,7 +315,7 @@ const ExerciseHistory = ({ events }: { events: WorkoutEvent[] }) => {
   if (grouped.length === 0) {
     return (
       <Card>
-        <SectionHeading label="Recent sessions" />
+        <SectionHeading label={asLabelText('Recent sessions')} />
         <BodyText style={{ color: palette.mutedText }}>
           Log a handful of sets to see history rollups.
         </BodyText>
@@ -291,7 +325,7 @@ const ExerciseHistory = ({ events }: { events: WorkoutEvent[] }) => {
 
   return (
     <Card style={{ gap: spacing(1.5) }}>
-      <SectionHeading label="Recent sessions" />
+      <SectionHeading label={asLabelText('Recent sessions')} />
       {grouped.map(([day, sets]) => {
         const dayLabel = new Date(day).toLocaleDateString(undefined, {
           weekday: 'short',
@@ -425,7 +459,7 @@ const AnalyticsScreen = () => {
       }}
     >
       <Card style={{ gap: spacing(1.25) }}>
-        <SectionHeading label="Trends" />
+        <SectionHeading label={asLabelText('Trends')} />
         <SegmentedControl
           options={metricOptions}
           selected={selectedMetric}
@@ -440,10 +474,11 @@ const AnalyticsScreen = () => {
           data={volumeSeries}
           metricLabel={
             metricOptions.find(opt => opt.key === selectedMetric)?.label ??
-            'Metric'
+            asLabelText('Metric')
           }
           metricUnit={
-            metricOptions.find(opt => opt.key === selectedMetric)?.unit ?? ''
+            metricOptions.find(opt => opt.key === selectedMetric)?.unit ??
+            asLabelText('')
           }
         />
       </Card>
