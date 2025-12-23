@@ -1,71 +1,110 @@
-import React from "react"
-import { ScrollView, View } from "react-native"
-import { WorkoutState } from "../workoutFlows"
-import { Card, SectionHeading, BodyText, LabeledText } from "../ui/components"
-import { spacing, palette } from "../ui/theme"
+import React, { useMemo } from "react"
+import { ScrollView, View, Text } from "react-native"
+import { WorkoutEvent, WorkoutState } from "../workoutFlows"
+import { Card, SectionHeading, EmptyState, ListRow } from "../ui/components"
+import { spacing, palette, radius } from "../ui/theme"
+import { roundToLocalDay } from "../timePolicy"
 
 type Props = { state: WorkoutState }
 
-const formatDate = (ts: number) => {
-  const date = new Date(ts)
-  return date.toLocaleString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
+const HistoryScreen = ({ state }: Props) => {
+  const groupedDays = useMemo(() => {
+    const buckets = new Map<number, WorkoutEvent[]>()
+    state.events.forEach((event) => {
+      const day = roundToLocalDay(event.ts)
+      const current = buckets.get(day) ?? []
+      current.push(event)
+      buckets.set(day, current)
+    })
+    return Array.from(buckets.entries()).sort((a, b) => b[0] - a[0])
+  }, [state.events])
 
-const HistoryScreen = ({ state }: Props) => (
-  <ScrollView
-    style={{ flex: 1 }}
-    contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6), gap: spacing(1.5) }}
-  >
-    <SectionHeading label="Workout history" />
-    {state.events.map((event, idx) => {
-      const payload = event.payload ?? {}
-      const repsValue = formatValue(payload.reps)
-      const weightValue =
-        payload.weight != null && typeof payload.weight === "number"
-          ? `${payload.weight} kg`
-          : formatValue(payload.weight)
-      const volumeValue =
-        payload.reps != null && payload.weight != null
-          ? `${Number(payload.reps) * Number(payload.weight)} kg·reps`
-          : "-"
-      return (
-        <Card key={event.event_id ?? `${idx}`} style={{ gap: spacing(1) }}>
-          <BodyText style={{ fontWeight: "600" }}>{formatValue(payload.exercise)}</BodyText>
-          <BodyText style={{ color: palette.mutedText }}>{formatDate(event.ts)}</BodyText>
-          <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-            <LabeledText label="reps" value={repsValue} />
-            <LabeledText label="weight" value={weightValue} />
-            <LabeledText label="volume" value={volumeValue} />
-          </View>
+  return (
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ padding: spacing(2), paddingBottom: spacing(6), gap: spacing(1.5) }}
+    >
+      <SectionHeading label="Workout history" />
+      {groupedDays.length === 0 ? (
+        <Card>
+          <EmptyState title="No workouts yet" subtitle="Log a session to start building your history." />
         </Card>
-      )
-    })}
-  </ScrollView>
-)
+      ) : (
+        groupedDays.map(([day, events]) => {
+          const dayLabel = new Date(day).toLocaleDateString(undefined, {
+            weekday: "short",
+            month: "short",
+            day: "numeric",
+          })
+          const summaries = summarizeDay(events)
+          return (
+            <View key={day} style={{ gap: spacing(0.75) }}>
+              <Text style={{ color: palette.mutedText, fontSize: 12 }}>{dayLabel}</Text>
+              <View style={dayList}>
+                {summaries.map((summary, index) => (
+                  <ListRow
+                    key={summary.exercise}
+                    title={summary.exercise}
+                    subtitle={summary.detail}
+                    value={summary.setsLabel}
+                    showDivider={index !== summaries.length - 1}
+                  />
+                ))}
+              </View>
+            </View>
+          )
+        })
+      )}
+    </ScrollView>
+  )
+}
 
 export default HistoryScreen
 
-const formatValue = (value: unknown): string => {
-  if (value === null || value === undefined) {
-    return "-"
-  }
-  if (typeof value === "string") {
-    return value
-  }
-  if (typeof value === "number") {
-    return value.toString()
-  }
-  if (typeof value === "boolean") {
-    return value ? "Yes" : "No"
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => formatValue(item)).join(", ")
-  }
-  return JSON.stringify(value)
+const summarizeDay = (events: WorkoutEvent[]) => {
+  const byExercise = new Map<string, WorkoutEvent[]>()
+  events.forEach((event) => {
+    const exercise = String(event.payload?.exercise ?? "Unlabeled")
+    const bucket = byExercise.get(exercise) ?? []
+    bucket.push(event)
+    byExercise.set(exercise, bucket)
+  })
+  return Array.from(byExercise.entries())
+    .map(([exercise, sets]) => {
+      const totals = sets.reduce(
+        (acc, event) => {
+          const reps = toNumber(event.payload?.reps)
+          const weight = toNumber(event.payload?.weight)
+          acc.reps += reps
+          acc.volume += reps * weight
+          return acc
+        },
+        { reps: 0, volume: 0 },
+      )
+      const detailParts = []
+      if (totals.reps > 0) detailParts.push(`${totals.reps} reps`)
+      if (totals.volume > 0) detailParts.push(`${Math.round(totals.volume)} kg·reps`)
+      const detail = detailParts.length ? detailParts.join(" · ") : "Logged sets"
+      return {
+        exercise,
+        detail,
+        setsLabel: `${sets.length} ${sets.length === 1 ? "set" : "sets"}`,
+        volume: totals.volume,
+      }
+    })
+    .sort((a, b) => b.volume - a.volume)
+}
+
+const toNumber = (value: unknown) => {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+const dayList = {
+  backgroundColor: palette.surface,
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  padding: spacing(1.5),
+  gap: spacing(1),
 }

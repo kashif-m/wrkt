@@ -17,7 +17,7 @@ import ScreenHeader from "./ui/ScreenHeader"
 type ScreenState =
   | { key: "home" }
   | { key: "browser" }
-  | { key: "log"; exerciseName?: string; initialTab: SessionTab }
+  | { key: "log"; exerciseName?: string; initialTab: SessionTab; logDate?: Date }
   | { key: "history" }
   | { key: "analytics" }
   | { key: "coach" }
@@ -55,10 +55,11 @@ const App = () => {
             onSelectPreviousDay={() => shiftDate(-1)}
             onSelectNextDay={() => shiftDate(1)}
             onOpenCalendar={handleOpenCalendar}
+            onJumpToToday={() => setSelectedDate(new Date())}
             onStartExercise={() => setScreen({ key: "browser" })}
             onSelectExerciseFromList={(exerciseName) => {
               console.log("Home: exercise selected from list", exerciseName)
-              setScreen({ key: "log", exerciseName, initialTab: "History" })
+              setScreen({ key: "log", exerciseName, initialTab: "Track", logDate: selectedDate })
             }}
           />
         )
@@ -66,7 +67,12 @@ const App = () => {
         return (
           <ExerciseBrowser
             onSelectExercise={(entry) =>
-              setScreen({ key: "log", exerciseName: entry.display_name, initialTab: "Track" })
+              setScreen({
+                key: "log",
+                exerciseName: entry.display_name,
+                initialTab: "Track",
+                logDate: selectedDate,
+              })
             }
             onClose={goHome}
           />
@@ -86,6 +92,7 @@ const App = () => {
               refreshFromStorage={refreshFromStorage}
               prefillExerciseName={screen.exerciseName}
               initialTab={screen.initialTab}
+              logDate={screen.logDate}
             />
           </View>
         )

@@ -1,5 +1,13 @@
 import React from "react"
-import { View, Text, TextInput, TouchableOpacity, ViewStyle, TextStyle } from "react-native"
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  TouchableWithoutFeedback,
+  ViewStyle,
+  TextStyle,
+} from "react-native"
 import { palette, radius, spacing, typography } from "./theme"
 
 export const ScreenContainer = ({ children }: { children: React.ReactNode }) => (
@@ -43,6 +51,113 @@ export const LabeledText = ({ label, value }: { label: string; value: string }) 
     <Text style={[typography.body, { fontWeight: "600" }]}>{value}</Text>
   </View>
 )
+
+export const ListRow = ({
+  title,
+  subtitle,
+  value,
+  onPress,
+  showDivider = true,
+}: {
+  title: string
+  subtitle?: string
+  value?: string
+  onPress?: () => void
+  showDivider?: boolean
+}) => (
+  <TouchableOpacity
+    onPress={onPress}
+    activeOpacity={onPress ? 0.7 : 1}
+    style={{
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      paddingVertical: spacing(1),
+      borderBottomWidth: showDivider ? 1 : 0,
+      borderColor: palette.border,
+    }}
+  >
+    <View style={{ flex: 1, marginRight: spacing(1) }}>
+      <Text style={{ color: palette.text, fontWeight: "600" }}>{title}</Text>
+      {subtitle ? <Text style={{ color: palette.mutedText, fontSize: 12 }}>{subtitle}</Text> : null}
+    </View>
+    {value ? <Text style={{ color: palette.mutedText, fontSize: 12 }}>{value}</Text> : null}
+  </TouchableOpacity>
+)
+
+export const EmptyState = ({
+  title,
+  subtitle,
+  actionLabel,
+  onPress,
+}: {
+  title: string
+  subtitle?: string
+  actionLabel?: string
+  onPress?: () => void
+}) => (
+  <View style={{ alignItems: "center", gap: spacing(0.5) }}>
+    <Text style={{ color: palette.text, fontWeight: "700", fontSize: 16 }}>{title}</Text>
+    {subtitle ? <Text style={{ color: palette.mutedText, fontSize: 13 }}>{subtitle}</Text> : null}
+    {actionLabel && onPress ? (
+      <TouchableOpacity onPress={onPress} style={{ marginTop: spacing(0.5) }}>
+        <Text style={{ color: palette.primary, fontWeight: "600" }}>{actionLabel}</Text>
+      </TouchableOpacity>
+    ) : null}
+  </View>
+)
+
+type ToastTone = "success" | "info" | "danger"
+
+export const ToastBanner = ({
+  text,
+  tone = "info",
+}: {
+  text: string
+  tone?: ToastTone
+}) => {
+  const toneColors = {
+    success: palette.success,
+    info: palette.primary,
+    danger: palette.danger,
+  } as const
+  const color = toneColors[tone]
+  return (
+    <View
+      style={{
+        padding: spacing(1),
+        borderRadius: radius.card,
+        borderWidth: 1,
+        borderColor: color,
+        backgroundColor: addAlpha(color, 0.18),
+        marginBottom: spacing(1),
+      }}
+    >
+      <Text style={{ color: palette.text, fontWeight: "600" }}>{text}</Text>
+    </View>
+  )
+}
+
+export const BottomSheet = ({
+  visible,
+  onClose,
+  children,
+}: {
+  visible: boolean
+  onClose: () => void
+  children: React.ReactNode
+}) => {
+  if (!visible) return null
+  return (
+    <TouchableWithoutFeedback onPress={onClose}>
+      <View style={sheetOverlay}>
+        <TouchableWithoutFeedback>
+          <View style={sheetCard}>{children}</View>
+        </TouchableWithoutFeedback>
+      </View>
+    </TouchableWithoutFeedback>
+  )
+}
 
 export const PillButton = ({
   label,
@@ -130,3 +245,29 @@ export const InputField = ({
 export const Divider = () => (
   <View style={{ height: 1, backgroundColor: palette.border, marginVertical: spacing(2) }} />
 )
+
+const sheetOverlay = {
+  position: "absolute" as const,
+  top: 0,
+  right: 0,
+  left: 0,
+  bottom: 0,
+  backgroundColor: "rgba(10, 12, 18, 0.6)",
+  justifyContent: "flex-end" as const,
+}
+
+const sheetCard = {
+  backgroundColor: palette.surface,
+  borderTopLeftRadius: radius.card,
+  borderTopRightRadius: radius.card,
+  padding: spacing(2),
+}
+
+const addAlpha = (hex: string, alpha: number) => {
+  const sanitized = hex.replace("#", "")
+  if (sanitized.length !== 6) return hex
+  const r = parseInt(sanitized.slice(0, 2), 16)
+  const g = parseInt(sanitized.slice(2, 4), 16)
+  const b = parseInt(sanitized.slice(4, 6), 16)
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`
+}

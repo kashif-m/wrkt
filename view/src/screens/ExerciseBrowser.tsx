@@ -385,7 +385,9 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
                 ItemSeparatorComponent={() => <View style={separator} />}
                 ListEmptyComponent={
                   <View style={{ padding: spacing(2) }}>
-                    <Text style={{ color: palette.mutedText }}>No favorites yet. Tap ☆ next to an exercise to star it.</Text>
+                    <Text style={{ color: palette.mutedText }}>
+                      No favorites yet. Long-press an exercise to add it here.
+                    </Text>
                   </View>
                 }
               />
@@ -419,7 +421,7 @@ const ExerciseBrowser = ({ onSelectExercise, onClose }: Props) => {
           )}
         </>
       )}
-      {mode !== "form" && (
+      {mode === "groups" && (
         <View style={{ padding: spacing(2) }}>
           <TouchableOpacity
             onPress={() => {

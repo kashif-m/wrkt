@@ -61,6 +61,7 @@ const estimateOneRm = (weight: number, reps: number) => weight * (1 + reps / 30)
 const computePRs = (events: WorkoutEvent[]): PersonalRecord[] => {
   const best = new Map<string, PersonalRecord>()
   events.forEach(event => {
+    if (event.payload?.pr !== true) return
     const exercise = String(event.payload?.exercise ?? "Unknown")
     const reps = Number(event.payload?.reps ?? 0)
     const weight = Number(event.payload?.weight ?? 0)
@@ -89,6 +90,12 @@ const MetricChart = ({
   const max = data.reduce((m, p) => Math.max(m, p.value), 0) || 1
   return (
     <View style={{ gap: spacing(0.75) }}>
+      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+        <Text style={{ fontSize: 12, color: palette.mutedText }}>0</Text>
+        <Text style={{ fontSize: 12, color: palette.mutedText }}>
+          {Math.round(max)} {metricUnit}
+        </Text>
+      </View>
       {data.map((point, index) => (
         <View key={point.label}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: spacing(0.25) }}>
@@ -123,21 +130,6 @@ const Bar = ({ value, max, delay }: { value: number; max: number; delay?: number
   )
 }
 
-const TogglePill = ({ label, active, onPress }: { label: string; active: boolean; onPress: () => void }) => (
-  <TouchableOpacity onPress={onPress} activeOpacity={0.8} style={[pillStyle, active && { backgroundColor: palette.primary }]}>
-    <Text style={{ color: active ? "#0f172a" : palette.text, fontWeight: "700" }}>{label}</Text>
-  </TouchableOpacity>
-)
-
-const pillStyle = {
-  borderRadius: radius.pill,
-  borderWidth: 1,
-  borderColor: palette.border,
-  paddingVertical: spacing(0.5),
-  paddingHorizontal: spacing(1.5),
-  backgroundColor: palette.mutedSurface,
-}
-
 const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
   <Card>
     <SectionHeading label="Estimated PRs" />
@@ -166,6 +158,35 @@ const PRTable = ({ prs }: { prs: PersonalRecord[] }) => (
       ))
     )}
   </Card>
+)
+
+const SegmentedControl = <T extends string>({
+  options,
+  selected,
+  onSelect,
+}: {
+  options: ReadonlyArray<{ key: T; label: string }>
+  selected: T
+  onSelect: (key: T) => void
+}) => (
+  <View style={segmentedRow}>
+    {options.map((option, index) => (
+      <TouchableOpacity
+        key={option.key}
+        onPress={() => onSelect(option.key)}
+        style={[
+          segmentedButton,
+          index === 0 && segmentedFirst,
+          index === options.length - 1 && segmentedLast,
+          selected === option.key && segmentedActive,
+        ]}
+      >
+        <Text style={{ color: selected === option.key ? "#0f172a" : palette.text, fontWeight: "600" }}>
+          {option.label}
+        </Text>
+      </TouchableOpacity>
+    ))}
+  </View>
 )
 
 const ExerciseHistory = ({ events }: { events: WorkoutEvent[] }) => {
@@ -261,6 +282,38 @@ const describeSet = (event: WorkoutEvent) => {
   return "Logged set"
 }
 
+const segmentedRow = {
+  flexDirection: "row" as const,
+  borderWidth: 1,
+  borderColor: palette.border,
+  borderRadius: radius.card,
+  overflow: "hidden" as const,
+}
+
+const segmentedButton = {
+  flex: 1,
+  paddingVertical: spacing(0.75),
+  alignItems: "center" as const,
+  backgroundColor: palette.mutedSurface,
+  borderRightWidth: 1,
+  borderColor: palette.border,
+}
+
+const segmentedFirst = {
+  borderTopLeftRadius: radius.card,
+  borderBottomLeftRadius: radius.card,
+}
+
+const segmentedLast = {
+  borderRightWidth: 0,
+  borderTopRightRadius: radius.card,
+  borderBottomRightRadius: radius.card,
+}
+
+const segmentedActive = {
+  backgroundColor: palette.primary,
+}
+
 const AnalyticsScreen = ({ state }: Props) => {
   const [selectedRange, setSelectedRange] = useState<RangeKey>("16w")
   const [selectedMetric, setSelectedMetric] = useState<MetricKey>("volume")
@@ -277,26 +330,12 @@ const AnalyticsScreen = ({ state }: Props) => {
     >
       <Card style={{ gap: spacing(1.25) }}>
         <SectionHeading label="Trends" />
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing(1) }}>
-          {metricOptions.map((option) => (
-            <TogglePill
-              key={option.key}
-              label={option.label}
-              active={selectedMetric === option.key}
-              onPress={() => setSelectedMetric(option.key)}
-            />
-          ))}
-        </View>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: spacing(1) }}>
-          {rangeOptions.map((option) => (
-            <TogglePill
-              key={option.key}
-              label={option.label}
-              active={selectedRange === option.key}
-              onPress={() => setSelectedRange(option.key)}
-            />
-          ))}
-        </View>
+        <SegmentedControl
+          options={metricOptions}
+          selected={selectedMetric}
+          onSelect={setSelectedMetric}
+        />
+        <SegmentedControl options={rangeOptions} selected={selectedRange} onSelect={setSelectedRange} />
         <MetricChart
           data={volumeSeries}
           metricLabel={metricOptions.find((opt) => opt.key === selectedMetric)?.label ?? "Metric"}

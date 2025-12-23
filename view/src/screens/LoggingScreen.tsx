@@ -1,9 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { ScrollView, Text, TextInput, View, TouchableOpacity, TouchableWithoutFeedback } from "react-native"
+import { ScrollView, Text, TextInput, View, TouchableOpacity } from "react-native"
 import Svg, { Polyline, Circle } from "react-native-svg"
 import { insertEvent, updateEvent as persistUpdatedEvent, removeEvent } from "../storage"
 import { WorkoutEvent, WorkoutState, logSet, updateLoggedSet, deleteLoggedSet } from "../workoutFlows"
-import { Card, Divider, PrimaryButton, BodyText } from "../ui/components"
+import { Card, Divider, PrimaryButton, BodyText, ToastBanner } from "../ui/components"
 import { palette, radius, spacing } from "../ui/theme"
 import {
   ExerciseCatalogEntry,
@@ -20,6 +20,7 @@ type Props = {
   refreshFromStorage: () => Promise<void>
   prefillExerciseName?: string
   initialTab?: SessionTab
+  logDate?: Date
 }
 
 const sessionTabs = ["Track", "History", "Trends"] as const
@@ -140,6 +141,7 @@ const LoggingScreen = ({
   refreshFromStorage,
   prefillExerciseName,
   initialTab = "Track",
+  logDate,
 }: Props) => {
   const [catalog, setCatalog] = useState<ExerciseCatalogEntry[]>([])
   const [selectedExercise, setSelectedExercise] = useState<ExerciseCatalogEntry | null>(null)
@@ -147,14 +149,12 @@ const LoggingScreen = ({
   const [sessionTab, setSessionTab] = useState<SessionTab>(initialTab)
   const [selectedTrendRange, setSelectedTrendRange] = useState<TrendRangeKey>("3m")
   const [selectedMetric, setSelectedMetric] = useState<TrendMetricKey>("estimated_1rm")
-  const [loggingDate] = useState(new Date())
+  const [loggingDate] = useState(() => logDate ?? new Date())
   const [prefillApplied, setPrefillApplied] = useState(false)
   const [editingEventId, setEditingEventId] = useState<string | null>(null)
   const [statusBanner, setStatusBanner] = useState<{ text: string; tone: "success" | "info" | "danger" } | null>(null)
   const statusTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [favoriteSlugs, setFavoriteSlugs] = useState<string[]>([])
-  const [searchVisible, setSearchVisible] = useState(false)
-  const [searchQuery, setSearchQuery] = useState("")
 
   useEffect(() => {
     fetchMergedCatalog()
@@ -215,9 +215,15 @@ const LoggingScreen = ({
     if (!selectedExercise) return []
     const start = new Date(loggingDate)
     start.setHours(0, 0, 0, 0)
+    const end = new Date(start)
+    end.setDate(start.getDate() + 1)
     return state.events.filter((event) => {
       const exerciseName = formatValue(event.payload?.exercise)
-      return exerciseName === selectedExercise.display_name && event.ts >= start.getTime()
+      return (
+        exerciseName === selectedExercise.display_name &&
+        event.ts >= start.getTime() &&
+        event.ts < end.getTime()
+      )
     })
   }, [state.events, selectedExercise, loggingDate])
 
@@ -263,23 +269,9 @@ const LoggingScreen = ({
       }))
   }, [historySets])
 
-  const lastSession = useMemo(() => {
-    const todayBucket = roundToLocalDay(loggingDate.getTime())
-    return groupedHistory.find((bucket) => bucket.day !== todayBucket)
-  }, [groupedHistory, loggingDate])
-
   const prEventIds = useMemo(() => {
-    if (!historySets.length) return new Set<string>()
-    let maxWeight = 0
-    historySets.forEach((event) => {
-      const weight = toNumber(event.payload?.weight)
-      if (weight > maxWeight) {
-        maxWeight = weight
-      }
-    })
-    if (!maxWeight) return new Set<string>()
     const ids = historySets
-      .filter((event) => toNumber(event.payload?.weight) === maxWeight)
+      .filter((event) => event.payload?.pr === true)
       .map((event) => event.event_id)
     return new Set(ids)
   }, [historySets])
@@ -325,7 +317,7 @@ const LoggingScreen = ({
     const event = logSet(state, {
       event_id: `evt-${Date.now()}`,
       tracker_id: "workout",
-      ts: Date.now(),
+      ts: loggingDate.getTime(),
       payload,
       meta: {},
     })
@@ -384,72 +376,13 @@ const LoggingScreen = ({
 
   return (
     <View style={{ flex: 1 }}>
-      {searchVisible ? (
-        <TouchableWithoutFeedback onPress={() => setSearchVisible(false)}>
-          <View style={searchOverlay}>
-            <TouchableWithoutFeedback>
-              <View>
-                <Card style={{ flex: undefined, width: "90%", maxHeight: "80%" }}>
-                  <Text style={{ color: palette.text, fontWeight: "700", marginBottom: spacing(1) }}>Find exercise</Text>
-                  <TextInput
-                    placeholder="Search exercises"
-                    placeholderTextColor={palette.mutedText}
-                    value={searchQuery}
-                    onChangeText={setSearchQuery}
-                    style={{
-                      borderWidth: 1,
-                      borderColor: palette.border,
-                      borderRadius: radius.card,
-                      paddingVertical: spacing(1),
-                      paddingHorizontal: spacing(1.5),
-                      color: palette.text,
-                      backgroundColor: palette.mutedSurface,
-                    }}
-                  />
-                  <ScrollView style={{ marginTop: spacing(1) }}>
-                    {catalog
-                      .filter((entry) =>
-                        entry.display_name.toLowerCase().includes(searchQuery.trim().toLowerCase() || ""),
-                      )
-                      .map((entry) => (
-                        <TouchableOpacity
-                          key={entry.slug}
-                          style={{
-                            paddingVertical: spacing(1),
-                            borderBottomWidth: 1,
-                            borderColor: palette.border,
-                          }}
-                          onPress={() => {
-                            setSelectedExercise(entry)
-                            setSearchVisible(false)
-                            setSearchQuery("")
-                          }}
-                        >
-                          <Text style={{ color: palette.text, fontWeight: "600" }}>{entry.display_name}</Text>
-                          <Text style={{ color: palette.mutedText, fontSize: 12 }}>{entry.primary_muscle_group}</Text>
-                        </TouchableOpacity>
-                      ))}
-                  </ScrollView>
-                  <TouchableOpacity onPress={() => setSearchVisible(false)} style={{ marginTop: spacing(1) }}>
-                    <Text style={{ color: palette.primary, fontWeight: "600", textAlign: "center" }}>Close</Text>
-                  </TouchableOpacity>
-                </Card>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      ) : null}
       <ScrollView
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: spacing(2), gap: spacing(2), paddingBottom: spacing(2) }}
       >
         {selectedExercise ? (
           <Card>
-            {statusBanner ? (
-              <View style={[statusContainer, statusTone(statusBanner.tone)]}>
-                <Text style={{ color: palette.text, fontWeight: "600" }}>{statusBanner.text}</Text>
-              </View>
-            ) : null}
+            {statusBanner ? <ToastBanner text={statusBanner.text} tone={statusBanner.tone} /> : null}
             <View
               style={{
                 padding: spacing(1.5),
@@ -480,9 +413,6 @@ const LoggingScreen = ({
               <Text style={{ color: palette.mutedText, textTransform: "capitalize" }}>
                 {selectedExercise.primary_muscle_group.replace(/_/g, " ")} · {selectedExercise.modality}
               </Text>
-              <TouchableOpacity onPress={() => setSearchVisible(true)} style={changeExerciseButton}>
-                <Text style={{ color: palette.text, fontWeight: "600" }}>Change exercise</Text>
-              </TouchableOpacity>
             </View>
           </Card>
         ) : (
@@ -530,21 +460,6 @@ const LoggingScreen = ({
                   ))}
                 </View>
                 <Divider />
-                {lastSession ? (
-                  <TouchableOpacity
-                    onPress={() => setSessionTab("History")}
-                    activeOpacity={0.8}
-                    style={historyPeek}
-                  >
-                    <Text style={historyPeekLabel}>Last session</Text>
-                    <Text style={{ color: palette.text, fontWeight: "700" }}>{lastSession.label}</Text>
-                    {lastSession.events.slice(0, 3).map((set) => (
-                      <Text key={set.event_id} style={{ color: palette.mutedText, fontSize: 12 }}>
-                        {describeLoggedSet(set)}
-                      </Text>
-                    ))}
-                  </TouchableOpacity>
-                ) : null}
                 <Text style={{ fontSize: 14, fontWeight: "600", color: palette.mutedText, marginBottom: spacing(1) }}>
                   {formatDateLabel(loggingDate)} Sets
                 </Text>
@@ -559,6 +474,7 @@ const LoggingScreen = ({
                       onPress={() => handleSelectSet(set)}
                       active={editingEventId === set.event_id}
                       pr={prEventIds.has(set.event_id)}
+                      onPrPress={() => showStatus("Personal record set for this exercise.", "info")}
                     />
                   ))
                 )}
@@ -581,6 +497,7 @@ const LoggingScreen = ({
                           onPress={() => handleSelectSet(event)}
                           active={editingEventId === event.event_id}
                           pr={prEventIds.has(event.event_id)}
+                          onPrPress={() => showStatus("Personal record set for this exercise.", "info")}
                         />
                       ))}
                     </View>
@@ -690,56 +607,12 @@ const bottomCta = {
   gap: spacing(1),
 }
 
-const statusContainer = {
-  padding: spacing(1),
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  marginBottom: spacing(1),
-}
-
-const statusTone = (tone: "success" | "info" | "danger") => {
-  const toneColors = {
-    success: palette.success,
-    info: palette.primary,
-    danger: palette.danger,
-  } as const
-  const color = toneColors[tone]
-  return {
-    backgroundColor: addAlpha(color, 0.18),
-    borderColor: color,
-  }
-}
-
 const dangerButton = {
   paddingVertical: spacing(1.25),
   borderRadius: radius.card,
   borderWidth: 1,
   borderColor: palette.danger,
   alignItems: "center" as const,
-}
-
-const changeExerciseButton = {
-  marginTop: spacing(1),
-  borderWidth: 1,
-  borderColor: palette.border,
-  borderRadius: radius.card,
-  paddingVertical: spacing(0.5),
-  alignItems: "center" as const,
-}
-
-const historyPeek = {
-  backgroundColor: palette.mutedSurface,
-  borderRadius: radius.card,
-  padding: spacing(1),
-  marginBottom: spacing(1),
-}
-
-const historyPeekLabel = {
-  color: palette.mutedText,
-  fontSize: 12,
-  letterSpacing: 0.5,
-  textTransform: "uppercase" as const,
 }
 
 const Stepper = ({
@@ -843,16 +716,40 @@ const readNumber = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+type LoggedSetPayload = {
+  exercise?: string
+  reps?: number
+  weight?: number
+  duration?: number
+  distance?: number
+}
+
+const readLoggedSetPayload = (event: WorkoutEvent): LoggedSetPayload => ({
+  exercise: typeof event.payload?.exercise === "string" ? event.payload.exercise : undefined,
+  reps: readNumber(event.payload?.reps),
+  weight: readNumber(event.payload?.weight),
+  duration: readNumber(event.payload?.duration),
+  distance: readNumber(event.payload?.distance),
+})
+
 const describeLoggedSet = (event: WorkoutEvent) => {
-  const reps = toNumber(event.payload?.reps)
-  const weight = toNumber(event.payload?.weight)
-  if (weight > 0 && reps > 0) {
-    return `${weight} kg × ${reps} reps`
+  const payload = readLoggedSetPayload(event)
+  if (payload.weight && payload.reps) {
+    return `${payload.weight} kg × ${payload.reps} reps`
   }
-  if (reps > 0) {
-    return `${reps} reps`
+  if (payload.reps) {
+    return `${payload.reps} reps`
   }
-  return "0 reps"
+  if (payload.distance && payload.duration) {
+    return `${payload.distance} m / ${payload.duration} s`
+  }
+  if (payload.distance) {
+    return `${payload.distance} m`
+  }
+  if (payload.duration) {
+    return `${payload.duration} s`
+  }
+  return "Logged set"
 }
 
 const SetRow = ({
@@ -862,6 +759,7 @@ const SetRow = ({
   active = false,
   onPress,
   pr = false,
+  onPrPress,
 }: {
   event: WorkoutEvent
   highlightColor?: string
@@ -869,6 +767,7 @@ const SetRow = ({
   active?: boolean
   onPress?: () => void
   pr?: boolean
+  onPrPress?: () => void
 }) => {
   const description = describeLoggedSet(event)
 
@@ -900,7 +799,11 @@ const SetRow = ({
         <Text style={{ color: palette.text }}>{description}</Text>
       </View>
       <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(0.5) }}>
-        {pr ? <Text style={{ color: palette.warning, fontSize: 12, fontWeight: "700" }}>★ PR</Text> : null}
+        {pr ? (
+          <TouchableOpacity onPress={onPrPress} disabled={!onPrPress} activeOpacity={0.7}>
+            <Text style={{ color: palette.warning, fontSize: 12, fontWeight: "700" }}>★ PR</Text>
+          </TouchableOpacity>
+        ) : null}
         <Text style={{ color: palette.mutedText, fontSize: 12 }}>
           {new Date(event.ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
         </Text>
@@ -947,7 +850,7 @@ const buildPayloadFromFields = (fieldsState: typeof INITIAL_FIELDS, exerciseName
   const weight = parseNumericField(fieldsState.weight)
   const duration = parseNumericField(fieldsState.duration)
   const distance = parseNumericField(fieldsState.distance)
-  const payload: WorkoutEvent["payload"] = { exercise: exerciseName }
+  const payload: LoggedSetPayload = { exercise: exerciseName }
   if (typeof reps === "number") payload.reps = reps
   if (typeof weight === "number") payload.weight = weight
   if (typeof duration === "number") payload.duration = duration
@@ -987,13 +890,15 @@ const TrendChart = ({
     return <BodyText style={{ color: palette.mutedText }}>Need more sessions to display trends.</BodyText>
   }
   const maxValue = Math.max(...data.map((point) => point.value)) || 1
+  const minValue = Math.min(...data.map((point) => point.value)) || 0
   const width = 320
   const height = 160
   const padding = 16
   const step = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0
   const points = data.map((point, index) => {
     const x = padding + step * index
-    const normalized = point.value / maxValue
+    const range = Math.max(maxValue - minValue, 1)
+    const normalized = (point.value - minValue) / range
     const y = height - padding - normalized * (height - padding * 2)
     return { x, y, label: point.label, value: point.value }
   })
@@ -1002,41 +907,41 @@ const TrendChart = ({
     <View style={{ marginTop: spacing(1) }}>
       <Text style={{ color: palette.text, fontWeight: "700", marginBottom: spacing(0.5) }}>{metricLabel}</Text>
       <Text style={{ color: palette.mutedText, marginBottom: spacing(1) }}>{rangeLabel}</Text>
-      <Svg width={width} height={height}>
-        <Polyline
-          points={linePath}
-          fill="none"
-          stroke={muscleColor}
-          strokeWidth={3}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-        />
-        {points.map((point) => (
-          <Circle key={`${point.label}-${point.value}`} cx={point.x} cy={point.y} r={4} fill={muscleColor} />
-        ))}
-      </Svg>
-      <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: spacing(0.5) }}>
-        {points.map((point) => (
-          <Text key={`label-${point.label}`} style={{ color: palette.mutedText, fontSize: 10 }}>
-            {point.label}
+      <View style={{ flexDirection: "row" }}>
+        <View style={{ width: 44, justifyContent: "space-between", paddingRight: spacing(0.5) }}>
+          <Text style={{ color: palette.mutedText, fontSize: 10, textAlign: "right" }}>
+            {Math.round(maxValue)}
           </Text>
-        ))}
+          <Text style={{ color: palette.mutedText, fontSize: 10, textAlign: "right" }}>
+            {Math.round(minValue)}
+          </Text>
+        </View>
+        <View>
+          <Svg width={width} height={height}>
+            <Polyline
+              points={linePath}
+              fill="none"
+              stroke={muscleColor}
+              strokeWidth={3}
+              strokeLinejoin="round"
+              strokeLinecap="round"
+            />
+            {points.map((point) => (
+              <Circle key={`${point.label}-${point.value}`} cx={point.x} cy={point.y} r={4} fill={muscleColor} />
+            ))}
+          </Svg>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: spacing(0.5) }}>
+            {points.map((point) => (
+              <Text key={`label-${point.label}`} style={{ color: palette.mutedText, fontSize: 10 }}>
+                {point.label}
+              </Text>
+            ))}
+          </View>
+        </View>
       </View>
       <Text style={{ color: palette.mutedText, fontSize: 12, marginTop: spacing(1) }}>{metricDescription}</Text>
     </View>
   )
-}
-
-const searchOverlay = {
-  position: "absolute" as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: "#000000aa",
-  alignItems: "center" as const,
-  justifyContent: "center" as const,
-  zIndex: 10,
 }
 
 export default LoggingScreen

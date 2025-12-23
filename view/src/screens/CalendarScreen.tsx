@@ -37,6 +37,7 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
   const monthAnim = useRef(new Animated.Value(1)).current
   const [yearSheetOpen, setYearSheetOpen] = useState(false)
   const [legendExpanded, setLegendExpanded] = useState(false)
+  const sheetTranslate = useRef(new Animated.Value(0)).current
 
   useEffect(() => {
     fetchMergedCatalog().then(setCatalog).catch(console.warn)
@@ -45,6 +46,12 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
   useEffect(() => {
     setVisibleMonth(new Date(selectedDate))
   }, [selectedDate])
+
+  useEffect(() => {
+    if (yearSheetOpen) {
+      sheetTranslate.setValue(0)
+    }
+  }, [yearSheetOpen, sheetTranslate])
 
   const catalogMap = useMemo(() => {
     const map = new Map<string, ExerciseCatalogEntry>()
@@ -127,6 +134,28 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
         },
       }),
     [handleShift],
+  )
+
+  const sheetPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_: GestureResponderEvent, gesture: PanResponderGestureState) =>
+          gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
+        onPanResponderMove: (_: GestureResponderEvent, gesture: PanResponderGestureState) => {
+          if (gesture.dy > 0) {
+            sheetTranslate.setValue(gesture.dy)
+          }
+        },
+        onPanResponderRelease: (_: GestureResponderEvent, gesture: PanResponderGestureState) => {
+          if (gesture.dy > 80) {
+            setYearSheetOpen(false)
+            sheetTranslate.setValue(0)
+            return
+          }
+          Animated.timing(sheetTranslate, { toValue: 0, duration: 150, useNativeDriver: true }).start()
+        },
+      }),
+    [sheetTranslate],
   )
 
   return (
@@ -225,7 +254,10 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
         <TouchableWithoutFeedback onPress={() => setYearSheetOpen(false)}>
           <View style={sheetOverlay}>
             <TouchableWithoutFeedback>
-              <View style={sheetContainer}>
+              <Animated.View
+                style={[sheetContainer, { transform: [{ translateY: sheetTranslate }] }]}
+                {...sheetPanResponder.panHandlers}
+              >
                 <Text style={{ color: palette.mutedText, marginBottom: spacing(1) }}>Select year</Text>
                 <ScrollView>
                   {yearOptions.map((year) => (
@@ -249,7 +281,7 @@ const CalendarScreen = ({ events, selectedDate, onSelectDate, onClose }: Props) 
                 <TouchableOpacity onPress={() => setYearSheetOpen(false)} style={{ paddingVertical: spacing(1) }}>
                   <Text style={{ color: palette.primary, fontWeight: "600", textAlign: "center" }}>Close</Text>
                 </TouchableOpacity>
-              </View>
+              </Animated.View>
             </TouchableWithoutFeedback>
           </View>
         </TouchableWithoutFeedback>

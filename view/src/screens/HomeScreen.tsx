@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react"
 import { ScrollView, Text, TouchableOpacity, View } from "react-native"
-import Svg, { Path, Text as SvgText, TSpan } from "react-native-svg"
+import Svg, { Path } from "react-native-svg"
 import { WorkoutEvent } from "../workoutFlows"
 import { roundToLocalDay } from "../timePolicy"
 import { palette, radius, spacing, typography, fontSizes } from "../ui/theme"
@@ -10,6 +10,7 @@ import { getMuscleColor } from "../ui/muscleColors"
 import ChevronLeftIcon from "../assets/chevron-left.svg"
 import ChevronRightIcon from "../assets/chevron-right.svg"
 import PlusIcon from "../assets/plus.svg"
+import TodayIcon from "../assets/today-target.svg"
 
 type Props = {
   events: WorkoutEvent[]
@@ -17,6 +18,7 @@ type Props = {
   onSelectPreviousDay: () => void
   onSelectNextDay: () => void
   onOpenCalendar: () => void
+  onJumpToToday: () => void
   onStartExercise: () => void
   onSelectExerciseFromList: (exerciseName: string) => void
 }
@@ -27,6 +29,7 @@ const HomeScreen = ({
   onSelectPreviousDay,
   onSelectNextDay,
   onOpenCalendar,
+  onJumpToToday,
   onStartExercise,
   onSelectExerciseFromList,
 }: Props) => {
@@ -51,26 +54,22 @@ const HomeScreen = ({
     return map
   }, [catalog])
 
-  const dayExercises = useMemo(() => {
-    const map = new Map<string, WorkoutEvent[]>()
-    events.forEach((event) => {
-      if (roundToLocalDay(event.ts) !== dayBucket) return
-      const exercise = typeof event.payload?.exercise === "string" ? event.payload.exercise : "Exercise"
-      const existing = map.get(exercise) ?? []
-      existing.push(event)
-      map.set(exercise, existing)
-    })
-    return Array.from(map.entries()).map(([exercise, sets]) => ({
-      exercise,
-      sets: [...sets].sort((a, b) => a.ts - b.ts),
-    }))
-  }, [events, dayBucket])
+  const dayEvents = useMemo(
+    () =>
+      events
+        .filter((event) => roundToLocalDay(event.ts) === dayBucket)
+        .sort((a, b) => a.ts - b.ts),
+    [events, dayBucket],
+  )
 
   const sections = useMemo(() => {
     const groupMap = new Map<
       string,
       {
         label: string
+        firstTs: number
+        exerciseOrder: string[]
+        exerciseSets: Map<string, WorkoutEvent[]>
         exercises: {
           name: string
           sets: { description: string; count: number }[]
@@ -79,28 +78,48 @@ const HomeScreen = ({
         }[]
       }
     >()
-    dayExercises.forEach(({ exercise, sets }) => {
+    dayEvents.forEach((event) => {
+      const exercise = typeof event.payload?.exercise === "string" ? event.payload.exercise : "Exercise"
       const meta = catalogMap.get(exercise)
       const groupKey = meta?.primary_muscle_group ?? "untracked"
       const label = groupKey.replace(/_/g, " ").toUpperCase() || "UNTRACKED"
-      const setChunks = summarizeSets(sets)
       const color = getMuscleColor(meta?.primary_muscle_group)
-      const bucket = groupMap.get(groupKey) ?? { label, exercises: [] }
-      bucket.exercises.push({
-        name: exercise,
-        sets: setChunks,
-        color,
-        totalSets: setChunks.reduce((total, chunk) => total + chunk.count, 0),
-      })
+      const bucket =
+        groupMap.get(groupKey) ??
+        {
+          label,
+          firstTs: event.ts,
+          exerciseOrder: [],
+          exerciseSets: new Map<string, WorkoutEvent[]>(),
+          exercises: [],
+        }
+      if (!bucket.exerciseSets.has(exercise)) {
+        bucket.exerciseSets.set(exercise, [])
+        bucket.exerciseOrder.push(exercise)
+      }
+      bucket.exerciseSets.get(exercise)?.push(event)
       groupMap.set(groupKey, bucket)
     })
     return Array.from(groupMap.entries())
-      .map(([key, section]) => ({ key, ...section }))
-      .sort((a, b) => a.label.localeCompare(b.label))
-  }, [dayExercises, catalogMap])
+      .map(([key, section]) => {
+        const exercises = section.exerciseOrder.map((name) => {
+          const sets = section.exerciseSets.get(name) ?? []
+          const setChunks = summarizeSets(sets)
+          const meta = catalogMap.get(name)
+          return {
+            name,
+            sets: setChunks,
+            color: getMuscleColor(meta?.primary_muscle_group),
+            totalSets: setChunks.reduce((total, chunk) => total + chunk.count, 0),
+          }
+        })
+        return { key, ...section, exercises }
+      })
+      .sort((a, b) => a.firstTs - b.firstTs)
+  }, [dayEvents, catalogMap])
 
   const emptyState = sections.length === 0
-  const showStartCta = isToday || emptyState
+  const showStartCta = true
   const muscleChips = useMemo(() => {
     const total = sections.reduce((sum, section) => sum + section.exercises.length, 0)
     if (!total) return []
@@ -114,6 +133,22 @@ const HomeScreen = ({
       .sort((a, b) => b.percent - a.percent)
   }, [sections])
 
+  const musclePieData = useMemo(() => {
+    if (muscleChips.length <= 4) return muscleChips
+    const top = muscleChips.slice(0, 3)
+    const remainder = muscleChips.slice(3)
+    const remainderPercent = remainder.reduce((sum, item) => sum + item.percent, 0)
+    return [
+      ...top,
+      {
+        key: "other",
+        label: "Other",
+        color: palette.mutedSurface,
+        percent: remainderPercent,
+      },
+    ]
+  }, [muscleChips])
+
   return (
     <View style={{ flex: 1 }}>
       <View style={daySelector}>
@@ -124,9 +159,18 @@ const HomeScreen = ({
           <Text style={{ color: palette.text, fontSize: 18, fontWeight: "600" }}>{primaryLabel}</Text>
           <Text style={{ color: palette.mutedText, fontSize: 12 }}>{secondaryLabel}</Text>
         </TouchableOpacity>
-        <TouchableOpacity onPress={onSelectNextDay} style={arrowButton}>
-          <ChevronRightIcon width={20} height={20} color={palette.text} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: "row", gap: spacing(0.75) }}>
+          <TouchableOpacity onPress={onSelectNextDay} style={arrowButton}>
+            <ChevronRightIcon width={20} height={20} color={palette.text} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={onJumpToToday}
+            style={[arrowButton, isToday && { opacity: 0.4 }]}
+            disabled={isToday}
+          >
+            <TodayIcon width={18} height={18} color={palette.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={{ flex: 1 }}>
@@ -137,27 +181,35 @@ const HomeScreen = ({
                 <Text style={[typography.title, { fontSize: 20 }]}>{primaryLabel}</Text>
                 <Text style={{ color: palette.mutedText, fontSize: 12 }}>{secondaryLabel}</Text>
               </View>
-              {showStartCta ? (
-                <PrimaryAction label="Start workout" onPress={onStartExercise} />
-              ) : (
-                <View style={badge}>
-                  <Text style={{ color: palette.text, fontWeight: "600", fontSize: 12 }}>
-                    {events.filter((event) => roundToLocalDay(event.ts) === dayBucket).length} sets
-                  </Text>
-                </View>
-              )}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(0.5) }}>
+                {showStartCta ? (
+                  <PrimaryAction label="Start workout" onPress={onStartExercise} />
+                ) : (
+                  <View style={badge}>
+                    <Text style={{ color: palette.text, fontWeight: "600", fontSize: 12 }}>
+                      {events.filter((event) => roundToLocalDay(event.ts) === dayBucket).length} sets
+                    </Text>
+                  </View>
+                )}
+              </View>
             </View>
             {muscleChips.length > 0 ? (
-              <View style={{ flexDirection: "row", gap: spacing(2), alignItems: "center" }}>
-                <MusclePie data={muscleChips} />
-                <View style={{ flex: 1, gap: spacing(0.75) }}>
-                  {muscleChips.map((chip) => (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(2) }}>
+                <MusclePie data={musclePieData} radius={30} />
+                <View style={{ flex: 1, gap: spacing(0.5) }}>
+                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                    {sections.length} groups {isToday ? "logged today" : "logged"}
+                  </Text>
+                  {musclePieData.map((chip) => (
                     <View
                       key={chip.key}
-                      style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+                      style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}
                     >
-                      <Text style={{ color: palette.text, fontWeight: "600" }}>{chip.label}</Text>
-                      <Text style={{ color: palette.mutedText }}>{chip.percent}%</Text>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: spacing(0.5) }}>
+                        <View style={[legendDot, { backgroundColor: chip.color ?? palette.primary }]} />
+                        <Text style={{ color: palette.text, fontWeight: "600", fontSize: 12 }}>{chip.label}</Text>
+                      </View>
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>{chip.percent}%</Text>
                     </View>
                   ))}
                 </View>
@@ -174,43 +226,44 @@ const HomeScreen = ({
               {showStartCta ? <PrimaryAction label="Log workout" onPress={onStartExercise} /> : null}
             </Card>
           ) : (
-            sections.map((section) => (
-              <Card key={section.key}>
-                <View style={{ marginBottom: spacing(1) }}>
-                  <Text style={{ color: palette.mutedText, fontSize: 12, letterSpacing: 0.5, textTransform: "uppercase" }}>
-                    {section.label}
-                  </Text>
-                </View>
-                {section.exercises.map((exercise, index) => (
-                  <TouchableOpacity
-                    key={`${exercise.name}-${index}`}
-                    onPress={() => onSelectExerciseFromList(exercise.name)}
-                    style={[exerciseRow, index !== section.exercises.length - 1 && exerciseRowDivider]}
-                  >
-                    <View style={{ flex: 1, gap: spacing(0.75) }}>
-                      <View style={{ flexDirection: "row", alignItems: "center" }}>
+            <View style={listContainer}>
+              {sections.map((section, sectionIndex) => (
+                <View key={section.key} style={sectionBlock}>
+                  <Text style={sectionLabel}>{section.label}</Text>
+                  {section.exercises.map((exercise, index) => (
+                    <TouchableOpacity
+                      key={`${exercise.name}-${index}`}
+                      onPress={() => onSelectExerciseFromList(exercise.name)}
+                      style={[listRow, index !== section.exercises.length - 1 && listRowDivider]}
+                    >
+                      <View style={{ flex: 1, gap: spacing(0.5) }}>
                         <Text style={{ color: palette.text, fontSize: 16, fontWeight: "600" }}>{exercise.name}</Text>
-                        <View style={{ marginLeft: "auto" }}>
-                          <Text style={{ color: palette.mutedText, fontSize: 12 }}>{`${exercise.totalSets} ${
-                            exercise.totalSets === 1 ? "set" : "sets"
-                          }`}</Text>
+                        <View style={{ gap: spacing(0.25) }}>
+                          {exercise.sets.slice(0, 5).map((setItem, chunkIndex) => (
+                            <Text key={`${exercise.name}-${chunkIndex}`} style={{ color: palette.mutedText, fontSize: 12 }}>
+                              {formatSetLabel(setItem)}
+                            </Text>
+                          ))}
+                          {exercise.sets.length > 5 ? (
+                            <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                              + {countHiddenSets(exercise.sets)} more sets
+                            </Text>
+                          ) : null}
                         </View>
                       </View>
-                      <View style={{ gap: spacing(0.25) }}>
-                        {exercise.sets.map((setItem, chunkIndex) => (
-                          <Text key={`${exercise.name}-${chunkIndex}`} style={{ color: palette.mutedText, fontSize: 12 }}>
-                            {formatSetLabel(setItem)}
-                          </Text>
-                        ))}
-                      </View>
-                    </View>
-                  </TouchableOpacity>
-                ))}
-              </Card>
-            ))
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>{`${exercise.totalSets} ${
+                        exercise.totalSets === 1 ? "set" : "sets"
+                      }`}</Text>
+                    </TouchableOpacity>
+                  ))}
+                  {sectionIndex !== sections.length - 1 ? <View style={sectionDivider} /> : null}
+                </View>
+              ))}
+            </View>
           )}
         </ScrollView>
       </View>
+
     </View>
   )
 }
@@ -285,13 +338,24 @@ const toNumber = (value: unknown): number => {
 const describeSet = (event: WorkoutEvent) => {
   const reps = toNumber(event.payload?.reps)
   const weight = toNumber(event.payload?.weight)
+  const distance = toNumber(event.payload?.distance)
+  const duration = toNumber(event.payload?.duration)
   if (weight > 0 && reps > 0) {
     return `${weight} kg × ${reps} reps`
   }
   if (reps > 0) {
     return `${reps} reps`
   }
-  return "0 reps"
+  if (distance > 0 && duration > 0) {
+    return `${distance} m / ${duration} s`
+  }
+  if (distance > 0) {
+    return `${distance} m`
+  }
+  if (duration > 0) {
+    return `${duration} s`
+  }
+  return "Logged set"
 }
 
 const formatSetLabel = (chunk: SetChunk) => {
@@ -322,24 +386,6 @@ const arrowButton = {
   backgroundColor: palette.surface,
 }
 
-const exerciseRow = {
-  flexDirection: "row" as const,
-  justifyContent: "space-between" as const,
-  alignItems: "center" as const,
-  paddingVertical: spacing(1.25),
-}
-
-const exerciseRowDivider = {
-  borderBottomWidth: 1,
-  borderColor: palette.border,
-}
-
-const chipPill = {
-  borderRadius: radius.pill,
-  paddingHorizontal: spacing(1),
-  paddingVertical: spacing(0.5),
-}
-
 const badge = {
   paddingHorizontal: spacing(1.25),
   paddingVertical: spacing(0.5),
@@ -349,9 +395,58 @@ const badge = {
   borderColor: palette.border,
 }
 
-const MusclePie = ({ data }: { data: { key: string; label: string; percent: number; color?: string }[] }) => {
+const listContainer = {
+  backgroundColor: palette.surface,
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  padding: spacing(2),
+  gap: spacing(1.5),
+}
+
+const sectionBlock = {
+  gap: spacing(0.75),
+}
+
+const sectionLabel = {
+  color: palette.mutedText,
+  fontSize: 12,
+  letterSpacing: 0.5,
+  textTransform: "uppercase" as const,
+}
+
+const listRow = {
+  flexDirection: "row" as const,
+  justifyContent: "space-between" as const,
+  alignItems: "flex-start" as const,
+  paddingVertical: spacing(1),
+}
+
+const listRowDivider = {
+  borderBottomWidth: 1,
+  borderColor: palette.border,
+}
+
+const sectionDivider = {
+  height: 1,
+  backgroundColor: palette.border,
+  marginTop: spacing(1),
+}
+
+const legendDot = {
+  width: 8,
+  height: 8,
+  borderRadius: 999,
+}
+
+const MusclePie = ({
+  data,
+  radius = 36,
+}: {
+  data: { key: string; label: string; percent: number; color?: string }[]
+  radius?: number
+}) => {
   if (!data.length) return null
-  const radius = 36
   const center = radius
   let currentAngle = 0
   const arcs = data.map((slice) => {
@@ -365,33 +460,13 @@ const MusclePie = ({ data }: { data: { key: string; label: string; percent: numb
       color: slice.color ?? palette.primary,
       percent: slice.percent,
       path: describeArc(center, center, radius, startAngle, endAngle),
-      midAngle: startAngle + sweep / 2,
     }
   })
   return (
     <Svg width={radius * 2} height={radius * 2}>
-      {arcs.map((arc) => {
-        const labelPoint = polarToCartesian(center, center, radius * 0.55, arc.midAngle)
-        const displayLabel = arc.percent >= 20 ? arc.label : arc.label.charAt(0)
-        return (
-          <React.Fragment key={arc.key}>
-            <Path d={arc.path} fill={arc.color} opacity={0.9} />
-            <SvgText
-              x={labelPoint.x}
-              y={labelPoint.y}
-              fontSize={10}
-              fontWeight="600"
-              fill="#0f172a"
-              textAnchor="middle"
-            >
-              {`${arc.percent}%`}
-              <TSpan x={labelPoint.x} dy={12} fontSize={9}>
-                {displayLabel}
-              </TSpan>
-            </SvgText>
-          </React.Fragment>
-        )
-      })}
+      {arcs.map((arc) => (
+        <Path key={arc.key} d={arc.path} fill={arc.color} opacity={0.9} />
+      ))}
     </Svg>
   )
 }
@@ -410,6 +485,9 @@ const describeArc = (x: number, y: number, radius: number, startAngle: number, e
   const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1
   return [`M ${x} ${y}`, `L ${start.x} ${start.y}`, `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`, "Z"].join(" ")
 }
+
+const countHiddenSets = (chunks: SetChunk[]) =>
+  chunks.slice(5).reduce((total, chunk) => total + chunk.count, 0)
 
 
 export default HomeScreen
