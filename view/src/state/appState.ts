@@ -1,4 +1,21 @@
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import {
+  ExerciseName,
+  ExerciseSlug,
+  LoggingMode,
+  Modality,
+  MuscleGroup,
+  NumericInput,
+  SearchQuery,
+  ErrorMessage,
+  asExerciseName,
+  asExerciseSlug,
+  asLoggingMode,
+  asModality,
+  asMuscleGroup,
+  asNumericInput,
+  asSearchQuery,
+} from '../domain/types';
 import { PlanSuggestion, PlannerKind, WorkoutEvent } from '../workoutFlows';
 
 export type ScreenKey =
@@ -28,10 +45,10 @@ export type AnalyticsRangeKey = '8w' | '16w' | '6m' | '1y' | 'all';
 export type AnalyticsMetricKey = 'volume' | 'sessions';
 
 export type LoggingFields = {
-  reps: string;
-  weight: string;
-  duration: string;
-  distance: string;
+  reps: NumericInput;
+  weight: NumericInput;
+  duration: NumericInput;
+  distance: NumericInput;
 };
 
 export type RootState = {
@@ -40,13 +57,13 @@ export type RootState = {
   events: WorkoutEvent[];
   catalog: {
     entries: ExerciseCatalogEntry[];
-    favorites: string[];
+    favorites: ExerciseSlug[];
     custom: ExerciseCatalogEntry[];
   };
   browser: {
     mode: BrowserMode;
-    selectedGroup: string | null;
-    query: string;
+    selectedGroup: MuscleGroup | null;
+    query: SearchQuery;
     searchExpanded: boolean;
     menuOpen: boolean;
     contextEntry: {
@@ -57,16 +74,16 @@ export type RootState = {
     activeTab: BrowserTab;
     formEditing: ExerciseCatalogEntry | null;
     formDraft: {
-      displayName: string;
-      slug: string;
-      primary: string;
-      secondary: string[];
-      modality: string;
-      loggingMode: string;
-      minLoad: string;
-      maxLoad: string;
+      displayName: ExerciseName;
+      slug: ExerciseSlug;
+      primary: MuscleGroup;
+      secondary: MuscleGroup[];
+      modality: Modality;
+      loggingMode: LoggingMode;
+      minLoad: NumericInput;
+      maxLoad: NumericInput;
       saving: boolean;
-      error: string | null;
+      error: ErrorMessage | null;
     };
   };
   calendar: {
@@ -76,7 +93,7 @@ export type RootState = {
   };
   logging: {
     logDate: Date;
-    exerciseName?: string;
+    exerciseName?: ExerciseName;
     fields: LoggingFields;
     tab: SessionTab;
     selectedTrendRange: TrendRangeKey;
@@ -101,11 +118,11 @@ export type Action =
   | { type: 'date/shift'; deltaDays: number }
   | { type: 'events/set'; events: WorkoutEvent[] }
   | { type: 'catalog/set'; entries: ExerciseCatalogEntry[] }
-  | { type: 'catalog/favorites'; favorites: string[] }
+  | { type: 'catalog/favorites'; favorites: ExerciseSlug[] }
   | { type: 'catalog/custom'; custom: ExerciseCatalogEntry[] }
   | { type: 'browser/mode'; mode: BrowserMode }
-  | { type: 'browser/group'; group: string | null }
-  | { type: 'browser/query'; query: string }
+  | { type: 'browser/group'; group: MuscleGroup | null }
+  | { type: 'browser/query'; query: SearchQuery }
   | { type: 'browser/search'; expanded: boolean }
   | { type: 'browser/menu'; open: boolean }
   | { type: 'browser/context'; context: RootState['browser']['contextEntry'] }
@@ -119,7 +136,7 @@ export type Action =
   | { type: 'calendar/legend'; expanded: boolean }
   | { type: 'calendar/yearSheet'; open: boolean }
   | { type: 'log/date'; date: Date }
-  | { type: 'log/exercise'; exerciseName?: string }
+  | { type: 'log/exercise'; exerciseName?: ExerciseName }
   | { type: 'log/fields'; fields: LoggingFields }
   | { type: 'log/tab'; tab: SessionTab }
   | { type: 'log/trendRange'; range: TrendRangeKey }
@@ -133,10 +150,10 @@ export type Action =
   | { type: 'suggestions/items'; items: PlanSuggestion[] };
 
 export const initialFields: LoggingFields = {
-  reps: '',
-  weight: '',
-  duration: '',
-  distance: '',
+  reps: asNumericInput(''),
+  weight: asNumericInput(''),
+  duration: asNumericInput(''),
+  distance: asNumericInput(''),
 };
 
 export const createInitialState = (): RootState => {
@@ -149,21 +166,21 @@ export const createInitialState = (): RootState => {
     browser: {
       mode: 'groups',
       selectedGroup: null,
-      query: '',
+      query: asSearchQuery(''),
       searchExpanded: false,
       menuOpen: false,
       contextEntry: null,
       activeTab: 'all',
       formEditing: null,
       formDraft: {
-        displayName: '',
-        slug: '',
-        primary: 'chest',
+        displayName: asExerciseName(''),
+        slug: asExerciseSlug(''),
+        primary: asMuscleGroup('chest'),
         secondary: [],
-        modality: 'strength',
-        loggingMode: 'reps_weight',
-        minLoad: '',
-        maxLoad: '',
+        modality: asModality('strength'),
+        loggingMode: asLoggingMode('reps_weight'),
+        minLoad: asNumericInput(''),
+        maxLoad: asNumericInput(''),
         saving: false,
         error: null,
       },

@@ -10,6 +10,27 @@ import {
   TouchableWithoutFeedback,
 } from 'react-native';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import {
+  ExerciseName,
+  ExerciseSlug,
+  LoggingMode,
+  LoggingModeValue,
+  Modality,
+  ModalityValue,
+  MuscleGroup,
+  NumericInput,
+  SearchQuery,
+  Tag,
+  asExerciseSource,
+  asExerciseName,
+  asExerciseSlug,
+  asLoggingMode,
+  asModality,
+  asMuscleGroup,
+  asNumericInput,
+  asSearchQuery,
+  asErrorMessage,
+} from '../domain/types';
 import { palette, spacing, radius } from '../ui/theme';
 import { muscleColorMap } from '../ui/muscleColors';
 import ScreenHeader from '../ui/ScreenHeader';
@@ -44,7 +65,7 @@ const ExerciseBrowser = () => {
   const muscleGroups = useMemo(() => {
     const groups = Array.from(
       new Set(catalog.map(entry => entry.primary_muscle_group)),
-    );
+    ) as MuscleGroup[];
     return groups.sort((a, b) => a.localeCompare(b));
   }, [catalog]);
 
@@ -100,7 +121,7 @@ const ExerciseBrowser = () => {
   const goBack = () => {
     if (mode === 'exercises') {
       dispatch({ type: 'browser/mode', mode: 'groups' });
-      dispatch({ type: 'browser/query', query: '' });
+      dispatch({ type: 'browser/query', query: asSearchQuery('') });
       return;
     }
     if (mode === 'manage') {
@@ -119,49 +140,58 @@ const ExerciseBrowser = () => {
 
   const collapseSearch = () => {
     dispatch({ type: 'browser/search', expanded: false });
-    dispatch({ type: 'browser/query', query: '' });
+    dispatch({ type: 'browser/query', query: asSearchQuery('') });
   };
 
-  const handleFavoriteToggle = async (slug: string) => {
+  const handleFavoriteToggle = async (slug: ExerciseSlug) => {
     const isFavorite = favoriteSlugs.includes(slug);
     await actions.toggleFavorite(slug, !isFavorite);
   };
 
-  const renderGroupRow = ({ item }: ListRenderItemInfo<string>) => (
-    <TouchableOpacity
-      onPress={() => {
-        dispatch({ type: 'browser/group', group: item });
-        dispatch({ type: 'browser/mode', mode: 'exercises' });
-        dispatch({ type: 'browser/query', query: '' });
-      }}
-      style={rowStyle}
-    >
-      <View
-        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(1) }}
+  const renderGroupRow = ({ item }: ListRenderItemInfo<MuscleGroup>) => {
+    const group = asMuscleGroup(item);
+    return (
+      <TouchableOpacity
+        onPress={() => {
+          dispatch({ type: 'browser/group', group });
+          dispatch({ type: 'browser/mode', mode: 'exercises' });
+          dispatch({ type: 'browser/query', query: asSearchQuery('') });
+        }}
+        style={rowStyle}
       >
         <View
-          style={[
-            chip,
-            { backgroundColor: muscleColorMap[item] ?? palette.mutedSurface },
-          ]}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: spacing(1),
+          }}
         >
-          <Text
-            style={{
-              color: '#0f172a',
-              fontWeight: '700' as const,
-              fontSize: 12,
-            }}
+          <View
+            style={[
+              chip,
+              {
+                backgroundColor: muscleColorMap[group] ?? palette.mutedSurface,
+              },
+            ]}
           >
-            {formatLabel(item)}
+            <Text
+              style={{
+                color: '#0f172a',
+                fontWeight: '700' as const,
+                fontSize: 12,
+              }}
+            >
+              {formatLabel(group)}
+            </Text>
+          </View>
+          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+            {countExercises(group, catalog)} exercises
           </Text>
         </View>
-        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-          {countExercises(item, catalog)} exercises
-        </Text>
-      </View>
-      <Text style={{ color: palette.mutedText, fontSize: 12 }}>Open</Text>
-    </TouchableOpacity>
-  );
+        <Text style={{ color: palette.mutedText, fontSize: 12 }}>Open</Text>
+      </TouchableOpacity>
+    );
+  };
 
   const renderExerciseRow = ({
     item,
@@ -217,7 +247,7 @@ const ExerciseBrowser = () => {
             <TouchableOpacity
               onPress={() => {
                 if (searchExpanded) {
-                  dispatch({ type: 'browser/query', query: '' });
+                  dispatch({ type: 'browser/query', query: asSearchQuery('') });
                 }
                 dispatch({ type: 'browser/search', expanded: !searchExpanded });
               }}
@@ -435,14 +465,14 @@ const ExerciseBrowser = () => {
             dispatch({
               type: 'browser/formDraft',
               draft: {
-                displayName: '',
-                slug: '',
-                primary: 'chest',
+                displayName: asExerciseName(''),
+                slug: asExerciseSlug(''),
+                primary: asMuscleGroup('chest'),
                 secondary: [],
-                modality: 'strength',
-                loggingMode: 'reps_weight',
-                minLoad: '',
-                maxLoad: '',
+                modality: asModality('strength'),
+                loggingMode: asLoggingMode('reps_weight'),
+                minLoad: asNumericInput(''),
+                maxLoad: asNumericInput(''),
                 saving: false,
                 error: null,
               },
@@ -472,7 +502,7 @@ const ExerciseBrowser = () => {
               await actions.saveCustomExercise(
                 {
                   ...values,
-                  source: 'custom',
+                  source: asExerciseSource('custom'),
                   archived: formEditing?.archived,
                 },
                 formEditing?.slug,
@@ -480,24 +510,25 @@ const ExerciseBrowser = () => {
               dispatch({ type: 'browser/form', entry: null });
               dispatch({ type: 'browser/mode', mode: 'manage' });
               updateFormDraft({
-                displayName: '',
-                slug: '',
-                primary: 'chest',
+                displayName: asExerciseName(''),
+                slug: asExerciseSlug(''),
+                primary: asMuscleGroup('chest'),
                 secondary: [],
-                modality: 'strength',
-                loggingMode: 'reps_weight',
-                minLoad: '',
-                maxLoad: '',
+                modality: asModality('strength'),
+                loggingMode: asLoggingMode('reps_weight'),
+                minLoad: asNumericInput(''),
+                maxLoad: asNumericInput(''),
                 saving: false,
                 error: null,
               });
             } catch (error) {
               updateFormDraft({
                 saving: false,
-                error:
+                error: asErrorMessage(
                   error instanceof Error
                     ? error.message
                     : 'Failed to save exercise.',
+                ),
               });
             }
           }}
@@ -518,7 +549,10 @@ const ExerciseBrowser = () => {
                   placeholderTextColor={palette.mutedText}
                   value={query}
                   onChangeText={value =>
-                    dispatch({ type: 'browser/query', query: value })
+                    dispatch({
+                      type: 'browser/query',
+                      query: asSearchQuery(value),
+                    })
                   }
                   style={[searchInput, { flex: 1 }]}
                   autoFocus
@@ -572,7 +606,7 @@ const ExerciseBrowser = () => {
                 }
               />
             ) : (
-              <FlatList<string>
+              <FlatList<MuscleGroup>
                 data={filteredGroups}
                 keyExtractor={item => item}
                 renderItem={renderGroupRow}
@@ -613,14 +647,14 @@ const ExerciseBrowser = () => {
               dispatch({
                 type: 'browser/formDraft',
                 draft: {
-                  displayName: '',
-                  slug: '',
-                  primary: 'chest',
+                  displayName: asExerciseName(''),
+                  slug: asExerciseSlug(''),
+                  primary: asMuscleGroup('chest'),
                   secondary: [],
-                  modality: 'strength',
-                  loggingMode: 'reps_weight',
-                  minLoad: '',
-                  maxLoad: '',
+                  modality: asModality('strength'),
+                  loggingMode: asLoggingMode('reps_weight'),
+                  minLoad: asNumericInput(''),
+                  maxLoad: asNumericInput(''),
                   saving: false,
                   error: null,
                 },
@@ -639,21 +673,23 @@ const ExerciseBrowser = () => {
   );
 };
 
-const formatLabel = (label: string) =>
+const formatLabel = (
+  label: ExerciseName | MuscleGroup | SearchQuery | Modality | LoggingMode,
+) =>
   label
     .split('_')
     .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
 
 const draftFromEntry = (entry: ExerciseCatalogEntry): BrowserFormDraft => ({
-  displayName: entry.display_name ?? '',
-  slug: entry.slug ?? '',
-  primary: entry.primary_muscle_group ?? 'chest',
+  displayName: entry.display_name ?? asExerciseName(''),
+  slug: entry.slug ?? asExerciseSlug(''),
+  primary: entry.primary_muscle_group ?? asMuscleGroup('chest'),
   secondary: entry.secondary_groups ?? [],
-  modality: entry.modality ?? 'strength',
-  loggingMode: entry.logging_mode ?? 'reps_weight',
-  minLoad: entry.suggested_load_range?.min?.toString() ?? '',
-  maxLoad: entry.suggested_load_range?.max?.toString() ?? '',
+  modality: entry.modality ?? asModality('strength'),
+  loggingMode: entry.logging_mode ?? asLoggingMode('reps_weight'),
+  minLoad: asNumericInput(entry.suggested_load_range?.min?.toString() ?? ''),
+  maxLoad: asNumericInput(entry.suggested_load_range?.max?.toString() ?? ''),
   saving: false,
   error: null,
 });
@@ -735,14 +771,14 @@ const separator = {
 };
 
 type ExerciseFormValues = {
-  display_name: string;
-  slug: string;
-  primary_muscle_group: string;
-  secondary_groups: string[];
-  modality: string;
-  logging_mode: string;
+  display_name: ExerciseName;
+  slug: ExerciseSlug;
+  primary_muscle_group: MuscleGroup;
+  secondary_groups: MuscleGroup[];
+  modality: Modality;
+  logging_mode: LoggingMode;
   suggested_load_range: { min: number; max: number };
-  tags?: string[];
+  tags?: Tag[];
 };
 
 type BrowserFormDraft = RootState['browser']['formDraft'];
@@ -771,22 +807,24 @@ const ExerciseForm = ({
     error,
   } = draft;
 
-  const muscleOptions = Object.keys(muscleColorMap);
-  const modalityOptions = [
+  const muscleOptions = Object.keys(muscleColorMap).map(group =>
+    asMuscleGroup(group),
+  );
+  const modalityOptions: ModalityValue[] = [
     'strength',
     'hypertrophy',
     'conditioning',
     'bodyweight',
     'mobility',
   ];
-  const loggingOptions = [
+  const loggingOptions: LoggingModeValue[] = [
     'reps_weight',
     'reps',
     'time_distance',
     'distance_time',
   ];
 
-  const toggleSecondary = (group: string) => {
+  const toggleSecondary = (group: MuscleGroup) => {
     updateDraft({
       secondary: secondary.includes(group)
         ? secondary.filter(item => item !== group)
@@ -797,16 +835,20 @@ const ExerciseForm = ({
   const handleSave = async () => {
     updateDraft({ error: null });
     if (!displayName.trim()) {
-      updateDraft({ error: 'Display name is required.' });
+      updateDraft({ error: asErrorMessage('Display name is required.') });
       return;
     }
     if (!primary) {
-      updateDraft({ error: 'Primary muscle group is required.' });
+      updateDraft({
+        error: asErrorMessage('Primary muscle group is required.'),
+      });
       return;
     }
     await onSubmit({
-      display_name: displayName.trim(),
-      slug: slug.trim().length ? slug.trim() : displayName.trim(),
+      display_name: asExerciseName(displayName.trim()),
+      slug: asExerciseSlug(
+        slug.trim().length ? slug.trim() : displayName.trim(),
+      ),
       primary_muscle_group: primary,
       secondary_groups: secondary,
       modality,
@@ -825,7 +867,9 @@ const ExerciseForm = ({
       <Text style={formLabel}>Display name</Text>
       <TextInput
         value={displayName}
-        onChangeText={value => updateDraft({ displayName: value })}
+        onChangeText={value =>
+          updateDraft({ displayName: asExerciseName(value) })
+        }
         style={formInput}
         placeholder="Back Squat"
       />
@@ -833,7 +877,7 @@ const ExerciseForm = ({
       <Text style={formLabel}>Slug</Text>
       <TextInput
         value={slug}
-        onChangeText={value => updateDraft({ slug: value })}
+        onChangeText={value => updateDraft({ slug: asExerciseSlug(value) })}
         style={formInput}
         placeholder="back_squat"
       />
@@ -876,38 +920,46 @@ const ExerciseForm = ({
 
       <Text style={formLabel}>Modality</Text>
       <View style={chipRow}>
-        {modalityOptions.map(option => (
-          <TouchableOpacity
-            key={option}
-            onPress={() => updateDraft({ modality: option })}
-            style={[chip, modality === option && chipActive]}
-          >
-            <Text
-              style={{ color: modality === option ? '#0f172a' : palette.text }}
+        {modalityOptions.map(option => {
+          const typedOption = asModality(option);
+          return (
+            <TouchableOpacity
+              key={option}
+              onPress={() => updateDraft({ modality: typedOption })}
+              style={[chip, modality === typedOption && chipActive]}
             >
-              {formatLabel(option)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={{
+                  color: modality === typedOption ? '#0f172a' : palette.text,
+                }}
+              >
+                {formatLabel(typedOption)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <Text style={formLabel}>Logging mode</Text>
       <View style={chipRow}>
-        {loggingOptions.map(option => (
-          <TouchableOpacity
-            key={option}
-            onPress={() => updateDraft({ loggingMode: option })}
-            style={[chip, loggingMode === option && chipActive]}
-          >
-            <Text
-              style={{
-                color: loggingMode === option ? '#0f172a' : palette.text,
-              }}
+        {loggingOptions.map(option => {
+          const typedOption = asLoggingMode(option);
+          return (
+            <TouchableOpacity
+              key={option}
+              onPress={() => updateDraft({ loggingMode: typedOption })}
+              style={[chip, loggingMode === typedOption && chipActive]}
             >
-              {formatLabel(option)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+              <Text
+                style={{
+                  color: loggingMode === typedOption ? '#0f172a' : palette.text,
+                }}
+              >
+                {formatLabel(typedOption)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       <View style={{ flexDirection: 'row', gap: spacing(1) }}>
@@ -915,7 +967,9 @@ const ExerciseForm = ({
           <Text style={formLabel}>Suggested min (kg)</Text>
           <TextInput
             value={minLoad}
-            onChangeText={value => updateDraft({ minLoad: value })}
+            onChangeText={value =>
+              updateDraft({ minLoad: asNumericInput(value) })
+            }
             style={formInput}
             keyboardType="numeric"
           />
@@ -924,7 +978,9 @@ const ExerciseForm = ({
           <Text style={formLabel}>Suggested max (kg)</Text>
           <TextInput
             value={maxLoad}
-            onChangeText={value => updateDraft({ maxLoad: value })}
+            onChangeText={value =>
+              updateDraft({ maxLoad: asNumericInput(value) })
+            }
             style={formInput}
             keyboardType="numeric"
           />
@@ -1154,7 +1210,7 @@ const sheetActionLabel = {
   fontWeight: '600' as const,
 };
 
-const countExercises = (group: string, catalog: ExerciseCatalogEntry[]) =>
+const countExercises = (group: MuscleGroup, catalog: ExerciseCatalogEntry[]) =>
   catalog.filter(entry => entry.primary_muscle_group === group).length;
 
 export default ExerciseBrowser;

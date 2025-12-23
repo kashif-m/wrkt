@@ -11,6 +11,14 @@ import PlusIcon from '../assets/plus.svg';
 import TodayIcon from '../assets/today-target.svg';
 import { useAppActions, useAppState } from '../state/appContext';
 import { WorkoutEvent } from '../workoutFlows';
+import {
+  DisplayLabel,
+  ExerciseName,
+  MuscleGroup,
+  asDisplayLabel,
+  asExerciseName,
+  asMuscleGroup,
+} from '../domain/types';
 
 const HomeScreen = () => {
   const state = useAppState();
@@ -31,7 +39,7 @@ const HomeScreen = () => {
   });
 
   const catalogMap = useMemo(() => {
-    const map = new Map<string, (typeof catalog)[number]>();
+    const map = new Map<ExerciseName, (typeof catalog)[number]>();
     catalog.forEach(entry => map.set(entry.display_name, entry));
     return map;
   }, [catalog]);
@@ -46,34 +54,37 @@ const HomeScreen = () => {
 
   const sections = useMemo(() => {
     const groupMap = new Map<
-      string,
+      MuscleGroup,
       {
-        label: string;
+        label: DisplayLabel;
         firstTs: number;
-        exerciseOrder: string[];
-        exerciseSets: Map<string, WorkoutEvent[]>;
+        exerciseOrder: ExerciseName[];
+        exerciseSets: Map<ExerciseName, WorkoutEvent[]>;
         exercises: {
-          name: string;
-          sets: { description: string; count: number }[];
+          name: ExerciseName;
+          sets: { description: DisplayLabel; count: number }[];
           color: string;
           totalSets: number;
         }[];
       }
     >();
     dayEvents.forEach(event => {
-      const exercise =
+      const exercise = asExerciseName(
         typeof event.payload?.exercise === 'string'
           ? event.payload.exercise
-          : 'Exercise';
+          : 'Exercise',
+      );
       const meta = catalogMap.get(exercise);
-      const groupKey = meta?.primary_muscle_group ?? 'untracked';
-      const label = groupKey.replace(/_/g, ' ').toUpperCase() || 'UNTRACKED';
+      const groupKey = meta?.primary_muscle_group ?? asMuscleGroup('untracked');
+      const label = asDisplayLabel(
+        groupKey.replace(/_/g, ' ').toUpperCase() || 'UNTRACKED',
+      );
       const color = getMuscleColor(meta?.primary_muscle_group);
       const bucket = groupMap.get(groupKey) ?? {
         label,
         firstTs: event.ts,
         exerciseOrder: [],
-        exerciseSets: new Map<string, WorkoutEvent[]>(),
+        exerciseSets: new Map<ExerciseName, WorkoutEvent[]>(),
         exercises: [],
       };
       if (!bucket.exerciseSets.has(exercise)) {
@@ -114,7 +125,7 @@ const HomeScreen = () => {
     if (!total) return [];
     return sections
       .map(section => ({
-        key: section.key,
+        key: formatMuscleLabel(section.key),
         label: formatMuscleLabel(section.key),
         color: section.exercises[0]?.color,
         percent: Math.round((section.exercises.length / total) * 100),
@@ -133,8 +144,8 @@ const HomeScreen = () => {
     return [
       ...top,
       {
-        key: 'other',
-        label: 'Other',
+        key: asDisplayLabel('Other'),
+        label: asDisplayLabel('Other'),
         color: palette.mutedSurface,
         percent: remainderPercent,
       },
@@ -421,35 +432,18 @@ const PrimaryAction = ({
   </TouchableOpacity>
 );
 
-type SetChunk = { description: string; count: number };
+type SetChunk = { description: DisplayLabel; count: number };
 
-const formatMuscleLabel = (label: string) =>
-  label
-    .split('_')
-    .map(part => (part.length ? part[0].toUpperCase() + part.slice(1) : ''))
-    .join(' ');
-
-const formatValue = (value: unknown): string => {
-  if (value === null || value === undefined) {
-    return '-';
-  }
-  if (typeof value === 'string') {
-    return value;
-  }
-  if (typeof value === 'number') {
-    return value.toString();
-  }
-  if (typeof value === 'boolean') {
-    return value ? 'Yes' : 'No';
-  }
-  if (Array.isArray(value)) {
-    return value.map(item => formatValue(item)).join(', ');
-  }
-  return JSON.stringify(value);
-};
+const formatMuscleLabel = (label: MuscleGroup): DisplayLabel =>
+  asDisplayLabel(
+    label
+      .split('_')
+      .map(part => (part.length ? part[0].toUpperCase() + part.slice(1) : ''))
+      .join(' '),
+  );
 
 const summarizeSets = (sets: WorkoutEvent[]): SetChunk[] => {
-  const condensation: Array<{ description: string; count: number }> = [];
+  const condensation: Array<{ description: DisplayLabel; count: number }> = [];
   sets.forEach(event => {
     const description = describeSet(event);
     const last = condensation[condensation.length - 1];
@@ -468,34 +462,34 @@ const toNumber = (value: unknown): number => {
   return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const describeSet = (event: WorkoutEvent) => {
+const describeSet = (event: WorkoutEvent): DisplayLabel => {
   const reps = toNumber(event.payload?.reps);
   const weight = toNumber(event.payload?.weight);
   const distance = toNumber(event.payload?.distance);
   const duration = toNumber(event.payload?.duration);
   if (weight > 0 && reps > 0) {
-    return `${weight} kg × ${reps} reps`;
+    return asDisplayLabel(`${weight} kg × ${reps} reps`);
   }
   if (reps > 0) {
-    return `${reps} reps`;
+    return asDisplayLabel(`${reps} reps`);
   }
   if (distance > 0 && duration > 0) {
-    return `${distance} m / ${duration} s`;
+    return asDisplayLabel(`${distance} m / ${duration} s`);
   }
   if (distance > 0) {
-    return `${distance} m`;
+    return asDisplayLabel(`${distance} m`);
   }
   if (duration > 0) {
-    return `${duration} s`;
+    return asDisplayLabel(`${duration} s`);
   }
-  return 'Logged set';
+  return asDisplayLabel('Logged set');
 };
 
-const formatSetLabel = (chunk: SetChunk) => {
+const formatSetLabel = (chunk: SetChunk): DisplayLabel => {
   if (chunk.count === 1) {
     return chunk.description;
   }
-  return `${chunk.count} sets · ${chunk.description}`;
+  return asDisplayLabel(`${chunk.count} sets · ${chunk.description}`);
 };
 
 const daySelector = {
@@ -576,7 +570,12 @@ const MusclePie = ({
   data,
   radius = 36,
 }: {
-  data: { key: string; label: string; percent: number; color?: string }[];
+  data: {
+    key: DisplayLabel;
+    label: DisplayLabel;
+    percent: number;
+    color?: string;
+  }[];
   radius?: number;
 }) => {
   if (!data.length) return null;

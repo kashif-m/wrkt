@@ -24,44 +24,80 @@ import {
   useAppState,
 } from '../state/appContext';
 import { LoggingFields } from '../state/appState';
+import {
+  DisplayLabel,
+  asExerciseName,
+  ExerciseName,
+  LoggingMode,
+  LoggingModeValue,
+  NumericInput,
+  asDisplayLabel,
+  asNumericInput,
+  unwrapLoggingMode,
+} from '../domain/types';
 
 const sessionTabs = ['Track', 'History', 'Trends'] as const;
 export type SessionTab = (typeof sessionTabs)[number];
 
 const INITIAL_FIELDS: LoggingFields = {
-  reps: '',
-  weight: '',
-  duration: '',
-  distance: '',
+  reps: asNumericInput(''),
+  weight: asNumericInput(''),
+  duration: asNumericInput(''),
+  distance: asNumericInput(''),
 };
 type FieldKey = keyof typeof INITIAL_FIELDS;
 type FieldConfig = {
   key: FieldKey;
-  label: string;
-  unit?: string;
+  label: DisplayLabel;
+  unit?: DisplayLabel;
   step: number;
 };
 
 const trendRangeOptions = [
-  { key: '1m', label: '1m', days: 30, longLabel: 'Last 1 month' },
-  { key: '3m', label: '3m', days: 90, longLabel: 'Last 3 months' },
-  { key: '6m', label: '6m', days: 180, longLabel: 'Last 6 months' },
-  { key: '1y', label: '1y', days: 365, longLabel: 'Last year' },
-  { key: 'all', label: 'All', days: null, longLabel: 'All time' },
+  {
+    key: '1m',
+    label: asDisplayLabel('1m'),
+    days: 30,
+    longLabel: asDisplayLabel('Last 1 month'),
+  },
+  {
+    key: '3m',
+    label: asDisplayLabel('3m'),
+    days: 90,
+    longLabel: asDisplayLabel('Last 3 months'),
+  },
+  {
+    key: '6m',
+    label: asDisplayLabel('6m'),
+    days: 180,
+    longLabel: asDisplayLabel('Last 6 months'),
+  },
+  {
+    key: '1y',
+    label: asDisplayLabel('1y'),
+    days: 365,
+    longLabel: asDisplayLabel('Last year'),
+  },
+  {
+    key: 'all',
+    label: asDisplayLabel('All'),
+    days: null,
+    longLabel: asDisplayLabel('All time'),
+  },
 ] as const;
 type TrendRangeKey = (typeof trendRangeOptions)[number]['key'];
 
 type MetricDefinition = {
-  label: string;
-  description: string;
+  label: DisplayLabel;
+  description: DisplayLabel;
   reducer: 'max' | 'sum';
   compute: (event: WorkoutEvent) => number | undefined;
 };
 
 const metricDefinitions = {
   estimated_1rm: {
-    label: 'Estimated 1RM',
-    description: 'Epley estimate based on top sets.',
+    label: asDisplayLabel('Estimated 1RM'),
+    description: asDisplayLabel('Epley estimate based on top sets.'),
     reducer: 'max',
     compute: (event: WorkoutEvent) => {
       const weight = readNumber(event.payload?.weight);
@@ -71,8 +107,8 @@ const metricDefinitions = {
     },
   },
   max_weight: {
-    label: 'Max Weight',
-    description: 'Heaviest set logged per day.',
+    label: asDisplayLabel('Max Weight'),
+    description: asDisplayLabel('Heaviest set logged per day.'),
     reducer: 'max',
     compute: (event: WorkoutEvent) => {
       const weight = readNumber(event.payload?.weight);
@@ -80,8 +116,8 @@ const metricDefinitions = {
     },
   },
   max_reps: {
-    label: 'Max Reps',
-    description: 'Highest rep count recorded.',
+    label: asDisplayLabel('Max Reps'),
+    description: asDisplayLabel('Highest rep count recorded.'),
     reducer: 'max',
     compute: (event: WorkoutEvent) => {
       const reps = readNumber(event.payload?.reps);
@@ -89,8 +125,8 @@ const metricDefinitions = {
     },
   },
   max_volume: {
-    label: 'Max Volume',
-    description: 'Largest weight × reps combo for the day.',
+    label: asDisplayLabel('Max Volume'),
+    description: asDisplayLabel('Largest weight × reps combo for the day.'),
     reducer: 'max',
     compute: (event: WorkoutEvent) => {
       const weight = readNumber(event.payload?.weight);
@@ -100,8 +136,8 @@ const metricDefinitions = {
     },
   },
   workout_volume: {
-    label: 'Workout Volume',
-    description: 'Total weight × reps per day.',
+    label: asDisplayLabel('Workout Volume'),
+    description: asDisplayLabel('Total weight × reps per day.'),
     reducer: 'sum',
     compute: (event: WorkoutEvent) => {
       const weight = readNumber(event.payload?.weight);
@@ -111,34 +147,81 @@ const metricDefinitions = {
     },
   },
   workout_reps: {
-    label: 'Workout Reps',
-    description: 'Total reps completed per day.',
+    label: asDisplayLabel('Workout Reps'),
+    description: asDisplayLabel('Total reps completed per day.'),
     reducer: 'sum',
     compute: (event: WorkoutEvent) => {
       const reps = readNumber(event.payload?.reps);
       return reps && reps > 0 ? reps : undefined;
     },
   },
-} satisfies Record<string, MetricDefinition>;
+} as const;
 type TrendMetricKey = keyof typeof metricDefinitions;
 
-const FIELD_CONFIGS: Record<string, FieldConfig[]> = {
+const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
   reps_weight: [
-    { key: 'weight', label: 'Weight', unit: 'kg', step: 2.5 },
-    { key: 'reps', label: 'Reps', unit: 'reps', step: 1 },
+    {
+      key: 'weight',
+      label: asDisplayLabel('Weight'),
+      unit: asDisplayLabel('kg'),
+      step: 2.5,
+    },
+    {
+      key: 'reps',
+      label: asDisplayLabel('Reps'),
+      unit: asDisplayLabel('reps'),
+      step: 1,
+    },
   ],
-  reps: [{ key: 'reps', label: 'Reps', unit: 'reps', step: 1 }],
+  reps: [
+    {
+      key: 'reps',
+      label: asDisplayLabel('Reps'),
+      unit: asDisplayLabel('reps'),
+      step: 1,
+    },
+  ],
   time_distance: [
-    { key: 'duration', label: 'Time', unit: 'min', step: 0.5 },
-    { key: 'distance', label: 'Distance', unit: 'm', step: 50 },
+    {
+      key: 'duration',
+      label: asDisplayLabel('Time'),
+      unit: asDisplayLabel('min'),
+      step: 0.5,
+    },
+    {
+      key: 'distance',
+      label: asDisplayLabel('Distance'),
+      unit: asDisplayLabel('m'),
+      step: 50,
+    },
   ],
   distance_time: [
-    { key: 'distance', label: 'Distance', unit: 'm', step: 50 },
-    { key: 'duration', label: 'Time', unit: 'min', step: 0.5 },
+    {
+      key: 'distance',
+      label: asDisplayLabel('Distance'),
+      unit: asDisplayLabel('m'),
+      step: 50,
+    },
+    {
+      key: 'duration',
+      label: asDisplayLabel('Time'),
+      unit: asDisplayLabel('min'),
+      step: 0.5,
+    },
   ],
   default: [
-    { key: 'reps', label: 'Reps', unit: 'reps', step: 1 },
-    { key: 'weight', label: 'Weight', unit: 'kg', step: 2.5 },
+    {
+      key: 'reps',
+      label: asDisplayLabel('Reps'),
+      unit: asDisplayLabel('reps'),
+      step: 1,
+    },
+    {
+      key: 'weight',
+      label: asDisplayLabel('Weight'),
+      unit: asDisplayLabel('kg'),
+      step: 2.5,
+    },
   ],
 };
 
@@ -172,7 +255,8 @@ const LoggingScreen = () => {
 
   const fieldDefinitions = useMemo(() => {
     return selectedExercise
-      ? FIELD_CONFIGS[selectedExercise.logging_mode] ?? FIELD_CONFIGS.default
+      ? FIELD_CONFIGS[unwrapLoggingMode(selectedExercise.logging_mode)] ??
+          FIELD_CONFIGS.default
       : FIELD_CONFIGS.default;
   }, [selectedExercise]);
 
@@ -183,7 +267,7 @@ const LoggingScreen = () => {
     const end = new Date(start);
     end.setDate(start.getDate() + 1);
     return state.events.filter(event => {
-      const exerciseName = formatValue(event.payload?.exercise);
+      const exerciseName = readExerciseName(event);
       return (
         exerciseName === selectedExercise.display_name &&
         event.ts >= start.getTime() &&
@@ -195,8 +279,7 @@ const LoggingScreen = () => {
   const historySets = useMemo(() => {
     if (!selectedExercise) return [];
     return state.events.filter(
-      event =>
-        formatValue(event.payload?.exercise) === selectedExercise.display_name,
+      event => readExerciseName(event) === selectedExercise.display_name,
     );
   }, [state.events, selectedExercise]);
 
@@ -257,10 +340,12 @@ const LoggingScreen = () => {
     return [...grouped.entries()]
       .sort((a, b) => a[0] - b[0])
       .map(([day, value]) => ({
-        label: new Date(day).toLocaleDateString(undefined, {
-          month: 'short',
-          day: 'numeric',
-        }),
+        label: asDisplayLabel(
+          new Date(day).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }),
+        ),
         value,
       }));
   }, [historySets, selectedMetric, selectedTrendRange]);
@@ -282,13 +367,13 @@ const LoggingScreen = () => {
     await actions.logSet(payload);
     const nextFields = { ...fields };
     if (typeof payload.reps === 'number')
-      nextFields.reps = payload.reps.toString();
+      nextFields.reps = asNumericInput(payload.reps.toString());
     if (typeof payload.weight === 'number')
-      nextFields.weight = payload.weight.toString();
+      nextFields.weight = asNumericInput(payload.weight.toString());
     if (typeof payload.duration === 'number')
-      nextFields.duration = payload.duration.toString();
+      nextFields.duration = asNumericInput(payload.duration.toString());
     if (typeof payload.distance === 'number')
-      nextFields.distance = payload.distance.toString();
+      nextFields.distance = asNumericInput(payload.distance.toString());
     dispatch({ type: 'log/fields', fields: nextFields });
     dispatch({ type: 'log/tab', tab: 'Track' });
     showStatus('Training saved', 'success');
@@ -323,7 +408,7 @@ const LoggingScreen = () => {
     const nextFields = { ...fields };
     const current = parseFloat(nextFields[key]) || 0;
     const next = Math.max(0, Math.round((current + delta) * 100) / 100);
-    nextFields[key] = next === 0 ? '' : next.toString();
+    nextFields[key] = asNumericInput(next === 0 ? '' : next.toString());
     dispatch({ type: 'log/fields', fields: nextFields });
   };
 
@@ -474,7 +559,10 @@ const LoggingScreen = () => {
                       onChange={value =>
                         dispatch({
                           type: 'log/fields',
-                          fields: { ...fields, [definition.key]: value },
+                          fields: {
+                            ...fields,
+                            [definition.key]: asNumericInput(value),
+                          },
                         })
                       }
                     />
@@ -668,7 +756,7 @@ const LoggingScreen = () => {
                   rangeLabel={
                     trendRangeOptions.find(
                       option => option.key === selectedTrendRange,
-                    )?.longLabel ?? 'Recent'
+                    )?.longLabel ?? asDisplayLabel('Recent')
                   }
                 />
               </>
@@ -730,13 +818,13 @@ const Stepper = ({
   onDecrement,
   onChange,
 }: {
-  label: string;
-  unit?: string;
-  value: string;
+  label: DisplayLabel;
+  unit?: DisplayLabel;
+  value: NumericInput;
   step: number;
   onIncrement: () => void;
   onDecrement: () => void;
-  onChange: (value: string) => void;
+  onChange: (value: NumericInput) => void;
 }) => (
   <View
     style={{
@@ -794,7 +882,7 @@ const Stepper = ({
     </View>
     <TextInput
       value={value}
-      onChangeText={onChange}
+      onChangeText={next => onChange(asNumericInput(next))}
       keyboardType="numeric"
       placeholder={`Enter ${label.toLowerCase()}`}
       placeholderTextColor={palette.mutedText}
@@ -834,8 +922,13 @@ const readNumber = (value: unknown): number | undefined => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const readExerciseName = (event: WorkoutEvent): ExerciseName | undefined =>
+  typeof event.payload?.exercise === 'string'
+    ? asExerciseName(event.payload.exercise)
+    : undefined;
+
 type LoggedSetPayload = {
-  exercise: string;
+  exercise: ExerciseName;
   reps?: number;
   weight?: number;
   duration?: number;
@@ -843,7 +936,7 @@ type LoggedSetPayload = {
 };
 
 type LoggedSetRead = {
-  exercise?: string;
+  exercise?: ExerciseName;
   reps?: number;
   weight?: number;
   duration?: number;
@@ -853,7 +946,7 @@ type LoggedSetRead = {
 const readLoggedSetPayload = (event: WorkoutEvent): LoggedSetRead => ({
   exercise:
     typeof event.payload?.exercise === 'string'
-      ? event.payload.exercise
+      ? asExerciseName(event.payload.exercise)
       : undefined,
   reps: readNumber(event.payload?.reps),
   weight: readNumber(event.payload?.weight),
@@ -977,23 +1070,13 @@ const formatDateLabel = (date: Date) => {
   return target.toLocaleDateString();
 };
 
-const formatValue = (value: unknown): string => {
-  if (value === null || value === undefined) return '-';
-  if (typeof value === 'string') return value;
-  if (typeof value === 'number') return value.toString();
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
-  if (Array.isArray(value))
-    return value.map(item => formatValue(item)).join(', ');
-  return JSON.stringify(value);
+const formatNumberInput = (value: unknown): NumericInput => {
+  if (value === null || value === undefined) return asNumericInput('');
+  if (typeof value === 'number') return asNumericInput(value.toString());
+  return asNumericInput(String(value));
 };
 
-const formatNumberInput = (value: unknown): string => {
-  if (value === null || value === undefined) return '';
-  if (typeof value === 'number') return value.toString();
-  return String(value);
-};
-
-const fieldsFromEvent = (event: WorkoutEvent) => ({
+const fieldsFromEvent = (event: WorkoutEvent): LoggingFields => ({
   reps: formatNumberInput(event.payload?.reps),
   weight: formatNumberInput(event.payload?.weight),
   duration: formatNumberInput(event.payload?.duration),
@@ -1002,7 +1085,7 @@ const fieldsFromEvent = (event: WorkoutEvent) => ({
 
 const buildPayloadFromFields = (
   fieldsState: typeof INITIAL_FIELDS,
-  exerciseName: string,
+  exerciseName: ExerciseName,
 ) => {
   const reps = parseNumericField(fieldsState.reps);
   const weight = parseNumericField(fieldsState.weight);
@@ -1016,7 +1099,7 @@ const buildPayloadFromFields = (
   return payload;
 };
 
-const parseNumericField = (value: string): number | undefined => {
+const parseNumericField = (value: NumericInput): number | undefined => {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
@@ -1038,11 +1121,11 @@ const TrendChart = ({
   metricDescription,
   rangeLabel,
 }: {
-  data: { label: string; value: number }[];
+  data: { label: DisplayLabel; value: number }[];
   muscleColor: string;
-  metricLabel: string;
-  metricDescription: string;
-  rangeLabel: string;
+  metricLabel: DisplayLabel;
+  metricDescription: DisplayLabel;
+  rangeLabel: DisplayLabel;
 }) => {
   if (!data.length) {
     return (

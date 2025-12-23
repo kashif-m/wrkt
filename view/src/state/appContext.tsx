@@ -1,5 +1,6 @@
 import React, { createContext, useContext } from 'react';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import { ExerciseName, ExerciseSlug } from '../domain/types';
 import { RootState, Action } from './appState';
 
 export type AppDispatch = React.Dispatch<Action>;
@@ -15,12 +16,12 @@ export type RootStateActions = {
   refreshAll: () => Promise<void>;
   startWorkoutForDate: (date: Date) => void;
   openLogForExercise: (
-    exerciseName: string | undefined,
+    exerciseName: ExerciseName | undefined,
     date: Date,
     tab: RootState['logging']['tab'],
   ) => void;
   logSet: (payload: {
-    exercise: string;
+    exercise: ExerciseName;
     reps?: number;
     weight?: number;
     duration?: number;
@@ -29,7 +30,7 @@ export type RootStateActions = {
   updateSet: (
     eventId: string,
     payload: {
-      exercise: string;
+      exercise: ExerciseName;
       reps?: number;
       weight?: number;
       duration?: number;
@@ -39,10 +40,13 @@ export type RootStateActions = {
   deleteSet: (eventId: string) => Promise<void>;
   saveCustomExercise: (
     values: ExerciseCatalogEntry,
-    originalSlug?: string,
+    originalSlug?: ExerciseSlug,
   ) => Promise<void>;
-  archiveCustomExercise: (slug: string, archived: boolean) => Promise<void>;
-  toggleFavorite: (slug: string, next: boolean) => Promise<void>;
+  archiveCustomExercise: (
+    slug: ExerciseSlug,
+    archived: boolean,
+  ) => Promise<void>;
+  toggleFavorite: (slug: ExerciseSlug, next: boolean) => Promise<void>;
 };
 
 export const AppProvider = ({

@@ -24,6 +24,7 @@ import {
   useAppState,
 } from '../state/appContext';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import { ExerciseName, asDisplayLabel, asExerciseName } from '../domain/types';
 
 const DAYS_IN_WEEK = 7;
 const TOTAL_CELLS = 42;
@@ -48,7 +49,7 @@ const CalendarScreen = () => {
   }, [yearSheetOpen, sheetTranslate]);
 
   const catalogMap = useMemo(() => {
-    const map = new Map<string, ExerciseCatalogEntry>();
+    const map = new Map<ExerciseName, ExerciseCatalogEntry>();
     catalog.forEach(entry => map.set(entry.display_name, entry));
     return map;
   }, [catalog]);
@@ -59,7 +60,7 @@ const CalendarScreen = () => {
       const day = roundToLocalDay(event.ts);
       const exerciseName =
         typeof event.payload?.exercise === 'string'
-          ? event.payload.exercise
+          ? asExerciseName(event.payload.exercise)
           : null;
       const meta = exerciseName ? catalogMap.get(exerciseName) : null;
       const color = getMuscleColor(meta?.primary_muscle_group);
@@ -77,7 +78,7 @@ const CalendarScreen = () => {
     events.forEach(event => {
       const exerciseName =
         typeof event.payload?.exercise === 'string'
-          ? event.payload.exercise
+          ? asExerciseName(event.payload.exercise)
           : null;
       const meta = exerciseName ? catalogMap.get(exerciseName) : null;
       const group = meta?.primary_muscle_group;
@@ -88,7 +89,7 @@ const CalendarScreen = () => {
     return Array.from(groups.entries())
       .map(([group, color]) => ({
         key: group,
-        label: group.replace(/_/g, ' '),
+        label: asDisplayLabel(group.replace(/_/g, ' ')),
         color,
       }))
       .sort((a, b) => a.label.localeCompare(b.label));

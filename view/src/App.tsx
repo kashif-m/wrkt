@@ -37,6 +37,12 @@ import {
   setCustomExerciseArchived,
   setExerciseFavorite,
 } from './exercise/catalogStorage';
+import {
+  ExerciseName,
+  ExerciseSlug,
+  asExerciseName,
+  asNumericInput,
+} from './domain/types';
 
 const App = () => {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
@@ -120,7 +126,7 @@ const App = () => {
         dispatch({ type: 'nav/set', screen: 'browser' });
       },
       openLogForExercise: (
-        exerciseName: string | undefined,
+        exerciseName: ExerciseName | undefined,
         date: Date,
         tab: typeof state.logging.tab,
       ) => {
@@ -131,7 +137,9 @@ const App = () => {
         const matching = exerciseName
           ? state.events
               .filter(
-                event => String(event.payload?.exercise ?? '') === exerciseName,
+                event =>
+                  asExerciseName(String(event.payload?.exercise ?? '')) ===
+                  exerciseName,
               )
               .sort((a, b) => b.ts - a.ts)[0]
           : undefined;
@@ -141,20 +149,20 @@ const App = () => {
             fields: {
               reps:
                 typeof matching.payload?.reps === 'number'
-                  ? matching.payload.reps.toString()
-                  : '',
+                  ? asNumericInput(matching.payload.reps.toString())
+                  : asNumericInput(''),
               weight:
                 typeof matching.payload?.weight === 'number'
-                  ? matching.payload.weight.toString()
-                  : '',
+                  ? asNumericInput(matching.payload.weight.toString())
+                  : asNumericInput(''),
               duration:
                 typeof matching.payload?.duration === 'number'
-                  ? matching.payload.duration.toString()
-                  : '',
+                  ? asNumericInput(matching.payload.duration.toString())
+                  : asNumericInput(''),
               distance:
                 typeof matching.payload?.distance === 'number'
-                  ? matching.payload.distance.toString()
-                  : '',
+                  ? asNumericInput(matching.payload.distance.toString())
+                  : asNumericInput(''),
             },
           });
         } else {
@@ -163,7 +171,7 @@ const App = () => {
         dispatch({ type: 'nav/set', screen: 'log' });
       },
       logSet: async (payload: {
-        exercise: string;
+        exercise: ExerciseName;
         reps?: number;
         weight?: number;
         duration?: number;
@@ -183,7 +191,7 @@ const App = () => {
       updateSet: async (
         eventId: string,
         payload: {
-          exercise: string;
+          exercise: ExerciseName;
           reps?: number;
           weight?: number;
           duration?: number;
@@ -213,16 +221,16 @@ const App = () => {
       },
       saveCustomExercise: async (
         values: ExerciseCatalogEntry,
-        originalSlug?: string,
+        originalSlug?: ExerciseSlug,
       ) => {
         await saveCustomExercise(values, { originalSlug });
         await refreshCatalog();
       },
-      archiveCustomExercise: async (slug: string, archived: boolean) => {
+      archiveCustomExercise: async (slug: ExerciseSlug, archived: boolean) => {
         await setCustomExerciseArchived(slug, archived);
         await refreshCatalog();
       },
-      toggleFavorite: async (slug: string, next: boolean) => {
+      toggleFavorite: async (slug: ExerciseSlug, next: boolean) => {
         const favorites = await setExerciseFavorite(slug, next);
         dispatch({ type: 'catalog/favorites', favorites });
       },
