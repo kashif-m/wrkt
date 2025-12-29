@@ -40,9 +40,13 @@ import {
 import {
   ExerciseName,
   ExerciseSlug,
+  LoggingMode,
+  asLoggingMode,
   asExerciseName,
   asNumericInput,
   asLabelText,
+  asSearchQuery,
+  unwrapLoggingMode,
   LabelText,
   asEventId,
   asTrackerId,
@@ -54,6 +58,90 @@ import {
 
 const App = () => {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
+
+  const estimateOneRm = (weight: number, reps: number) =>
+    weight * (1 + reps / 30);
+
+  const readNumber = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+  const resolveLoggingMode = (exerciseName: ExerciseName | undefined) => {
+    if (!exerciseName) return asLoggingMode('reps_weight');
+    const match = state.catalog.entries.find(
+      entry => entry.display_name === exerciseName,
+    );
+    return match?.logging_mode ?? asLoggingMode('reps_weight');
+  };
+
+  const scoreFromPayload = (
+    payload: {
+      reps?: number;
+      weight?: number;
+      duration?: number;
+      distance?: number;
+    },
+    mode: LoggingMode,
+  ) => {
+    const reps = readNumber(payload.reps);
+    const weight = readNumber(payload.weight);
+    const duration = readNumber(payload.duration);
+    const distance = readNumber(payload.distance);
+    switch (unwrapLoggingMode(mode)) {
+      case 'reps_weight':
+        if (weight && reps) return estimateOneRm(weight, reps);
+        return null;
+      case 'reps':
+        return reps ?? null;
+      case 'time_distance':
+        return duration ?? distance ?? null;
+      case 'distance_time':
+        return distance ?? duration ?? null;
+      default:
+        return null;
+    }
+  };
+
+  const buildPrPayload = (
+    payload: {
+      exercise: ExerciseName;
+      reps?: number;
+      weight?: number;
+      duration?: number;
+      distance?: number;
+    },
+    eventTs: number,
+    existingEvent?: (typeof state.events)[number],
+  ) => {
+    const mode = resolveLoggingMode(payload.exercise);
+    const currentScore = scoreFromPayload(payload, mode);
+    const existingPr = existingEvent?.payload?.pr === true;
+    const existingPrTs =
+      typeof existingEvent?.payload?.pr_ts === 'number'
+        ? existingEvent?.payload?.pr_ts
+        : existingEvent?.ts;
+    const bestScore = state.events.reduce<number | null>((best, event) => {
+      if (existingEvent && event.event_id === existingEvent.event_id) {
+        return best;
+      }
+      const exerciseName = asExerciseName(
+        String(event.payload?.exercise ?? ''),
+      );
+      if (exerciseName !== payload.exercise) return best;
+      const score = scoreFromPayload(event.payload ?? {}, mode);
+      if (typeof score !== 'number') return best;
+      if (best === null || score > best) return score;
+      return best;
+    }, null);
+    const isPr =
+      existingPr || (typeof currentScore === 'number' &&
+        (bestScore === null || currentScore > bestScore));
+    if (!isPr) return payload;
+    return {
+      ...payload,
+      pr: true,
+      pr_ts: existingPrTs ?? eventTs,
+    };
+  };
 
   const refreshFromStorage = useCallback(async () => {
     const events = await fetchEvents();
@@ -131,6 +219,13 @@ const App = () => {
         dispatch({ type: 'log/exercise', exerciseName: undefined });
         dispatch({ type: 'log/fields', fields: { ...initialFields } });
         dispatch({ type: 'log/tab', tab: 'Track' });
+        dispatch({ type: 'browser/mode', mode: 'groups' });
+        dispatch({ type: 'browser/group', group: null });
+        dispatch({ type: 'browser/query', query: asSearchQuery('') });
+        dispatch({ type: 'browser/search', expanded: false });
+        dispatch({ type: 'browser/menu', open: false });
+        dispatch({ type: 'browser/context', context: null });
+        dispatch({ type: 'browser/tab', tab: 'all' });
         dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
       },
       openLogForExercise: (
@@ -184,12 +279,16 @@ const App = () => {
         weight?: number;
         duration?: number;
         distance?: number;
+        pr?: boolean;
+        pr_ts?: number;
       }) => {
+        const eventTs = state.logging.logDate.getTime();
+        const enrichedPayload = buildPrPayload(payload, eventTs);
         const event = await logSet({ events: state.events } as WorkoutState, {
           event_id: asEventId(`evt-${Date.now()}`),
           tracker_id: asTrackerId('workout'),
-          ts: state.logging.logDate.getTime(),
-          payload,
+          ts: eventTs,
+          payload: enrichedPayload,
           meta: {},
         });
         const nextEvents = (event as WorkoutState).events;
@@ -204,12 +303,23 @@ const App = () => {
           weight?: number;
           duration?: number;
           distance?: number;
+          pr?: boolean;
+          pr_ts?: number;
         },
       ) => {
+        const existingEvent = state.events.find(
+          event => event.event_id === eventId,
+        );
+        const eventTs = existingEvent?.ts ?? state.logging.logDate.getTime();
+        const enrichedPayload = buildPrPayload(
+          payload,
+          eventTs,
+          existingEvent,
+        );
         const nextState = await updateLoggedSet(
           { events: state.events } as WorkoutState,
           eventId,
-          payload,
+          enrichedPayload,
         );
         dispatch({ type: 'events/set', events: nextState.events });
         const updated = nextState.events.find(
@@ -246,6 +356,7 @@ const App = () => {
     [
       refreshCatalog,
       refreshFromStorage,
+      state.catalog.entries,
       state.events,
       state.logging.logDate,
       state.nav.screen,

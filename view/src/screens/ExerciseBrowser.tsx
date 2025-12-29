@@ -37,6 +37,7 @@ import {
 import { palette, spacing, radius } from '../ui/theme';
 import { muscleColorMap } from '../ui/muscleColors';
 import ScreenHeader from '../ui/ScreenHeader';
+import { Card, SectionHeading } from '../ui/components';
 import SearchIcon from '../assets/search.svg';
 import SettingsIcon from '../assets/settings.svg';
 import {
@@ -78,6 +79,14 @@ const ExerciseBrowser = () => {
     return muscleGroups.filter(group => group.toLowerCase().includes(q));
   }, [muscleGroups, query]);
 
+  const searchExercises = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return catalog
+      .filter(entry => entry.display_name.toLowerCase().includes(q))
+      .sort((a, b) => a.display_name.localeCompare(b.display_name));
+  }, [catalog, query]);
+
   const filteredExercises = useMemo(() => {
     if (!selectedGroup) return [];
     const q = query.trim().toLowerCase();
@@ -95,13 +104,14 @@ const ExerciseBrowser = () => {
     [catalog, favoriteSlugs],
   );
 
-  const filteredFavoriteExercises = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return favoriteExercises;
-    return favoriteExercises.filter(entry =>
-      entry.display_name.toLowerCase().includes(q),
-    );
-  }, [favoriteExercises, query]);
+  const allExercises = useMemo(
+    () =>
+      catalog
+        .slice()
+        .sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    [catalog],
+  );
+
 
   const headerTitle = useMemo((): LabelText => {
     if (mode === 'manage') return asLabelText('Manage Exercises');
@@ -135,7 +145,7 @@ const ExerciseBrowser = () => {
     if (mode === 'form') {
       dispatch({
         type: 'browser/mode',
-        mode: customExercises.length ? 'manage' : 'groups',
+        mode: state.browser.returnMode,
       });
       return;
     }
@@ -152,50 +162,25 @@ const ExerciseBrowser = () => {
     await actions.toggleFavorite(slug, !isFavorite);
   };
 
-  const renderGroupRow = ({ item }: ListRenderItemInfo<MuscleGroup>) => {
-    const group = asMuscleGroup(item);
-    return (
-      <TouchableOpacity
-        onPress={() => {
-          dispatch({ type: 'browser/group', group });
-          dispatch({ type: 'browser/mode', mode: 'exercises' });
-          dispatch({ type: 'browser/query', query: asSearchQuery('') });
-        }}
-        style={rowStyle}
-      >
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: spacing(1),
-          }}
-        >
-          <View
-            style={[
-              chip,
-              {
-                backgroundColor: muscleColorMap[group] ?? palette.mutedSurface,
-              },
-            ]}
-          >
-            <Text
-              style={{
-                color: '#0f172a',
-                fontWeight: '700' as const,
-                fontSize: 12,
-              }}
-            >
-              {formatLabel(group)}
-            </Text>
-          </View>
-          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-            {countExercises(group, catalog)} exercises
-          </Text>
-        </View>
-        <Text style={{ color: palette.mutedText, fontSize: 12 }}>Open</Text>
-      </TouchableOpacity>
-    );
-  };
+  const renderGroupCard = (group: MuscleGroup) => (
+    <TouchableOpacity
+      key={group}
+      onPress={() => {
+        dispatch({ type: 'browser/group', group });
+        dispatch({ type: 'browser/mode', mode: 'exercises' });
+        dispatch({ type: 'browser/query', query: asSearchQuery('') });
+      }}
+    >
+      <Card style={{ paddingVertical: spacing(1.5) }}>
+        <Text style={{ color: palette.text, fontSize: 18, fontWeight: '700' }}>
+          {formatLabel(group)}
+        </Text>
+        <Text style={{ color: palette.mutedText, fontSize: 13 }}>
+          {countExercises(group, catalog)} exercises
+        </Text>
+      </Card>
+    </TouchableOpacity>
+  );
 
   const renderExerciseRow = ({
     item,
@@ -208,16 +193,18 @@ const ExerciseBrowser = () => {
           'Track',
         )
       }
-      onLongPress={() =>
-        dispatch({ type: 'browser/context', context: { entry: item } })
-      }
+      onLongPress={() => {
+        dispatch({ type: 'browser/menu', open: false });
+        dispatch({ type: 'browser/search', expanded: false });
+        dispatch({ type: 'browser/context', context: { entry: item } });
+      }}
       style={rowStyle}
     >
       <View style={{ flex: 1, gap: spacing(0.25) }}>
         <Text style={rowText}>{item.display_name}</Text>
-        <Text style={rowMeta}>{`${formatLabel(item.primary_muscle_group)} • ${
-          item.modality
-        }`}</Text>
+        <Text style={rowMeta}>{`${formatLabel(
+          item.primary_muscle_group,
+        )} • ${formatLabel(item.modality)}`}</Text>
       </View>
       <Text
         style={[
@@ -253,6 +240,7 @@ const ExerciseBrowser = () => {
                 if (searchExpanded) {
                   dispatch({ type: 'browser/query', query: asSearchQuery('') });
                 }
+                dispatch({ type: 'browser/menu', open: false });
                 dispatch({ type: 'browser/search', expanded: !searchExpanded });
               }}
               style={[
@@ -278,7 +266,7 @@ const ExerciseBrowser = () => {
         }
       />
 
-      {menuOpen && mode === 'groups' && (
+      {menuOpen && mode === 'groups' && !searchExpanded && (
         <TouchableWithoutFeedback
           onPress={() => dispatch({ type: 'browser/menu', open: false })}
         >
@@ -410,6 +398,7 @@ const ExerciseBrowser = () => {
                           type: 'browser/form',
                           entry: contextEntry.entry,
                         });
+                        dispatch({ type: 'browser/returnMode', mode: 'manage' });
                         dispatch({
                           type: 'browser/formDraft',
                           draft: draftFromEntry(contextEntry.entry),
@@ -466,6 +455,9 @@ const ExerciseBrowser = () => {
           archived={customExercises.filter(entry => entry.archived)}
           onAdd={() => {
             dispatch({ type: 'browser/form', entry: null });
+            dispatch({ type: 'browser/returnMode', mode: 'manage' });
+            dispatch({ type: 'browser/search', expanded: false });
+            dispatch({ type: 'browser/menu', open: false });
             dispatch({
               type: 'browser/formDraft',
               draft: {
@@ -484,10 +476,14 @@ const ExerciseBrowser = () => {
             dispatch({ type: 'browser/mode', mode: 'form' });
           }}
           onLongPress={(entry, archived) =>
-            dispatch({
-              type: 'browser/context',
-              context: { entry, archived, custom: true },
-            })
+            {
+              dispatch({ type: 'browser/menu', open: false });
+              dispatch({ type: 'browser/search', expanded: false });
+              dispatch({
+                type: 'browser/context',
+                context: { entry, archived, custom: true },
+              });
+            }
           }
         />
       ) : mode === 'form' ? (
@@ -497,7 +493,7 @@ const ExerciseBrowser = () => {
           onCancel={() =>
             dispatch({
               type: 'browser/mode',
-              mode: customExercises.length ? 'manage' : 'groups',
+              mode: state.browser.returnMode,
             })
           }
           onSubmit={async values => {
@@ -512,7 +508,10 @@ const ExerciseBrowser = () => {
                 formEditing?.slug,
               );
               dispatch({ type: 'browser/form', entry: null });
-              dispatch({ type: 'browser/mode', mode: 'manage' });
+              dispatch({
+                type: 'browser/mode',
+                mode: state.browser.returnMode,
+              });
               updateFormDraft({
                 displayName: asExerciseName(''),
                 slug: asExerciseSlug(''),
@@ -572,9 +571,55 @@ const ExerciseBrowser = () => {
                   </Text>
                 </TouchableOpacity>
               </View>
+              <ScrollView
+                contentContainerStyle={{
+                  paddingTop: spacing(1.5),
+                  paddingBottom: spacing(8),
+                  gap: spacing(1.5),
+                }}
+                keyboardShouldPersistTaps="handled"
+              >
+                {query.trim().length === 0 ? (
+                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                    Search muscle groups or exercises.
+                  </Text>
+                ) : (
+                  <>
+                    <View style={{ gap: spacing(1) }}>
+                      <SectionHeading label={asLabelText('Muscle groups')} />
+                      {filteredGroups.length === 0 ? (
+                        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                          No muscle groups found.
+                        </Text>
+                      ) : (
+                        filteredGroups.map(group => renderGroupCard(group))
+                      )}
+                    </View>
+                    <View style={{ gap: spacing(1) }}>
+                      <SectionHeading label={asLabelText('Exercises')} />
+                      {searchExercises.length === 0 ? (
+                        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                          No exercises found.
+                        </Text>
+                      ) : (
+                        searchExercises.map(item => (
+                          <View
+                            key={item.slug}
+                            style={{ marginBottom: spacing(1) }}
+                          >
+                            {renderExerciseRow({
+                              item,
+                            } as ListRenderItemInfo<ExerciseCatalogEntry>)}
+                          </View>
+                        ))
+                      )}
+                    </View>
+                  </>
+                )}
+              </ScrollView>
             </View>
           )}
-          {mode === 'groups' && (
+          {mode === 'groups' && !searchExpanded && (
             <View style={tabRow}>
               {(['all', 'favorites'] as const).map(tab => (
                 <TouchableOpacity
@@ -594,43 +639,54 @@ const ExerciseBrowser = () => {
               ))}
             </View>
           )}
-          {mode === 'groups' ? (
-            activeTab === 'favorites' ? (
-              <FlatList<ExerciseCatalogEntry>
-                data={filteredFavoriteExercises}
-                keyExtractor={item => item.slug}
-                renderItem={renderExerciseRow}
-                ItemSeparatorComponent={() => <View style={separator} />}
-                ListEmptyComponent={
-                  <View style={{ padding: spacing(2) }}>
-                    <Text style={{ color: palette.mutedText }}>
-                      No favorites yet. Long-press an exercise to add it here.
+          {!searchExpanded && mode === 'groups' ? (
+            <ScrollView
+              contentContainerStyle={{
+                paddingHorizontal: spacing(2),
+                paddingBottom: spacing(8),
+                gap: spacing(2),
+              }}
+            >
+              {activeTab === 'all' ? (
+                <View style={{ gap: spacing(1) }}>
+                  <SectionHeading label={asLabelText('Muscle groups')} />
+                  {filteredGroups.length === 0 ? (
+                    <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                      No muscle groups available.
                     </Text>
-                  </View>
-                }
-              />
-            ) : (
-              <FlatList<MuscleGroup>
-                data={filteredGroups}
-                keyExtractor={item => item}
-                renderItem={renderGroupRow}
-                ItemSeparatorComponent={() => <View style={separator} />}
-                contentContainerStyle={{ paddingBottom: spacing(8) }}
-                ListEmptyComponent={
-                  <View style={{ padding: spacing(2) }}>
-                    <Text style={{ color: palette.mutedText }}>
-                      No muscle groups match your search.
-                    </Text>
-                  </View>
-                }
-              />
-            )
-          ) : (
+                  ) : (
+                    filteredGroups.map(group => renderGroupCard(group))
+                  )}
+                </View>
+              ) : null}
+              <View style={{ gap: spacing(1) }}>
+                <SectionHeading label={asLabelText('Exercises')} />
+                {(activeTab === 'favorites'
+                  ? favoriteExercises
+                  : allExercises
+                ).length === 0 ? (
+                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                    No exercises available.
+                  </Text>
+                ) : (
+                  (activeTab === 'favorites'
+                    ? favoriteExercises
+                    : allExercises
+                  ).map(item => (
+                    <View key={item.slug} style={{ marginBottom: spacing(1) }}>
+                      {renderExerciseRow({
+                        item,
+                      } as ListRenderItemInfo<ExerciseCatalogEntry>)}
+                    </View>
+                  ))
+                )}
+              </View>
+            </ScrollView>
+          ) : mode === 'exercises' ? (
             <FlatList<ExerciseCatalogEntry>
               data={filteredExercises}
               keyExtractor={item => item.slug}
               renderItem={renderExerciseRow}
-              ItemSeparatorComponent={() => <View style={separator} />}
               contentContainerStyle={{ paddingBottom: spacing(8) }}
               ListEmptyComponent={
                 <View style={{ padding: spacing(2) }}>
@@ -640,14 +696,17 @@ const ExerciseBrowser = () => {
                 </View>
               }
             />
-          )}
+          ) : null}
         </>
       )}
-      {mode === 'groups' && (
+      {mode === 'groups' && !searchExpanded && (
         <View style={{ padding: spacing(2) }}>
           <TouchableOpacity
             onPress={() => {
               dispatch({ type: 'browser/form', entry: null });
+              dispatch({ type: 'browser/returnMode', mode: 'groups' });
+              dispatch({ type: 'browser/search', expanded: false });
+              dispatch({ type: 'browser/menu', open: false });
               dispatch({
                 type: 'browser/formDraft',
                 draft: {
@@ -711,12 +770,13 @@ const searchContainer = {
   paddingVertical: spacing(1.5),
   borderBottomWidth: 1,
   borderColor: palette.border,
+  zIndex: 3,
 };
 
 const searchInput = {
   borderWidth: 1,
   borderColor: palette.border,
-  borderRadius: radius.card,
+  borderRadius: radius.pill,
   paddingVertical: spacing(1),
   paddingHorizontal: spacing(1.5),
   color: palette.text,
@@ -727,17 +787,21 @@ const tabRow = {
   flexDirection: 'row' as const,
   gap: spacing(1),
   paddingHorizontal: spacing(2),
-  paddingBottom: spacing(1),
+  paddingVertical: spacing(0.75),
+  marginHorizontal: spacing(2),
+  marginBottom: spacing(1),
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  backgroundColor: palette.surface,
 };
 
 const tabButton = {
   flex: 1,
   borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
   paddingVertical: spacing(0.75),
   alignItems: 'center' as const,
-  backgroundColor: palette.surface,
+  backgroundColor: 'transparent',
 };
 
 const tabButtonActive = {
@@ -746,12 +810,16 @@ const tabButtonActive = {
 };
 
 const rowStyle = {
-  paddingHorizontal: spacing(2),
+  paddingHorizontal: spacing(1.5),
   paddingVertical: spacing(1.25),
   flexDirection: 'row' as const,
   justifyContent: 'space-between' as const,
   alignItems: 'center' as const,
   backgroundColor: palette.surface,
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  marginBottom: spacing(1),
 };
 
 const rowText = {
@@ -1162,6 +1230,20 @@ const menuOverlay = {
   right: 0,
   bottom: 0,
   backgroundColor: 'rgba(15,23,42,0.55)',
+  zIndex: 2,
+};
+
+const sheetOverlay = {
+  position: 'absolute' as const,
+  top: 0,
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: 'rgba(15,23,42,0.55)',
+  alignItems: 'center' as const,
+  justifyContent: 'flex-end' as const,
+  padding: spacing(2),
+  zIndex: 4,
 };
 
 const menuCard = {
@@ -1180,18 +1262,6 @@ const menuCard = {
 const menuItem = {
   paddingHorizontal: spacing(1.5),
   paddingVertical: spacing(0.75),
-};
-
-const sheetOverlay = {
-  position: 'absolute' as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(15,23,42,0.55)',
-  alignItems: 'center' as const,
-  justifyContent: 'flex-end' as const,
-  padding: spacing(2),
 };
 
 const sheetCard = {

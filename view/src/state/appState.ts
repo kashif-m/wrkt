@@ -61,6 +61,7 @@ export type RootState = {
   };
   browser: {
     mode: BrowserMode;
+    returnMode: BrowserMode;
     selectedGroup: MuscleGroup | null;
     query: SearchQuery;
     searchExpanded: boolean;
@@ -120,6 +121,7 @@ export type Action =
   | { type: 'catalog/favorites'; favorites: ExerciseSlug[] }
   | { type: 'catalog/custom'; custom: ExerciseCatalogEntry[] }
   | { type: 'browser/mode'; mode: BrowserMode }
+  | { type: 'browser/returnMode'; mode: BrowserMode }
   | { type: 'browser/group'; group: MuscleGroup | null }
   | { type: 'browser/query'; query: SearchQuery }
   | { type: 'browser/search'; expanded: boolean }
@@ -164,6 +166,7 @@ export const createInitialState = (): RootState => {
     catalog: { entries: [], favorites: [], custom: [] },
     browser: {
       mode: 'groups',
+      returnMode: 'groups',
       selectedGroup: null,
       query: asSearchQuery(''),
       searchExpanded: false,
@@ -247,6 +250,11 @@ export const reducer = (state: RootState, action: Action): RootState => {
       return { ...state, catalog: { ...state.catalog, custom: action.custom } };
     case 'browser/mode':
       return { ...state, browser: { ...state.browser, mode: action.mode } };
+    case 'browser/returnMode':
+      return {
+        ...state,
+        browser: { ...state.browser, returnMode: action.mode },
+      };
     case 'browser/group':
       return {
         ...state,

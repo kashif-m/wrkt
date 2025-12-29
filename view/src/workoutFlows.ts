@@ -39,7 +39,7 @@ export type WorkoutEvent = JsonObject & {
 export type WorkoutState = { events: WorkoutEvent[] };
 
 export const WORKOUT_DSL: DslText = asDslText(
-  'tracker "workout" v1 {\n  fields {\n    exercise: text\n    reps: int optional\n    weight: float optional\n  }\n}',
+  'tracker "workout" v1 {\n  fields {\n    exercise: text\n    reps: int optional\n    weight: float optional\n    duration: float optional\n    distance: float optional\n    pr: bool optional\n    pr_ts: int optional\n  }\n}',
 );
 
 const TRACKER_ID_FALLBACK: TrackerId = asTrackerId('workout');

@@ -37,6 +37,10 @@ pack-build:
 pack-test:
 	cd workout-pack && cargo test
 
+pack-rebuild:
+	just pack-build
+	just ffi-xcframework
+
 # --- React Native / TypeScript -----------------------------------------------
 
 ts-check:

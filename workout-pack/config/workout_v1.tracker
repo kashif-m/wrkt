@@ -7,6 +7,8 @@ tracker "workout" v1 {
     duration_sec: int optional
     distance_m: float optional
     rpe: int optional
+    pr: bool optional
+    pr_ts: int optional
   }
 
   derive {
