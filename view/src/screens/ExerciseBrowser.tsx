@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -33,11 +33,12 @@ import {
   asSearchQuery,
   asScreenKey,
   asErrorMessage,
+  asTag,
 } from '../domain/types';
 import { palette, spacing, radius } from '../ui/theme';
 import { muscleColorMap } from '../ui/muscleColors';
 import ScreenHeader from '../ui/ScreenHeader';
-import { Card, SectionHeading } from '../ui/components';
+import { SectionHeading } from '../ui/components';
 import SearchIcon from '../assets/search.svg';
 import SettingsIcon from '../assets/settings.svg';
 import {
@@ -112,7 +113,6 @@ const ExerciseBrowser = () => {
     [catalog],
   );
 
-
   const headerTitle = useMemo((): LabelText => {
     if (mode === 'manage') return asLabelText('Manage Exercises');
     if (mode === 'form')
@@ -135,6 +135,11 @@ const ExerciseBrowser = () => {
   const goBack = () => {
     if (mode === 'exercises') {
       dispatch({ type: 'browser/mode', mode: 'groups' });
+      dispatch({ type: 'browser/query', query: asSearchQuery('') });
+      return;
+    }
+    if (mode === 'groups' && selectedGroup) {
+      dispatch({ type: 'browser/group', group: null });
       dispatch({ type: 'browser/query', query: asSearchQuery('') });
       return;
     }
@@ -162,25 +167,46 @@ const ExerciseBrowser = () => {
     await actions.toggleFavorite(slug, !isFavorite);
   };
 
-  const renderGroupCard = (group: MuscleGroup) => (
+  const renderGroupTag = (group: MuscleGroup) => {
+    const groupColor = muscleColorMap[group] ?? palette.primary;
+    const isActive = selectedGroup === group;
+    return (
     <TouchableOpacity
       key={group}
       onPress={() => {
-        dispatch({ type: 'browser/group', group });
-        dispatch({ type: 'browser/mode', mode: 'exercises' });
+        dispatch({
+          type: 'browser/group',
+          group: selectedGroup === group ? null : group,
+        });
         dispatch({ type: 'browser/query', query: asSearchQuery('') });
       }}
     >
-      <Card style={{ paddingVertical: spacing(1.5) }}>
-        <Text style={{ color: palette.text, fontSize: 18, fontWeight: '700' }}>
+      <View
+        style={[
+          groupTag,
+          {
+            backgroundColor: isActive
+              ? groupColor
+              : addAlpha(groupColor, 0.2),
+            borderColor: isActive
+              ? groupColor
+              : addAlpha(groupColor, 0.45),
+          },
+        ]}
+      >
+        <Text
+          style={{
+            color: isActive ? '#0f172a' : groupColor,
+            fontWeight: '600',
+            fontSize: 12,
+          }}
+        >
           {formatLabel(group)}
         </Text>
-        <Text style={{ color: palette.mutedText, fontSize: 13 }}>
-          {countExercises(group, catalog)} exercises
-        </Text>
-      </Card>
+      </View>
     </TouchableOpacity>
   );
+  };
 
   const renderExerciseRow = ({
     item,
@@ -469,6 +495,7 @@ const ExerciseBrowser = () => {
                 loggingMode: asLoggingMode('reps_weight'),
                 minLoad: asNumericInput(''),
                 maxLoad: asNumericInput(''),
+                tags: [],
                 saving: false,
                 error: null,
               },
@@ -490,6 +517,7 @@ const ExerciseBrowser = () => {
         <ExerciseForm
           draft={formDraft}
           updateDraft={updateFormDraft}
+          customPrimaryGroups={collectCustomGroups(catalog)}
           onCancel={() =>
             dispatch({
               type: 'browser/mode',
@@ -521,6 +549,7 @@ const ExerciseBrowser = () => {
                 loggingMode: asLoggingMode('reps_weight'),
                 minLoad: asNumericInput(''),
                 maxLoad: asNumericInput(''),
+                tags: [],
                 saving: false,
                 error: null,
               });
@@ -586,13 +615,14 @@ const ExerciseBrowser = () => {
                 ) : (
                   <>
                     <View style={{ gap: spacing(1) }}>
-                      <SectionHeading label={asLabelText('Muscle groups')} />
                       {filteredGroups.length === 0 ? (
                         <Text style={{ color: palette.mutedText, fontSize: 12 }}>
                           No muscle groups found.
                         </Text>
                       ) : (
-                        filteredGroups.map(group => renderGroupCard(group))
+                        <View style={groupTagWrap}>
+                          {filteredGroups.map(group => renderGroupTag(group))}
+                        </View>
                       )}
                     </View>
                     <View style={{ gap: spacing(1) }}>
@@ -605,7 +635,7 @@ const ExerciseBrowser = () => {
                         searchExercises.map(item => (
                           <View
                             key={item.slug}
-                            style={{ marginBottom: spacing(1) }}
+                            style={{ marginBottom: spacing(0.5) }}
                           >
                             {renderExerciseRow({
                               item,
@@ -649,21 +679,30 @@ const ExerciseBrowser = () => {
             >
               {activeTab === 'all' ? (
                 <View style={{ gap: spacing(1) }}>
-                  <SectionHeading label={asLabelText('Muscle groups')} />
                   {filteredGroups.length === 0 ? (
                     <Text style={{ color: palette.mutedText, fontSize: 12 }}>
                       No muscle groups available.
                     </Text>
                   ) : (
-                    filteredGroups.map(group => renderGroupCard(group))
+                    <View style={groupTagWrap}>
+                      {filteredGroups.map(group => renderGroupTag(group))}
+                    </View>
                   )}
                 </View>
               ) : null}
               <View style={{ gap: spacing(1) }}>
-                <SectionHeading label={asLabelText('Exercises')} />
+                <SectionHeading
+                  label={asLabelText(
+                    selectedGroup
+                      ? `${formatLabel(selectedGroup)} exercises`
+                      : 'Exercises',
+                  )}
+                />
                 {(activeTab === 'favorites'
                   ? favoriteExercises
-                  : allExercises
+                  : selectedGroup
+                    ? filteredExercises
+                    : allExercises
                 ).length === 0 ? (
                   <Text style={{ color: palette.mutedText, fontSize: 12 }}>
                     No exercises available.
@@ -671,9 +710,11 @@ const ExerciseBrowser = () => {
                 ) : (
                   (activeTab === 'favorites'
                     ? favoriteExercises
-                    : allExercises
+                    : selectedGroup
+                      ? filteredExercises
+                      : allExercises
                   ).map(item => (
-                    <View key={item.slug} style={{ marginBottom: spacing(1) }}>
+                    <View key={item.slug} style={{ marginBottom: spacing(0.5) }}>
                       {renderExerciseRow({
                         item,
                       } as ListRenderItemInfo<ExerciseCatalogEntry>)}
@@ -718,6 +759,7 @@ const ExerciseBrowser = () => {
                   loggingMode: asLoggingMode('reps_weight'),
                   minLoad: asNumericInput(''),
                   maxLoad: asNumericInput(''),
+                  tags: [],
                   saving: false,
                   error: null,
                 },
@@ -744,6 +786,48 @@ const formatLabel = (
     .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
 
+const formatExerciseNameInput = (value: string) =>
+  value.replace(
+    /(^|\s)(\S)/g,
+    (_match: string, spacer: string, char: string) =>
+      `${spacer}${char.toUpperCase()}`,
+  );
+
+const slugify = (value: string) =>
+  value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40);
+
+const addAlpha = (hex: string, alpha: number) => {
+  const normalized = Math.max(0, Math.min(1, alpha));
+  const alphaHex = Math.round(normalized * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${hex}${alphaHex}`;
+};
+
+const normalizeMuscleGroup = (value: string) => slugify(value);
+
+const collectCustomGroups = (entries: ExerciseCatalogEntry[]) => {
+  const baseGroups = new Set(Object.keys(muscleColorMap));
+  const customGroups = new Set<string>();
+  entries.forEach(entry => {
+    const group = String(entry.primary_muscle_group);
+    if (!baseGroups.has(group)) customGroups.add(group);
+  });
+  return Array.from(customGroups).map(group => asMuscleGroup(group));
+};
+
+const upsertTag = (tags: Tag[], tag: Tag) =>
+  tags.some(existing => existing === tag) ? tags : [...tags, tag];
+
+const ensureCustomPrimaryTag = (primary: MuscleGroup, tags: Tag[]) => {
+  if (primary in muscleColorMap) return tags;
+  return upsertTag(tags, asTag(formatLabel(primary)));
+};
+
 const draftFromEntry = (entry: ExerciseCatalogEntry): BrowserFormDraft => ({
   displayName: entry.display_name ?? asExerciseName(''),
   slug: entry.slug ?? asExerciseSlug(''),
@@ -753,6 +837,7 @@ const draftFromEntry = (entry: ExerciseCatalogEntry): BrowserFormDraft => ({
   loggingMode: entry.logging_mode ?? asLoggingMode('reps_weight'),
   minLoad: asNumericInput(entry.suggested_load_range?.min?.toString() ?? ''),
   maxLoad: asNumericInput(entry.suggested_load_range?.max?.toString() ?? ''),
+  tags: entry.tags ?? [],
   saving: false,
   error: null,
 });
@@ -819,7 +904,7 @@ const rowStyle = {
   borderRadius: radius.card,
   borderWidth: 1,
   borderColor: palette.border,
-  marginBottom: spacing(1),
+  marginBottom: spacing(0.5),
 };
 
 const rowText = {
@@ -832,14 +917,17 @@ const rowMeta = {
   fontSize: 12,
 };
 
-const favoriteButton = {
-  paddingHorizontal: spacing(0.5),
-  paddingVertical: spacing(0.25),
+const groupTagWrap = {
+  flexDirection: 'row' as const,
+  flexWrap: 'wrap' as const,
+  gap: spacing(0.75),
 };
 
-const separator = {
-  height: 1,
-  backgroundColor: palette.border,
+const groupTag = {
+  borderRadius: radius.pill,
+  borderWidth: 1,
+  paddingVertical: spacing(0.5),
+  paddingHorizontal: spacing(1),
 };
 
 type ExerciseFormValues = {
@@ -858,30 +946,31 @@ type BrowserFormDraft = RootState['browser']['formDraft'];
 const ExerciseForm = ({
   draft,
   updateDraft,
+  customPrimaryGroups,
   onSubmit,
   onCancel,
 }: {
   draft: BrowserFormDraft;
   updateDraft: (partial: Partial<BrowserFormDraft>) => void;
+  customPrimaryGroups: MuscleGroup[];
   onSubmit: (values: ExerciseFormValues) => Promise<void>;
   onCancel: () => void;
 }) => {
-  const {
-    displayName,
-    slug,
-    primary,
-    secondary,
-    modality,
-    loggingMode,
-    minLoad,
-    maxLoad,
-    saving,
-    error,
-  } = draft;
+  const { displayName, slug, primary, modality, loggingMode, tags, saving, error } =
+    draft;
+  const [customGroupInput, setCustomGroupInput] = useState('');
+  const [localCustomGroups, setLocalCustomGroups] = useState<MuscleGroup[]>([]);
 
-  const muscleOptions = Object.keys(muscleColorMap).map(group =>
-    asMuscleGroup(group),
-  );
+  const muscleOptions = useMemo(() => {
+    const baseGroups = Object.keys(muscleColorMap);
+    const combined = new Set<string>([
+      ...baseGroups,
+      ...customPrimaryGroups.map(group => String(group)),
+      ...localCustomGroups.map(group => String(group)),
+      String(primary),
+    ]);
+    return Array.from(combined).map(group => asMuscleGroup(group));
+  }, [customPrimaryGroups, localCustomGroups, primary]);
   const modalityOptions: ModalityValue[] = [
     'strength',
     'hypertrophy',
@@ -896,18 +985,25 @@ const ExerciseForm = ({
     'distance_time',
   ];
 
-  const toggleSecondary = (group: MuscleGroup) => {
-    updateDraft({
-      secondary: secondary.includes(group)
-        ? secondary.filter(item => item !== group)
-        : [...secondary, group],
-    });
+  const handleAddCustomGroup = () => {
+    const raw = customGroupInput.trim();
+    if (!raw) return;
+    const normalized = normalizeMuscleGroup(raw);
+    if (!normalized) return;
+    const nextGroup = asMuscleGroup(normalized);
+    if (!localCustomGroups.includes(nextGroup)) {
+      setLocalCustomGroups([...localCustomGroups, nextGroup]);
+    }
+    const nextTags = upsertTag(tags, asTag(formatExerciseNameInput(raw)));
+    updateDraft({ primary: nextGroup, tags: nextTags });
+    setCustomGroupInput('');
   };
 
   const handleSave = async () => {
     updateDraft({ error: null });
-    if (!displayName.trim()) {
-      updateDraft({ error: asErrorMessage('Display name is required.') });
+    const normalizedName = formatExerciseNameInput(displayName.trim());
+    if (!normalizedName) {
+      updateDraft({ error: asErrorMessage('Exercise name is required.') });
       return;
     }
     if (!primary) {
@@ -916,181 +1012,154 @@ const ExerciseForm = ({
       });
       return;
     }
+    const generatedSlug = slugify(normalizedName);
+    const nextTags = ensureCustomPrimaryTag(primary, tags);
     await onSubmit({
-      display_name: asExerciseName(displayName.trim()),
-      slug: asExerciseSlug(
-        slug.trim().length ? slug.trim() : displayName.trim(),
-      ),
+      display_name: asExerciseName(normalizedName),
+      slug: asExerciseSlug(generatedSlug || slugify(String(slug))),
       primary_muscle_group: primary,
-      secondary_groups: secondary,
+      secondary_groups: [],
       modality,
       logging_mode: loggingMode,
       suggested_load_range: {
-        min: Number(minLoad) || 0,
-        max: Number(maxLoad) || 0,
+        min: 0,
+        max: 0,
       },
+      tags: nextTags.length ? nextTags : undefined,
     });
   };
 
   return (
-    <ScrollView
-      contentContainerStyle={{ padding: spacing(2), gap: spacing(1.5) }}
-    >
-      <Text style={formLabel}>Display name</Text>
-      <TextInput
-        value={displayName}
-        onChangeText={value =>
-          updateDraft({ displayName: asExerciseName(value) })
-        }
-        style={formInput}
-        placeholder="Back Squat"
-      />
-
-      <Text style={formLabel}>Slug</Text>
-      <TextInput
-        value={slug}
-        onChangeText={value => updateDraft({ slug: asExerciseSlug(value) })}
-        style={formInput}
-        placeholder="back_squat"
-      />
-
-      <Text style={formLabel}>Primary muscle group</Text>
-      <View style={chipGrid}>
-        {muscleOptions.map(group => (
-          <TouchableOpacity
-            key={group}
-            onPress={() => updateDraft({ primary: group })}
-            style={[chip, primary === group && chipActive]}
-          >
-            <Text
-              style={{ color: primary === group ? '#0f172a' : palette.text }}
-            >
-              {formatLabel(group)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={formLabel}>Secondary groups</Text>
-      <View style={chipGrid}>
-        {muscleOptions.map(group => (
-          <TouchableOpacity
-            key={`secondary-${group}`}
-            onPress={() => toggleSecondary(group)}
-            style={[chip, secondary.includes(group) && chipActive]}
-          >
-            <Text
-              style={{
-                color: secondary.includes(group) ? '#0f172a' : palette.text,
-              }}
-            >
-              {formatLabel(group)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={formLabel}>Modality</Text>
-      <View style={chipRow}>
-        {modalityOptions.map(option => {
-          const typedOption = asModality(option);
-          return (
-            <TouchableOpacity
-              key={option}
-              onPress={() => updateDraft({ modality: typedOption })}
-              style={[chip, modality === typedOption && chipActive]}
-            >
-              <Text
-                style={{
-                  color: modality === typedOption ? '#0f172a' : palette.text,
-                }}
-              >
-                {formatLabel(typedOption)}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <Text style={formLabel}>Logging mode</Text>
-      <View style={chipRow}>
-        {loggingOptions.map(option => {
-          const typedOption = asLoggingMode(option);
-          return (
-            <TouchableOpacity
-              key={option}
-              onPress={() => updateDraft({ loggingMode: typedOption })}
-              style={[chip, loggingMode === typedOption && chipActive]}
-            >
-              <Text
-                style={{
-                  color: loggingMode === typedOption ? '#0f172a' : palette.text,
-                }}
-              >
-                {formatLabel(typedOption)}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      <View style={{ flexDirection: 'row', gap: spacing(1) }}>
-        <View style={{ flex: 1 }}>
-          <Text style={formLabel}>Suggested min (kg)</Text>
-          <TextInput
-            value={minLoad}
-            onChangeText={value =>
-              updateDraft({ minLoad: asNumericInput(value) })
-            }
-            style={formInput}
-            keyboardType="numeric"
-          />
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={formLabel}>Suggested max (kg)</Text>
-          <TextInput
-            value={maxLoad}
-            onChangeText={value =>
-              updateDraft({ maxLoad: asNumericInput(value) })
-            }
-            style={formInput}
-            keyboardType="numeric"
-          />
-        </View>
-      </View>
-
-      {error ? <Text style={{ color: palette.danger }}>{error}</Text> : null}
-
-      <TouchableOpacity
-        onPress={handleSave}
-        disabled={saving}
-        style={[
-          {
-            borderRadius: radius.card,
-            paddingVertical: spacing(1.5),
-            alignItems: 'center',
-          },
-          saving
-            ? { backgroundColor: palette.mutedSurface }
-            : { backgroundColor: palette.primary },
-        ]}
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        contentContainerStyle={{ padding: spacing(2), gap: spacing(1.5) }}
       >
-        <Text
-          style={{
-            color: saving ? palette.mutedText : '#0f172a',
-            fontWeight: '600' as const,
+        <Text style={formLabel}>Exercise name</Text>
+        <TextInput
+          value={displayName}
+          onChangeText={value => {
+            const formatted = formatExerciseNameInput(value);
+            updateDraft({
+              displayName: asExerciseName(formatted),
+              slug: asExerciseSlug(slugify(formatted)),
+            });
           }}
-        >
-          {saving ? 'Saving...' : 'Save exercise'}
-        </Text>
-      </TouchableOpacity>
+          style={formInput}
+          placeholder="Back Squat"
+        />
 
-      <TouchableOpacity onPress={onCancel} style={secondaryButton}>
-        <Text style={{ color: palette.mutedText, fontWeight: '600' as const }}>
-          Cancel
-        </Text>
-      </TouchableOpacity>
-    </ScrollView>
+        <Text style={formLabel}>Primary muscle group</Text>
+        <View style={chipGrid}>
+          {muscleOptions.map(group => (
+            <TouchableOpacity
+              key={group}
+              onPress={() => updateDraft({ primary: group })}
+              style={[chip, primary === group && chipActive]}
+            >
+              <Text
+                style={{ color: primary === group ? '#0f172a' : palette.text }}
+              >
+                {formatLabel(group)}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={{ flexDirection: 'row', gap: spacing(1) }}>
+          <TextInput
+            value={customGroupInput}
+            onChangeText={setCustomGroupInput}
+            style={[formInput, { flex: 1 }]}
+            placeholder="Add custom primary group"
+          />
+          <TouchableOpacity
+            onPress={handleAddCustomGroup}
+            style={chipAddButton}
+          >
+            <Text style={{ color: '#0f172a', fontWeight: '600' as const }}>
+              Add
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={formLabel}>Modality</Text>
+        <View style={chipRow}>
+          {modalityOptions.map(option => {
+            const typedOption = asModality(option);
+            return (
+              <TouchableOpacity
+                key={option}
+                onPress={() => updateDraft({ modality: typedOption })}
+                style={[chip, modality === typedOption && chipActive]}
+              >
+                <Text
+                  style={{
+                    color: modality === typedOption ? '#0f172a' : palette.text,
+                  }}
+                >
+                  {formatLabel(typedOption)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <Text style={formLabel}>Logging mode</Text>
+        <View style={chipRow}>
+          {loggingOptions.map(option => {
+            const typedOption = asLoggingMode(option);
+            return (
+              <TouchableOpacity
+                key={option}
+                onPress={() => updateDraft({ loggingMode: typedOption })}
+                style={[chip, loggingMode === typedOption && chipActive]}
+              >
+                <Text
+                  style={{
+                    color: loggingMode === typedOption ? '#0f172a' : palette.text,
+                  }}
+                >
+                  {formatLabel(typedOption)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {error ? <Text style={{ color: palette.danger }}>{error}</Text> : null}
+      </ScrollView>
+
+      <View style={formFooter}>
+        <TouchableOpacity
+          onPress={handleSave}
+          disabled={saving}
+          style={[
+            {
+              borderRadius: radius.card,
+              paddingVertical: spacing(1.5),
+              alignItems: 'center',
+            },
+            saving
+              ? { backgroundColor: palette.mutedSurface }
+              : { backgroundColor: palette.primary },
+          ]}
+        >
+          <Text
+            style={{
+              color: saving ? palette.mutedText : '#0f172a',
+              fontWeight: '600' as const,
+            }}
+          >
+            {saving ? 'Saving...' : 'Save exercise'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={onCancel} style={secondaryButton}>
+          <Text style={{ color: palette.mutedText, fontWeight: '600' as const }}>
+            Cancel
+          </Text>
+        </TouchableOpacity>
+      </View>
+    </View>
   );
 };
 
@@ -1204,6 +1273,24 @@ const secondaryButton = {
   borderColor: palette.border,
   paddingVertical: spacing(1.25),
   alignItems: 'center' as const,
+};
+
+const formFooter = {
+  padding: spacing(2),
+  borderTopWidth: 1,
+  borderColor: palette.border,
+  backgroundColor: palette.background,
+  gap: spacing(1),
+};
+
+const chipAddButton = {
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.primary,
+  backgroundColor: palette.primary,
+  paddingHorizontal: spacing(1.5),
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
 };
 
 const sectionLabel = {

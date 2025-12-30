@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useReducer } from 'react';
-import { View } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { Text, TouchableOpacity, View } from 'react-native';
+import {
+  SafeAreaProvider,
+  SafeAreaView,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import ExerciseBrowser from './screens/ExerciseBrowser';
 import LoggingScreen from './screens/LoggingScreen';
 import HistoryScreen from './screens/HistoryScreen';
@@ -24,6 +28,7 @@ import {
   removeEvent,
 } from './storage';
 import { palette } from './ui/theme';
+import { getMuscleColor } from './ui/muscleColors';
 import BottomNav from './navigation/BottomNav';
 import ScreenHeader from './ui/ScreenHeader';
 import { AppProvider } from './state/appContext';
@@ -56,8 +61,9 @@ import {
   asNavKey,
 } from './domain/types';
 
-const App = () => {
+const AppInner = () => {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
+  const insets = useSafeAreaInsets();
 
   const estimateOneRm = (weight: number, reps: number) =>
     weight * (1 + reps / 30);
@@ -365,6 +371,18 @@ const App = () => {
   );
 
   const goHome = () => dispatch({ type: 'nav/set', screen: asScreenKey('home') });
+  const logHeaderBackground =
+    state.nav.screen === asScreenKey('log')
+      ? (() => {
+          const selected =
+            state.catalog.entries.find(
+              entry => entry.display_name === state.logging.exerciseName,
+            ) ?? null;
+          return selected
+            ? addAlpha(getMuscleColor(selected.primary_muscle_group), 0.9)
+            : palette.background;
+        })()
+      : palette.background;
 
   const renderScreen = () => {
     switch (state.nav.screen) {
@@ -372,7 +390,25 @@ const App = () => {
         return <HomeScreen />;
       case asScreenKey('browser'):
         return <ExerciseBrowser />;
-      case asScreenKey('log'):
+      case asScreenKey('log'): {
+        const selectedExercise =
+          state.catalog.entries.find(
+            entry => entry.display_name === state.logging.exerciseName,
+          ) ?? null;
+        const headerSubtitle = selectedExercise
+          ? asLabelText(
+              `${formatLabel(selectedExercise.primary_muscle_group)} · ${formatLabel(
+                selectedExercise.modality,
+              )}`,
+            )
+          : undefined;
+        const isFavorite = selectedExercise
+          ? state.catalog.favorites.includes(selectedExercise.slug)
+          : false;
+        const headerTone = selectedExercise
+          ? contrastColor(getMuscleColor(selectedExercise.primary_muscle_group))
+          : palette.text;
+        const subtitleTone = toRgba(headerTone, 0.7);
         return (
           <View style={{ flex: 1 }}>
             <ScreenHeader
@@ -380,12 +416,48 @@ const App = () => {
                 (state.logging.exerciseName as unknown as LabelText) ??
                 asLabelText('Log workout')
               }
-              subtitle={asLabelText('Track · History · Trends')}
+              subtitle={headerSubtitle}
               onBack={goHome}
+              tintColor={headerTone}
+              subtitleColor={subtitleTone}
+              rightSlot={
+                selectedExercise ? (
+                  <TouchableOpacity
+                    onPress={() =>
+                      actions.toggleFavorite(
+                        selectedExercise.slug,
+                        !isFavorite,
+                      )
+                    }
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      backgroundColor: 'transparent',
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 18,
+                        color: headerTone,
+                      }}
+                    >
+                      {isFavorite ? '★' : '☆'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null
+              }
+              containerStyle={{
+                backgroundColor: logHeaderBackground,
+                borderColor: addAlpha(logHeaderBackground, 0.7),
+              }}
             />
             <LoggingScreen />
           </View>
         );
+      }
       case asScreenKey('history'):
         return <HistoryScreen />;
       case asScreenKey('analytics'):
@@ -413,38 +485,92 @@ const App = () => {
     }
   };
 
+  const topInsetColor =
+    state.nav.screen === asScreenKey('log')
+      ? logHeaderBackground
+      : palette.background;
+
   return (
-    <SafeAreaProvider>
-      <AppProvider state={state} dispatch={dispatch} actions={actions}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: palette.background }}>
-          <View style={{ flex: 1 }}>{renderScreen()}</View>
-          <BottomNav
-            current={
-              state.nav.screen === asScreenKey('calendar') ||
-              state.nav.screen === asScreenKey('browser') ||
-              state.nav.screen === asScreenKey('analytics') ||
-              state.nav.screen === asScreenKey('coach')
-                ? (state.nav.screen as unknown as NavKey)
-                : asNavKey('home')
+    <AppProvider state={state} dispatch={dispatch} actions={actions}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: palette.background }}
+        edges={['left', 'right', 'bottom']}
+      >
+        <View style={{ height: insets.top, backgroundColor: topInsetColor }} />
+        <View style={{ flex: 1, backgroundColor: palette.background }}>
+          {renderScreen()}
+        </View>
+        <BottomNav
+          current={
+            state.nav.screen === asScreenKey('calendar') ||
+            state.nav.screen === asScreenKey('browser') ||
+            state.nav.screen === asScreenKey('analytics') ||
+            state.nav.screen === asScreenKey('coach')
+              ? (state.nav.screen as unknown as NavKey)
+              : asNavKey('home')
+          }
+          onSelect={key => {
+            if (key === asNavKey('home')) {
+              dispatch({ type: 'nav/set', screen: asScreenKey('home') });
+            } else if (key === asNavKey('calendar')) {
+              dispatch({ type: 'nav/set', screen: asScreenKey('calendar') });
+            } else if (key === asNavKey('browser')) {
+              dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
+            } else if (key === asNavKey('analytics')) {
+              dispatch({ type: 'nav/set', screen: asScreenKey('analytics') });
+            } else if (key === asNavKey('coach')) {
+              dispatch({ type: 'nav/set', screen: asScreenKey('coach') });
             }
-            onSelect={key => {
-              if (key === asNavKey('home')) {
-                dispatch({ type: 'nav/set', screen: asScreenKey('home') });
-              } else if (key === asNavKey('calendar')) {
-                dispatch({ type: 'nav/set', screen: asScreenKey('calendar') });
-              } else if (key === asNavKey('browser')) {
-                dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
-              } else if (key === asNavKey('analytics')) {
-                dispatch({ type: 'nav/set', screen: asScreenKey('analytics') });
-              } else if (key === asNavKey('coach')) {
-                dispatch({ type: 'nav/set', screen: asScreenKey('coach') });
-              }
-            }}
-          />
-        </SafeAreaView>
-      </AppProvider>
-    </SafeAreaProvider>
+          }}
+        />
+      </SafeAreaView>
+    </AppProvider>
   );
+};
+
+const App = () => (
+  <SafeAreaProvider>
+    <AppInner />
+  </SafeAreaProvider>
+);
+
+const formatLabel = (value: string) =>
+  value
+    .split('_')
+    .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+
+const addAlpha = (hex: string, alpha: number) => {
+  const normalized = Math.max(0, Math.min(1, alpha));
+  const alphaHex = Math.round(normalized * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${hex}${alphaHex}`;
+};
+
+const contrastColor = (hex: string) => {
+  const { r, g, b } = parseHex(hex);
+  const [rs, gs, bs] = [r, g, b].map(channel => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
+  return luminance > 0.45 ? '#0f172a' : '#f8fafc';
+};
+
+const parseHex = (value: string) => {
+  const normalized = value.replace('#', '');
+  const clean = normalized.length >= 6 ? normalized.slice(0, 6) : normalized;
+  const r = parseInt(clean.slice(0, 2), 16) || 0;
+  const g = parseInt(clean.slice(2, 4), 16) || 0;
+  const b = parseInt(clean.slice(4, 6), 16) || 0;
+  return { r, g, b };
+};
+
+const toRgba = (hex: string, alpha: number) => {
+  const { r, g, b } = parseHex(hex);
+  const normalized = Math.max(0, Math.min(1, alpha));
+  return `rgba(${r}, ${g}, ${b}, ${normalized})`;
 };
 
 export default App;

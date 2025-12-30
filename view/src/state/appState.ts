@@ -10,6 +10,7 @@ import {
   Modality,
   MuscleGroup,
   NumericInput,
+  Tag,
   ScreenKey,
   SearchQuery,
   asAnalyticsMetricKey,
@@ -82,6 +83,7 @@ export type RootState = {
       loggingMode: LoggingMode;
       minLoad: NumericInput;
       maxLoad: NumericInput;
+      tags: Tag[];
       saving: boolean;
       error: ErrorMessage | null;
     };
@@ -183,6 +185,7 @@ export const createInitialState = (): RootState => {
         loggingMode: asLoggingMode('reps_weight'),
         minLoad: asNumericInput(''),
         maxLoad: asNumericInput(''),
+        tags: [],
         saving: false,
         error: null,
       },

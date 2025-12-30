@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
 import {
   ScrollView,
   Text,
@@ -13,11 +13,12 @@ import {
   Divider,
   PrimaryButton,
   BodyText,
-  ToastBanner,
 } from '../ui/components';
 import { palette, radius, spacing } from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { getMuscleColor } from '../ui/muscleColors';
+import ChevronLeftIcon from '../assets/chevron-left.svg';
+import ChevronRightIcon from '../assets/chevron-right.svg';
 import {
   useAppActions,
   useAppDispatch,
@@ -32,14 +33,10 @@ import {
   LoggingMode,
   LoggingModeValue,
   NumericInput,
-  ToastText,
-  ToastTone,
   asDisplayLabel,
   asExerciseName,
   asLabelText,
   asNumericInput,
-  asToastText,
-  asToastTone,
   unwrapLoggingMode,
 } from '../domain/types';
 
@@ -237,7 +234,6 @@ const LoggingScreen = () => {
   const dispatch = useAppDispatch();
   const actions = useAppActions();
   const catalog = state.catalog.entries;
-  const favoriteSlugs = state.catalog.favorites;
   const selectedExercise = useMemo(
     () =>
       catalog.find(
@@ -251,14 +247,11 @@ const LoggingScreen = () => {
   const selectedMetric = state.logging.selectedMetric;
   const loggingDate = state.logging.logDate;
   const editingEventId = state.logging.editingEventId;
-  const statusBanner = state.logging.status;
-
-  const showStatus = useCallback(
-    (text: ToastText, tone: ToastTone = asToastTone('success')) => {
-      dispatch({ type: 'log/status', status: { text, tone } });
-    },
-    [dispatch],
-  );
+  const shiftLogDate = (deltaDays: number) => {
+    const next = new Date(loggingDate);
+    next.setDate(next.getDate() + deltaDays);
+    dispatch({ type: 'log/date', date: next });
+  };
 
   const fieldDefinitions = useMemo(() => {
     return selectedExercise
@@ -383,7 +376,6 @@ const LoggingScreen = () => {
       nextFields.distance = asNumericInput(payload.distance.toString());
     dispatch({ type: 'log/fields', fields: nextFields });
     dispatch({ type: 'log/tab', tab: 'Track' });
-    showStatus(asToastText('Training saved'), asToastTone('success'));
   };
 
   const handleSelectSet = (event: WorkoutEvent) => {
@@ -400,7 +392,6 @@ const LoggingScreen = () => {
     );
     await actions.updateSet(editingEventId, payload);
     dispatch({ type: 'log/editing', eventId: null });
-    showStatus(asToastText('Set updated'), asToastTone('info'));
   };
 
   const handleDeleteSet = async () => {
@@ -408,7 +399,6 @@ const LoggingScreen = () => {
     await actions.deleteSet(editingEventId);
     dispatch({ type: 'log/editing', eventId: null });
     dispatch({ type: 'log/fields', fields: { ...INITIAL_FIELDS } });
-    showStatus(asToastText('Set deleted'), asToastTone('danger'));
   };
 
   const setFieldValue = (key: FieldKey, delta: number) => {
@@ -429,75 +419,7 @@ const LoggingScreen = () => {
           paddingBottom: spacing(2),
         }}
       >
-        {selectedExercise ? (
-          <Card>
-            {statusBanner ? (
-              <ToastBanner text={statusBanner.text} tone={statusBanner.tone} />
-            ) : null}
-            <View
-              style={{
-                padding: spacing(1.5),
-                borderRadius: 12,
-                backgroundColor: addAlpha(
-                  getMuscleColor(selectedExercise?.primary_muscle_group),
-                  0.2,
-                ),
-                marginBottom: spacing(1),
-              }}
-            >
-              <View
-                style={{
-                  flexDirection: 'row',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                }}
-              >
-                <Text
-                  style={{
-                    color: palette.text,
-                    fontSize: 18,
-                    fontWeight: '700',
-                  }}
-                >
-                  {selectedExercise.display_name}
-                </Text>
-                <TouchableOpacity
-                  onPress={() =>
-                    actions.toggleFavorite(
-                      selectedExercise.slug,
-                      !favoriteSlugs.includes(selectedExercise.slug),
-                    )
-                  }
-                >
-                  <Text
-                    style={{
-                      fontSize: 18,
-                      color: favoriteSlugs.includes(selectedExercise.slug)
-                        ? palette.primary
-                        : palette.mutedText,
-                    }}
-                  >
-                    {favoriteSlugs.includes(selectedExercise.slug) ? '★' : '☆'}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <Text
-                style={{ color: palette.mutedText, marginTop: spacing(0.5) }}
-              >
-                {formatDateLabel(loggingDate)} Sets
-              </Text>
-              <Text
-                style={{
-                  color: palette.mutedText,
-                  textTransform: 'capitalize',
-                }}
-              >
-                {selectedExercise.primary_muscle_group.replace(/_/g, ' ')} ·{' '}
-                {selectedExercise.modality}
-              </Text>
-            </View>
-          </Card>
-        ) : (
+        {selectedExercise ? null : (
           <Card>
             <Text style={{ color: palette.mutedText }}>
               Select an exercise to log sets.
@@ -543,13 +465,41 @@ const LoggingScreen = () => {
 
             {sessionTab === 'Track' && (
               <>
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    flexWrap: 'wrap',
-                    gap: spacing(1),
-                  }}
-                >
+                <View style={dateRow}>
+                  <TouchableOpacity
+                    onPress={() => shiftLogDate(-1)}
+                    style={dateButton}
+                  >
+                    <ChevronLeftIcon
+                      width={16}
+                      height={16}
+                      color={palette.text}
+                    />
+                  </TouchableOpacity>
+                  <View style={{ alignItems: 'center', flex: 1 }}>
+                    <Text style={{ color: palette.text, fontWeight: '600' }}>
+                      {formatDateLabel(loggingDate)}
+                    </Text>
+                    <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                      {loggingDate.toLocaleDateString(undefined, {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => shiftLogDate(1)}
+                    style={dateButton}
+                  >
+                    <ChevronRightIcon
+                      width={16}
+                      height={16}
+                      color={palette.text}
+                    />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ gap: spacing(1) }}>
                   {fieldDefinitions.map(definition => (
                     <Stepper
                       key={definition.key}
@@ -576,16 +526,6 @@ const LoggingScreen = () => {
                   ))}
                 </View>
                 <Divider />
-                <Text
-                  style={{
-                    fontSize: 14,
-                    fontWeight: '600',
-                    color: palette.mutedText,
-                    marginBottom: spacing(1),
-                  }}
-                >
-                  {formatDateLabel(loggingDate)} Sets
-                </Text>
                 {todaySets.length === 0 ? (
                   <BodyText style={{ color: palette.mutedText }}>
                     No sets logged today.
@@ -601,12 +541,6 @@ const LoggingScreen = () => {
                       onPress={() => handleSelectSet(set)}
                       active={editingEventId === set.event_id}
                       pr={prEventIds.has(set.event_id)}
-                      onPrPress={() =>
-                        showStatus(
-                          asToastText('Personal record set for this exercise.'),
-                          asToastTone('info'),
-                        )
-                      }
                     />
                   ))
                 )}
@@ -641,12 +575,6 @@ const LoggingScreen = () => {
                           onPress={() => handleSelectSet(event)}
                           active={editingEventId === event.event_id}
                           pr={prEventIds.has(event.event_id)}
-                          onPrPress={() =>
-                            showStatus(
-                              asToastText('Personal record set for this exercise.'),
-                              asToastTone('info'),
-                            )
-                          }
                         />
                       ))}
                     </View>
@@ -808,6 +736,29 @@ const bottomCta = {
   gap: spacing(1),
 };
 
+const dateRow = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: spacing(1),
+  paddingHorizontal: spacing(1),
+  paddingVertical: spacing(1),
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  backgroundColor: palette.surface,
+};
+
+const dateButton = {
+  width: 36,
+  height: 36,
+  borderRadius: 18,
+  borderWidth: 1,
+  borderColor: palette.border,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  backgroundColor: palette.mutedSurface,
+};
+
 const dangerButton = {
   paddingVertical: spacing(1.25),
   borderRadius: radius.card,
@@ -835,8 +786,7 @@ const Stepper = ({
 }) => (
   <View
     style={{
-      flex: 1,
-      minWidth: '45%',
+      width: '100%',
       backgroundColor: palette.mutedSurface,
       borderRadius: radius.card,
       padding: spacing(1),
@@ -850,62 +800,98 @@ const Stepper = ({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        gap: spacing(1),
       }}
     >
       <TouchableOpacity
         onPress={onDecrement}
         style={{
           backgroundColor: palette.surface,
-          width: 40,
-          height: 40,
+          width: 48,
+          height: 48,
           borderRadius: radius.card,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Text style={{ color: palette.text, fontSize: 18 }}>-</Text>
+        <Text style={{ color: palette.text, fontSize: 20 }}>-</Text>
       </TouchableOpacity>
-      <View style={{ alignItems: 'center' }}>
-        <Text style={{ color: palette.text, fontSize: 20, fontWeight: '600' }}>
-          {value || '0'}
-        </Text>
-        {unit ? (
-          <Text style={{ color: palette.mutedText, fontSize: 12 }}>{unit}</Text>
-        ) : null}
-      </View>
+      <InputPill
+        value={value}
+        unit={unit}
+        onChange={onChange}
+      />
       <TouchableOpacity
         onPress={onIncrement}
         style={{
           backgroundColor: palette.surface,
-          width: 40,
-          height: 40,
+          width: 48,
+          height: 48,
           borderRadius: radius.card,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Text style={{ color: palette.text, fontSize: 18 }}>+</Text>
+        <Text style={{ color: palette.text, fontSize: 20 }}>+</Text>
       </TouchableOpacity>
     </View>
-    <TextInput
-      value={value}
-      onChangeText={next => onChange(asNumericInput(next))}
-      keyboardType="numeric"
-      placeholder={`Enter ${label.toLowerCase()}`}
-      placeholderTextColor={palette.mutedText}
-      style={{
-        marginTop: spacing(1),
-        borderWidth: 1,
-        borderColor: palette.border,
-        borderRadius: radius.card,
-        paddingVertical: 8,
-        paddingHorizontal: spacing(1),
-        color: palette.text,
-        backgroundColor: palette.surface,
-      }}
-    />
   </View>
 );
+
+const InputPill = ({
+  value,
+  unit,
+  onChange,
+}: {
+  value: NumericInput;
+  unit?: DisplayLabel;
+  onChange: (value: NumericInput) => void;
+}) => {
+  const inputRef = useRef<TextInput>(null);
+  const focusInput = () => {
+    inputRef.current?.focus();
+  };
+  return (
+    <TouchableOpacity
+      onPress={focusInput}
+      activeOpacity={0.85}
+      style={{
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: palette.border,
+        borderRadius: radius.pill,
+        paddingVertical: spacing(0.75),
+        paddingHorizontal: spacing(1.5),
+        backgroundColor: palette.surface,
+      }}
+    >
+      <TextInput
+        ref={inputRef}
+        value={value}
+        onChangeText={next => onChange(asNumericInput(next))}
+        keyboardType="numeric"
+        placeholder="0"
+        placeholderTextColor={palette.mutedText}
+        selectTextOnFocus
+        style={{
+          color: palette.text,
+          fontSize: 18,
+          fontWeight: '600',
+          textAlign: 'center',
+          minWidth: 48,
+        }}
+      />
+      {unit ? (
+        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+          {` ${unit}`}
+        </Text>
+      ) : null}
+    </TouchableOpacity>
+  );
+};
 
 const pillStyle = {
   marginRight: spacing(1),

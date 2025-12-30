@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { StyleProp, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
 import { palette, spacing, typography } from './theme';
 import ArrowLeftIcon from '../assets/arrow-left.svg';
 import { LabelText, unwrapLabelText } from '../domain/types';
@@ -10,6 +10,9 @@ type Props = {
   onBack?: () => void;
   rightSlot?: React.ReactNode;
   onTitlePress?: () => void;
+  containerStyle?: StyleProp<ViewStyle>;
+  tintColor?: string;
+  subtitleColor?: string;
 };
 
 const ScreenHeader = ({
@@ -18,19 +21,27 @@ const ScreenHeader = ({
   onBack,
   rightSlot,
   onTitlePress,
+  containerStyle,
+  tintColor,
+  subtitleColor,
 }: Props) => {
   const TitleComponent = onTitlePress ? TouchableOpacity : View;
+  const resolvedTitleColor = tintColor ?? palette.text;
+  const resolvedSubtitleColor = subtitleColor ?? palette.mutedText;
   return (
     <View
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: spacing(2),
-        paddingVertical: spacing(1.5),
-        borderBottomWidth: 1,
-        borderColor: palette.border,
-        gap: spacing(1),
-      }}
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: spacing(2),
+          paddingVertical: spacing(1.5),
+          borderBottomWidth: 1,
+          borderColor: palette.border,
+          gap: spacing(1),
+        },
+        containerStyle,
+      ]}
     >
       {onBack ? (
         <TouchableOpacity
@@ -39,14 +50,12 @@ const ScreenHeader = ({
             width: 36,
             height: 36,
             borderRadius: 18,
-            borderWidth: 1,
-            borderColor: palette.border,
             alignItems: 'center',
             justifyContent: 'center',
-            backgroundColor: palette.surface,
+            backgroundColor: 'transparent',
           }}
         >
-          <ArrowLeftIcon width={18} height={18} color={palette.text} />
+          <ArrowLeftIcon width={18} height={18} color={resolvedTitleColor} />
         </TouchableOpacity>
       ) : null}
       <TitleComponent
@@ -58,11 +67,16 @@ const ScreenHeader = ({
         }}
         disabled={!onTitlePress}
       >
-        <Text style={[typography.title, { fontSize: 20 }]}>
+        <Text
+          style={[
+            typography.title,
+            { fontSize: 20, color: resolvedTitleColor },
+          ]}
+        >
           {unwrapLabelText(title)}
         </Text>
         {subtitle ? (
-          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+          <Text style={{ color: resolvedSubtitleColor, fontSize: 12 }}>
             {unwrapLabelText(subtitle)}
           </Text>
         ) : null}
