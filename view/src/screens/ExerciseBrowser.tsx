@@ -327,6 +327,19 @@ const ExerciseBrowser = () => {
                   Manage custom exercises
                 </Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                onPress={async () => {
+                  dispatch({ type: 'browser/menu', open: false });
+                  await actions.importFitnotes();
+                }}
+                style={menuItem}
+              >
+                <Text
+                  style={{ color: palette.text, fontWeight: '600' as const }}
+                >
+                  Import FitNotes backup
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </TouchableWithoutFeedback>

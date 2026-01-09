@@ -51,6 +51,15 @@ export const insertEvent = async (event: WorkoutEvent) => {
   await writeStore(merged);
 };
 
+export const insertEvents = async (incoming: WorkoutEvent[]) => {
+  const events = await readStore();
+  const byId = new Map<string, WorkoutEvent>();
+  events.forEach(event => byId.set(String(event.event_id), event));
+  incoming.forEach(event => byId.set(String(event.event_id), event));
+  const merged = sortEventsByDeterministicOrder(Array.from(byId.values()));
+  await writeStore(merged);
+};
+
 export const updateEvent = async (updated: WorkoutEvent) => {
   const events = await readStore();
   const next = events.map(event =>

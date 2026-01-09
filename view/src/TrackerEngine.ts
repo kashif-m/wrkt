@@ -25,6 +25,7 @@ interface TrackerEngineBinding {
   suggest: (dsl: DslText, events: JsonText, planner: PlannerKind) => JsonText;
   getExerciseCatalog: () => JsonText;
   validateExercise: (entry: JsonText) => JsonText;
+  importFitnotes: (path: string) => JsonText;
 }
 
 declare global {
@@ -62,6 +63,16 @@ const call = <T extends JsonValue>(
   const method = engine[fn] as (
     ...inner: Array<DslText | JsonText | PlannerKind>
   ) => JsonText;
+  const raw = method(...args);
+  return parse<T>(raw);
+};
+
+const callRaw = <T extends JsonValue>(
+  fn: keyof TrackerEngineBinding,
+  ...args: Array<string>
+): T => {
+  const engine = ensureBinding();
+  const method = engine[fn] as (...inner: string[]) => JsonText;
   const raw = method(...args);
   return parse<T>(raw);
 };
@@ -112,4 +123,8 @@ export const getExerciseCatalog = async () =>
   call<JsonArray>('getExerciseCatalog');
 export const validateExercise = async (entry: JsonObject) => {
   return call<JsonObject>('validateExercise', stringify(entry));
+};
+
+export const importFitnotes = async (path: string) => {
+  return callRaw<JsonObject>('importFitnotes', path);
 };

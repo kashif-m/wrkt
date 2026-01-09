@@ -135,6 +135,16 @@ pub extern "C" fn strata_exercise_catalog() -> FfiResult {
 }
 
 #[no_mangle]
+pub extern "C" fn strata_import_fitnotes(path_ptr: *const c_char) -> FfiResult {
+    handle(|| {
+        let path = cstr_to_str(path_ptr)?;
+        let bundle = workout_pack::import::fitnotes::import_fitnotes(path)
+            .map_err(|err| err.to_string())?;
+        Ok(bundle)
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn strata_validate_exercise(entry_json_ptr: *const c_char) -> FfiResult {
     handle(|| {
         let entry_json = cstr_to_str(entry_json_ptr)?;

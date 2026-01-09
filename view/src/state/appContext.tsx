@@ -47,6 +47,7 @@ export type RootStateActions = {
     archived: boolean,
   ) => Promise<void>;
   toggleFavorite: (slug: ExerciseSlug, next: boolean) => Promise<void>;
+  importFitnotes: () => Promise<void>;
 };
 
 export const AppProvider = ({

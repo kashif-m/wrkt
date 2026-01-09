@@ -34,6 +34,11 @@ import ScreenHeader from './ui/ScreenHeader';
 import { AppProvider } from './state/appContext';
 import { createInitialState, initialFields, reducer } from './state/appState';
 import {
+  applyFitnotesImport,
+  importFitnotesBundle,
+  pickFitnotesFile,
+} from './import/fitnotes';
+import {
   ExerciseCatalogEntry,
   fetchMergedCatalog,
   listCustomExercises,
@@ -357,6 +362,17 @@ const AppInner = () => {
       toggleFavorite: async (slug: ExerciseSlug, next: boolean) => {
         const favorites = await setExerciseFavorite(slug, next);
         dispatch({ type: 'catalog/favorites', favorites });
+      },
+      importFitnotes: async () => {
+        const file = await pickFitnotesFile();
+        if (!file?.uri) return;
+        const bundle = await importFitnotesBundle(file.uri);
+        const result = await applyFitnotesImport(bundle);
+        if (result.warnings.length > 0) {
+          console.warn('FitNotes import warnings', result.warnings);
+        }
+        await refreshFromStorage();
+        await refreshCatalog();
       },
     }),
     [

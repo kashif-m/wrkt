@@ -30,6 +30,7 @@ FfiResult strata_generate_suggestions(const char* dsl,
                                       const char* planner_kind);
 FfiResult strata_exercise_catalog(void);
 FfiResult strata_validate_exercise(const char* entry_json);
+FfiResult strata_import_fitnotes(const char* path);
 void strata_free_string(char* ptr);
 }
 
@@ -151,6 +152,16 @@ void installTrackerEngineBinding(Runtime& rt) {
     }
     auto entry = args[0].asString(runtime).utf8(runtime);
     auto ffi = strata_validate_exercise(entry.c_str());
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
+  makeFunction("importFitnotes", [](Runtime& runtime, const Value* args,
+                                   size_t count) -> Value {
+    if (count < 1 || !args[0].isString()) {
+      throw std::invalid_argument("importFitnotes requires file path");
+    }
+    auto path = args[0].asString(runtime).utf8(runtime);
+    auto ffi = strata_import_fitnotes(path.c_str());
     return makeStringResult(runtime, callStrata(ffi));
   });
 
