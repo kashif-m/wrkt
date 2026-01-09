@@ -106,8 +106,12 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
   const importedEvents: WorkoutEvent[] = bundle.events.map((event, index) => {
     const meta = (event.meta ?? {}) as JsonObject;
     const ts = event.ts;
+    const logId =
+      typeof meta.fitnotes_log_id === 'number'
+        ? meta.fitnotes_log_id
+        : index;
     return {
-      event_id: asEventId(`import-fitnotes-${ts}-${index}`),
+      event_id: asEventId(`import-fitnotes-${logId}`),
       tracker_id: trackerId,
       ts,
       payload: {

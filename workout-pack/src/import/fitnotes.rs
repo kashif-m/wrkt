@@ -26,12 +26,12 @@ struct FitNotesLog {
     id: i64,
     exercise_id: i64,
     date: String,
-    metric_weight: i64,
-    reps: i64,
-    unit: i64,
-    distance: i64,
-    duration_seconds: i64,
-    is_personal_record: i64,
+    metric_weight: Option<f64>,
+    reps: Option<i64>,
+    unit: Option<i64>,
+    distance: Option<f64>,
+    duration_seconds: Option<f64>,
+    is_personal_record: Option<i64>,
 }
 
 pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
@@ -52,6 +52,8 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
     let mut warnings: Vec<ImportWarning> = Vec::new();
     let mut imported_exercises: Vec<ExerciseDefinition> = Vec::new();
     let mut favorites: Vec<String> = Vec::new();
+    let mut favorite_set: HashMap<String, ()> = HashMap::new();
+    let mut used_slugs: HashMap<String, usize> = HashMap::new();
     for exercise in &exercises {
         let category = category_map.get(&exercise.category_id);
         let category_name = category
@@ -60,9 +62,13 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
         let (primary_group, tags) = map_category(category_name);
         let logging_mode = map_logging_mode(exercise.exercise_type_id);
         let modality = map_modality(exercise.exercise_type_id);
-        let slug = slugify(&exercise.name);
+        let base_slug = slugify(&exercise.name);
+        let slug = uniquify_slug(&base_slug, &mut used_slugs, exercise.id);
         if exercise.is_favourite {
-            favorites.push(slug.clone());
+            if !favorite_set.contains_key(&slug) {
+                favorites.push(slug.clone());
+                favorite_set.insert(slug.clone(), ());
+            }
         }
         imported_exercises.push(ExerciseDefinition {
             slug,
@@ -116,31 +122,21 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
         if !entry.date.is_empty() {
             meta.insert("fitnotes_date".into(), json!(entry.date.clone()));
         }
-        let reps = if entry.reps > 0 {
-            Some(entry.reps as i32)
-        } else {
-            None
-        };
-        let weight = if entry.metric_weight > 0 {
-            Some(entry.metric_weight as f64)
-        } else {
-            None
-        };
-        let distance = if entry.distance > 0 {
-            Some(entry.distance as f64)
-        } else {
-            None
-        };
-        let duration = if entry.duration_seconds > 0 {
-            Some(entry.duration_seconds as f64)
-        } else {
-            None
-        };
-        let pr = if entry.is_personal_record > 0 {
-            Some(true)
-        } else {
-            None
-        };
+        let reps = entry.reps.and_then(|value| {
+            if value > 0 {
+                Some(value as i32)
+            } else {
+                None
+            }
+        });
+        let weight = entry.metric_weight.and_then(|value| if value > 0.0 { Some(value) } else { None });
+        let distance = entry.distance.and_then(|value| if value > 0.0 { Some(value) } else { None });
+        let duration = entry
+            .duration_seconds
+            .and_then(|value| if value > 0.0 { Some(value) } else { None });
+        let pr = entry
+            .is_personal_record
+            .and_then(|value| if value > 0 { Some(true) } else { None });
         imported_events.push(ImportedEvent {
             ts,
             exercise: exercise.name.clone(),
@@ -225,12 +221,12 @@ fn map_log_row(row: &Row<'_>) -> rusqlite::Result<FitNotesLog> {
         id: row.get(0)?,
         exercise_id: row.get(1)?,
         date: row.get(2)?,
-        metric_weight: row.get(3)?,
-        reps: row.get(4)?,
-        unit: row.get(5)?,
-        distance: row.get(6)?,
-        duration_seconds: row.get(7)?,
-        is_personal_record: row.get(8)?,
+        metric_weight: row.get::<_, Option<f64>>(3)?,
+        reps: row.get::<_, Option<i64>>(4)?,
+        unit: row.get::<_, Option<i64>>(5)?,
+        distance: row.get::<_, Option<f64>>(6)?,
+        duration_seconds: row.get::<_, Option<f64>>(7)?,
+        is_personal_record: row.get::<_, Option<i64>>(8)?,
     })
 }
 
@@ -293,4 +289,14 @@ fn slugify(value: &str) -> String {
         .chars()
         .take(40)
         .collect()
+}
+
+fn uniquify_slug(base: &str, used: &mut HashMap<String, usize>, id: i64) -> String {
+    let entry = used.entry(base.to_string()).or_insert(0);
+    if *entry == 0 {
+        *entry = 1;
+        return base.to_string();
+    }
+    *entry += 1;
+    format!("{base}_fitnotes_{id}")
 }
