@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { roundToLocalDay } from '../timePolicy';
-import { palette, radius, spacing, typography, fontSizes } from '../ui/theme';
+import { palette, radius, spacing, fontSizes } from '../ui/theme';
 import { Card } from '../ui/components';
 import { getMuscleColor } from '../ui/muscleColors';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
@@ -121,7 +121,6 @@ const HomeScreen = () => {
   }, [dayEvents, catalogMap]);
 
   const emptyState = sections.length === 0;
-  const showStartCta = true;
   const muscleChips = useMemo(() => {
     const total = sections.reduce(
       (sum, section) => sum + section.exercises.length,
@@ -157,6 +156,15 @@ const HomeScreen = () => {
     ];
   }, [muscleChips]);
 
+  const totalSets = dayEvents.length;
+  const totalExercises = sections.reduce(
+    (sum, section) => sum + section.exercises.length,
+    0,
+  );
+  const averageSets = totalExercises
+    ? Math.round(totalSets / totalExercises)
+    : 0;
+
   return (
     <View style={{ flex: 1 }}>
       <View style={daySelector}>
@@ -171,11 +179,11 @@ const HomeScreen = () => {
           style={{ alignItems: 'center' }}
         >
           <Text
-            style={{ color: palette.text, fontSize: 18, fontWeight: '600' }}
+            style={{ color: palette.text, fontSize: 24, fontWeight: '600' }}
           >
             {primaryLabel}
           </Text>
-          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+          <Text style={{ color: palette.mutedText, fontSize: 14 }}>
             {secondaryLabel}
           </Text>
         </TouchableOpacity>
@@ -204,133 +212,56 @@ const HomeScreen = () => {
             gap: spacing(2),
           }}
         >
-          <Card style={{ gap: spacing(1) }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-              <View style={{ flex: 1 }}>
-                <Text style={[typography.title, { fontSize: 20 }]}>
-                  {primaryLabel}
-                </Text>
-                <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                  {secondaryLabel}
-                </Text>
-              </View>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing(0.5),
-                }}
-              >
-                {showStartCta ? (
+          <Card style={heroCard}>
+            <View style={{ flexDirection: 'row', gap: spacing(2) }}>
+              {muscleChips.length > 0 ? (
+                <View style={donutWrap}>
+                  <MusclePie data={musclePieData} radius={44} />
+                </View>
+              ) : null}
+              <View style={{ flex: 1, gap: spacing(1) }}>
+                <View style={{ alignItems: 'flex-end' }}>
                   <PrimaryAction
                     label={asLabelText('Start workout')}
                     onPress={() => actions.startWorkoutForDate(selectedDate)}
                   />
-                ) : (
-                  <View style={badge}>
-                    <Text
-                      style={{
-                        color: palette.text,
-                        fontWeight: '600',
-                        fontSize: 12,
-                      }}
-                    >
-                      {
-                        events.filter(
-                          event => roundToLocalDay(event.ts) === dayBucket,
-                        ).length
-                      }{' '}
-                      sets
-                    </Text>
+                </View>
+                {muscleChips.length > 0 ? (
+                  <View style={{ gap: spacing(0.5) }}>
+                    {musclePieData.map(chip => (
+                      <View key={chip.key} style={legendRow}>
+                        <View style={legendLabel}>
+                          <View
+                            style={[
+                              legendDot,
+                              {
+                                backgroundColor: chip.color ?? palette.primary,
+                              },
+                            ]}
+                          />
+                          <Text style={legendText}>{chip.label}</Text>
+                        </View>
+                        <Text style={legendValue}>{chip.percent}%</Text>
+                      </View>
+                    ))}
                   </View>
-                )}
+                ) : null}
               </View>
             </View>
-            {muscleChips.length > 0 ? (
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing(2),
-                }}
-              >
-                <MusclePie data={musclePieData} radius={30} />
-                <View style={{ flex: 1, gap: spacing(0.5) }}>
-                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                    {sections.length} groups{' '}
-                    {isToday ? 'logged today' : 'logged'}
-                  </Text>
-                  {musclePieData.map(chip => (
-                    <View
-                      key={chip.key}
-                      style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                      }}
-                    >
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: spacing(0.5),
-                        }}
-                      >
-                        <View
-                          style={[
-                            legendDot,
-                            { backgroundColor: chip.color ?? palette.primary },
-                          ]}
-                        />
-                        <Text
-                          style={{
-                            color: palette.text,
-                            fontWeight: '600',
-                            fontSize: 12,
-                          }}
-                        >
-                          {chip.label}
-                        </Text>
-                      </View>
-                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                        {chip.percent}%
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : (
-              <Text style={{ color: palette.mutedText }}>
-                No muscles logged yet.
-              </Text>
-            )}
           </Card>
 
-          {emptyState ? (
-            <Card
-              style={{
-                paddingVertical: spacing(3),
-                alignItems: 'center',
-                gap: spacing(1),
-              }}
-            >
-              <Text
-                style={{ color: palette.text, fontWeight: '700', fontSize: 16 }}
-              >
-                Workout log empty
-              </Text>
-              <Text style={{ color: palette.mutedText, fontSize: 13 }}>
-                Start a quick session for this day.
-              </Text>
-              {showStartCta ? (
-                <PrimaryAction
-                  label={asLabelText('Log workout')}
-                  onPress={() => actions.startWorkoutForDate(selectedDate)}
-                />
-              ) : null}
+          <View style={statsRow}>
+            <Card style={statCard}>
+              <Text style={statTitle}>Sets logged</Text>
+              <View>
+                <Text style={statValue}>{totalSets} sets</Text>
+                <Text style={statMuted}>{averageSets} avg</Text>
+              </View>
             </Card>
-          ) : (
-            <View style={listContainer}>
+          </View>
+
+          {emptyState ? null : (
+            <Card style={listContainer}>
               {sections.map((section, sectionIndex) => (
                 <View key={section.key} style={sectionBlock}>
                   <Text style={sectionLabel}>{section.label}</Text>
@@ -351,43 +282,30 @@ const HomeScreen = () => {
                       ]}
                     >
                       <View style={{ flex: 1, gap: spacing(0.5) }}>
-                        <Text
-                          style={{
-                            color: palette.text,
-                            fontSize: 16,
-                            fontWeight: '600',
-                          }}
-                        >
-                          {exercise.name}
-                        </Text>
+                        <Text style={exerciseTitle}>{exercise.name}</Text>
                         <View style={{ gap: spacing(0.25) }}>
                           {exercise.sets
-                            .slice(0, 5)
+                            .slice(0, 4)
                             .map((setItem, chunkIndex) => (
                               <Text
                                 key={`${exercise.name}-${chunkIndex}`}
-                                style={{
-                                  color: palette.mutedText,
-                                  fontSize: 12,
-                                }}
+                                style={exerciseMeta}
                               >
                                 {formatSetLabel(setItem)}
                               </Text>
                             ))}
-                          {exercise.sets.length > 5 ? (
-                            <Text
-                              style={{ color: palette.mutedText, fontSize: 12 }}
-                            >
+                          {exercise.sets.length > 4 ? (
+                            <Text style={exerciseMeta}>
                               + {countHiddenSets(exercise.sets)} more sets
                             </Text>
                           ) : null}
                         </View>
                       </View>
-                      <Text
-                        style={{ color: palette.mutedText, fontSize: 12 }}
-                      >{`${exercise.totalSets} ${
-                        exercise.totalSets === 1 ? 'set' : 'sets'
-                      }`}</Text>
+                      <View style={setCountPill}>
+                        <Text style={setCountText}>{`${exercise.totalSets} ${
+                          exercise.totalSets === 1 ? 'set' : 'sets'
+                        }`}</Text>
+                      </View>
                     </TouchableOpacity>
                   ))}
                   {sectionIndex !== sections.length - 1 ? (
@@ -395,7 +313,7 @@ const HomeScreen = () => {
                   ) : null}
                 </View>
               ))}
-            </View>
+            </Card>
           )}
         </ScrollView>
       </View>
@@ -502,15 +420,16 @@ const daySelector = {
   alignItems: 'center' as const,
   justifyContent: 'space-between' as const,
   paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1),
+  paddingVertical: spacing(1.25),
   borderBottomWidth: 1,
   borderColor: palette.border,
+  backgroundColor: palette.background,
 };
 
 const arrowButton = {
-  width: 36,
-  height: 36,
-  borderRadius: radius.card,
+  width: 38,
+  height: 38,
+  borderRadius: 19,
   borderWidth: 1,
   borderColor: palette.border,
   alignItems: 'center' as const,
@@ -518,20 +437,74 @@ const arrowButton = {
   backgroundColor: palette.surface,
 };
 
-const badge = {
-  paddingHorizontal: spacing(1.25),
-  paddingVertical: spacing(0.5),
-  borderRadius: radius.pill,
-  backgroundColor: palette.mutedSurface,
+const heroCard = {
+  paddingVertical: spacing(2),
+  gap: spacing(1.5),
+};
+
+const donutWrap = {
+  width: 96,
+  height: 96,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+  borderRadius: 48,
   borderWidth: 1,
   borderColor: palette.border,
+  backgroundColor: palette.mutedSurface,
+};
+
+const legendRow = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  justifyContent: 'space-between' as const,
+};
+
+const legendLabel = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: spacing(0.5),
+};
+
+const legendText = {
+  color: palette.text,
+  fontWeight: '600' as const,
+  fontSize: 12,
+};
+
+const legendValue = {
+  color: palette.mutedText,
+  fontSize: 12,
+};
+
+const statsRow = {
+  flexDirection: 'row' as const,
+  gap: spacing(1.5),
+};
+
+const statCard = {
+  flex: 1,
+  paddingVertical: spacing(1.5),
+  gap: spacing(1),
+};
+
+const statTitle = {
+  color: palette.text,
+  fontWeight: '600' as const,
+  fontSize: 14,
+};
+
+const statValue = {
+  color: palette.text,
+  fontSize: 18,
+  fontWeight: '700' as const,
+};
+
+const statMuted = {
+  color: palette.mutedText,
+  fontSize: 12,
 };
 
 const listContainer = {
-  backgroundColor: palette.surface,
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
   padding: spacing(2),
   gap: spacing(1.5),
 };
@@ -569,6 +542,33 @@ const legendDot = {
   width: 8,
   height: 8,
   borderRadius: 999,
+};
+
+const exerciseTitle = {
+  color: palette.text,
+  fontSize: 16,
+  fontWeight: '600' as const,
+};
+
+const exerciseMeta = {
+  color: palette.mutedText,
+  fontSize: 12,
+};
+
+const setCountPill = {
+  paddingHorizontal: spacing(1.25),
+  paddingVertical: spacing(0.5),
+  borderRadius: radius.pill,
+  borderWidth: 1,
+  borderColor: palette.border,
+  backgroundColor: palette.mutedSurface,
+  alignSelf: 'flex-start' as const,
+};
+
+const setCountText = {
+  color: palette.mutedText,
+  fontSize: 12,
+  fontWeight: '600' as const,
 };
 
 const MusclePie = ({

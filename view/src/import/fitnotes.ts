@@ -51,6 +51,14 @@ export type FitNotesImportBundle = {
   warnings?: Array<{ kind: string; message: string }>;
 };
 
+export type FitNotesImportSummary = {
+  eventsImported: number;
+  exercisesAdded: number;
+  exercisesSkipped: number;
+  favoritesAdded: number;
+  warningsCount: number;
+};
+
 export const pickFitnotesFile = async () => {
   try {
     return await DocumentPicker.pickSingle({
@@ -76,6 +84,9 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
   const catalogSlugs = new Set(catalog.map(entry => String(entry.slug)));
   const custom = await listCustomExercises(true);
   const customSlugs = new Set(custom.map(entry => String(entry.slug)));
+  let exercisesAdded = 0;
+  let exercisesSkipped = 0;
+  let favoritesAdded = 0;
 
   const importedExercises: BaseExerciseCatalogEntry[] = bundle.exercises.map(
     entry => ({
@@ -93,13 +104,16 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
   for (const exercise of importedExercises) {
     const slug = String(exercise.slug);
     if (catalogSlugs.has(slug) || customSlugs.has(slug)) {
+      exercisesSkipped += 1;
       continue;
     }
     await saveCustomExercise(exercise);
+    exercisesAdded += 1;
   }
 
   for (const slug of bundle.favorites ?? []) {
     await setExerciseFavorite(asExerciseSlug(slug), true);
+    favoritesAdded += 1;
   }
 
   const offsetMinutes = getLocalOffsetMinutes();
@@ -134,5 +148,15 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
 
   const sorted = sortEventsByDeterministicOrder(importedEvents);
   await insertEvents(sorted);
-  return { warnings: bundle.warnings ?? [] };
+  const warnings = bundle.warnings ?? [];
+  return {
+    warnings,
+    summary: {
+      exercisesAdded,
+      exercisesSkipped,
+      favoritesAdded,
+      eventsImported: sorted.length,
+      warningsCount: warnings.length,
+    },
+  };
 };

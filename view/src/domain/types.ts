@@ -46,7 +46,8 @@ export type ScreenKeyValue =
   | 'log'
   | 'analytics'
   | 'coach'
-  | 'history';
+  | 'history'
+  | 'importSummary';
 export type ScreenKey = Brand<ScreenKeyValue, 'ScreenKey'>;
 export type EventId = Brand<string, 'EventId'>;
 export type TrackerId = Brand<string, 'TrackerId'>;

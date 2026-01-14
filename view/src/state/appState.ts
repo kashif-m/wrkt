@@ -29,6 +29,7 @@ import { PlanSuggestion, WorkoutEvent } from '../workoutFlows';
 import { PlannerKind } from '../domain/types';
 
 import { ToastText, ToastTone } from '../domain/types';
+import { FitNotesImportSummary } from '../import/fitnotes';
 
 export type BrowserMode = 'groups' | 'exercises' | 'manage' | 'form';
 export type BrowserTab = 'all' | 'favorites';
@@ -112,6 +113,11 @@ export type RootState = {
     loading: boolean;
     items: PlanSuggestion[];
   };
+  importSummary: {
+    source: 'fitnotes';
+    summary: FitNotesImportSummary;
+    warnings: Array<{ kind: string; message: string }>;
+  } | null;
 };
 
 export type Action =
@@ -150,7 +156,11 @@ export type Action =
   | { type: 'analytics/metric'; metric: AnalyticsMetricKey }
   | { type: 'suggestions/planner'; planner: PlannerKind }
   | { type: 'suggestions/loading'; loading: boolean }
-  | { type: 'suggestions/items'; items: PlanSuggestion[] };
+  | { type: 'suggestions/items'; items: PlanSuggestion[] }
+  | {
+      type: 'import/summary';
+      summary: RootState['importSummary'];
+    };
 
 export const initialFields: LoggingFields = {
   reps: asNumericInput(''),
@@ -214,6 +224,7 @@ export const createInitialState = (): RootState => {
       loading: false,
       items: [],
     },
+    importSummary: null,
   };
 };
 
@@ -357,6 +368,8 @@ export const reducer = (state: RootState, action: Action): RootState => {
         ...state,
         suggestions: { ...state.suggestions, items: action.items },
       };
+    case 'import/summary':
+      return { ...state, importSummary: action.summary };
     default:
       return state;
   }

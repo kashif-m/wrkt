@@ -9,7 +9,8 @@ import ExerciseBrowser from './screens/ExerciseBrowser';
 import LoggingScreen from './screens/LoggingScreen';
 import HistoryScreen from './screens/HistoryScreen';
 import AnalyticsScreen from './screens/AnalyticsScreen';
-import SuggestionsScreen from './screens/SuggestionsScreen';
+import MoreScreen from './screens/MoreScreen';
+import ImportSummaryScreen from './screens/ImportSummaryScreen';
 import HomeScreen from './screens/HomeScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import {
@@ -371,6 +372,15 @@ const AppInner = () => {
         if (result.warnings.length > 0) {
           console.warn('FitNotes import warnings', result.warnings);
         }
+        dispatch({
+          type: 'import/summary',
+          summary: {
+            source: 'fitnotes',
+            summary: result.summary,
+            warnings: result.warnings,
+          },
+        });
+        dispatch({ type: 'nav/set', screen: asScreenKey('importSummary') });
         await refreshFromStorage();
         await refreshCatalog();
       },
@@ -487,15 +497,9 @@ const AppInner = () => {
           </View>
         );
       case asScreenKey('coach'):
-        return (
-          <View style={{ flex: 1 }}>
-            <ScreenHeader
-              title={asLabelText('Coach')}
-              subtitle={asLabelText('Suggestions')}
-            />
-            <SuggestionsScreen />
-          </View>
-        );
+        return <MoreScreen />;
+      case asScreenKey('importSummary'):
+        return <ImportSummaryScreen />;
       case asScreenKey('calendar'):
         return <CalendarScreen />;
     }
@@ -518,12 +522,14 @@ const AppInner = () => {
         </View>
         <BottomNav
           current={
-            state.nav.screen === asScreenKey('calendar') ||
-            state.nav.screen === asScreenKey('browser') ||
-            state.nav.screen === asScreenKey('analytics') ||
-            state.nav.screen === asScreenKey('coach')
-              ? (state.nav.screen as unknown as NavKey)
-              : asNavKey('home')
+            state.nav.screen === asScreenKey('importSummary')
+              ? asNavKey('coach')
+              : state.nav.screen === asScreenKey('calendar') ||
+                  state.nav.screen === asScreenKey('browser') ||
+                  state.nav.screen === asScreenKey('analytics') ||
+                  state.nav.screen === asScreenKey('coach')
+                ? (state.nav.screen as unknown as NavKey)
+                : asNavKey('home')
           }
           onSelect={key => {
             if (key === asNavKey('home')) {
