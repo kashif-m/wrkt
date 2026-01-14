@@ -20,6 +20,8 @@
           fenixPkgs.stable.rust-src
           fenixPkgs.targets."aarch64-apple-ios".stable.rust-std
           fenixPkgs.targets."aarch64-apple-ios-sim".stable.rust-std
+          fenixPkgs.targets."aarch64-linux-android".stable.rust-std
+          fenixPkgs.targets."armv7-linux-androideabi".stable.rust-std
         ];
         rustToolchain = fenixPkgs.combine rustComponents;
         rustAnalyzer = fenixPkgs.latest.rust-analyzer;
@@ -32,6 +34,14 @@
             rustToolchain
             rustAnalyzer
             nodejs
+            jdk17
+            gradle
+            cmake
+            ninja
+            llvm
+            cargo-ndk
+            android-tools
+            watchman
             zsh
             git
             zoxide
@@ -41,6 +51,7 @@
 
           shellHook = ''
             export SHELL=${pkgs.zsh}/bin/zsh
+            export PATH=${rustToolchain}/bin:$PATH
             export ZDOTDIR=$PWD/.nix-zsh
             export RUST_SRC_PATH=${rustSrc}/lib/rustlib/src/rust
             mkdir -p $ZDOTDIR
