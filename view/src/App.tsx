@@ -365,9 +365,9 @@ const AppInner = () => {
         dispatch({ type: 'catalog/favorites', favorites });
       },
       importFitnotes: async () => {
-        const file = await pickFitnotesFile();
-        if (!file?.uri) return;
-        const bundle = await importFitnotesBundle(file.uri);
+        const filePath = await pickFitnotesFile();
+        if (!filePath) return;
+        const bundle = await importFitnotesBundle(filePath);
         const result = await applyFitnotesImport(bundle);
         if (result.warnings.length > 0) {
           console.warn('FitNotes import warnings', result.warnings);

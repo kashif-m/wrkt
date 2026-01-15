@@ -59,11 +59,20 @@ export type FitNotesImportSummary = {
   warningsCount: number;
 };
 
-export const pickFitnotesFile = async () => {
+export const pickFitnotesFile = async (): Promise<string | null> => {
   try {
-    return await DocumentPicker.pickSingle({
+    const picked = await DocumentPicker.pickSingle({
       type: [DocumentPicker.types.allFiles],
+      copyTo: 'cachesDirectory',
     });
+    const candidate = picked.fileCopyUri ?? picked.uri;
+    if (!candidate) return null;
+    if (candidate.startsWith('content://')) {
+      throw new Error(
+        'Selected file cannot be accessed. Please retry the import.',
+      );
+    }
+    return candidate.replace(/^file:\/\//, '');
   } catch (error) {
     if (DocumentPicker.isCancel(error)) {
       return null;
