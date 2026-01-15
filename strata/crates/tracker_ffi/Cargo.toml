@@ -12,4 +12,4 @@ tracker_ir = { path = "../tracker_ir" }
 workout_pack = { path = "../../../workout-pack" }
 
 [lib]
-crate-type = ["rlib", "staticlib"]
+crate-type = ["rlib", "staticlib", "cdylib"]

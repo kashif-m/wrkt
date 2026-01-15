@@ -1,3 +1,4 @@
+import { TurboModuleRegistry } from 'react-native';
 import { BrandedString, DslText, JsonText, PlannerKind } from './domain/types';
 
 export type JsonValue =
@@ -33,6 +34,9 @@ declare global {
     TrackerEngine?: TrackerEngineBinding;
   }
 }
+
+// Best-effort warm-up without noisy warning; the JSI binding is installed lazily.
+TurboModuleRegistry.get('TrackerEngineModule');
 
 const binding = (globalThis as { TrackerEngine?: TrackerEngineBinding })
   .TrackerEngine;

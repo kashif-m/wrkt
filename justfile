@@ -29,6 +29,12 @@ ffi-xcframework: ffi-device ffi-sim
 		-library {{strata_dir}}/target/aarch64-apple-ios-sim/release/libtracker_ffi.a \
 		-output {{ffi_output}}
 
+# --- Android FFI -------------------------------------------------------------
+
+android-ffi:
+	cd {{strata_dir}} && RUSTFLAGS="-C link-arg=-Wl,-soname,libtracker_ffi.so" \
+		cargo ndk -t arm64-v8a -t armeabi-v7a -o ../view/android/app/src/main/jniLibs build -p tracker_ffi --release
+
 # --- Workout pack helpers ----------------------------------------------------
 
 pack-build:

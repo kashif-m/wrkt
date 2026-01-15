@@ -77,9 +77,9 @@
             alias l='ls -lah'
             RC
             fi
-            if [ -z "$ZSH_NAME" ]; then
-              exec ${pkgs.zsh}/bin/zsh
-            fi
+            # if [ -z "$ZSH_NAME" ] && [ -t 1 ]; then
+              # exec ${pkgs.zsh}/bin/zsh
+            # fi
             echo "Loaded workout tracker dev shell"
           '';
         };
