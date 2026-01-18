@@ -11,6 +11,7 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
 } from 'react-native';
+import Svg, { Path } from 'react-native-svg';
 import { getMuscleColor } from '../ui/muscleColors';
 import { roundToLocalDay } from '../timePolicy';
 import { palette, radius, spacing } from '../ui/theme';
@@ -24,6 +25,7 @@ import {
   useAppState,
 } from '../state/appContext';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import { Card } from '../ui/components';
 import {
   ColorHex,
   ExerciseName,
@@ -45,7 +47,6 @@ const CalendarScreen = () => {
   const catalog = state.catalog.entries;
   const visibleMonth = state.calendar.visibleMonth;
   const yearSheetOpen = state.calendar.yearSheetOpen;
-  const legendExpanded = state.calendar.legendExpanded;
   const monthAnim = useRef(new Animated.Value(1)).current;
   const sheetTranslate = useRef(new Animated.Value(0)).current;
 
@@ -101,6 +102,87 @@ const CalendarScreen = () => {
       }))
       .sort((a, b) => a.label.localeCompare(b.label));
   }, [events, catalogMap]);
+
+  const monthStats = useMemo(() => {
+    const start = new Date(
+      visibleMonth.getFullYear(),
+      visibleMonth.getMonth(),
+      1,
+    );
+    const end = new Date(
+      visibleMonth.getFullYear(),
+      visibleMonth.getMonth() + 1,
+      1,
+    );
+    const daysInMonth = new Date(
+      visibleMonth.getFullYear(),
+      visibleMonth.getMonth() + 1,
+      0,
+    ).getDate();
+    const today = new Date();
+    const daysElapsed =
+      today.getFullYear() === visibleMonth.getFullYear() &&
+      today.getMonth() === visibleMonth.getMonth()
+        ? today.getDate()
+        : daysInMonth;
+    const sessionDays = new Set<number>();
+    const dayGroups = new Map<number, Set<MuscleGroup>>();
+    const muscleSetCounts = new Map<MuscleGroup, number>();
+    events.forEach(event => {
+      if (event.ts < start.getTime() || event.ts >= end.getTime()) return;
+      const day = roundToLocalDay(event.ts);
+      sessionDays.add(day);
+      const exerciseName =
+        typeof event.payload?.exercise === 'string'
+          ? asExerciseName(event.payload.exercise)
+          : null;
+      const meta = exerciseName ? catalogMap.get(exerciseName) : null;
+      const group = meta?.primary_muscle_group;
+      if (!group) return;
+      const daySet = dayGroups.get(day) ?? new Set<MuscleGroup>();
+      daySet.add(group);
+      dayGroups.set(day, daySet);
+      muscleSetCounts.set(group, (muscleSetCounts.get(group) ?? 0) + 1);
+    });
+    const muscleSessionCounts = new Map<MuscleGroup, number>();
+    dayGroups.forEach(groups => {
+      groups.forEach(group => {
+        muscleSessionCounts.set(group, (muscleSessionCounts.get(group) ?? 0) + 1);
+      });
+    });
+    const sessions = sessionDays.size;
+    const attendance = daysElapsed
+      ? Math.round((sessions / daysElapsed) * 100)
+      : 0;
+    const topMuscles = Array.from(muscleSessionCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([group, count]) => ({
+        group,
+        count,
+        color: getMuscleColor(group),
+      }));
+    const totalSets = Array.from(muscleSetCounts.values()).reduce(
+      (sum, count) => sum + count,
+      0,
+    );
+    const pieData =
+      totalSets > 0
+        ? Array.from(muscleSetCounts.entries()).map(([group, count]) => ({
+            key: asDisplayLabel(group),
+            label: asDisplayLabel(group.replace(/_/g, ' ')),
+            percent: Math.round((count / totalSets) * 100),
+            color: getMuscleColor(group),
+          }))
+        : [];
+    return {
+      daysInMonth,
+      sessions,
+      attendance,
+      topMuscles,
+      pieData,
+    };
+  }, [events, visibleMonth, catalogMap]);
 
   const days = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
   const monthLabel = visibleMonth.toLocaleDateString(undefined, {
@@ -244,12 +326,46 @@ const CalendarScreen = () => {
         </View>
       </View>
 
+      <Card style={summaryCard}>
+        <View style={summaryHeader}>
+          <Text style={summaryTitle}>Monthly summary</Text>
+          <Text style={summarySubtitle}>
+            {monthStats.sessions} sessions • {monthStats.attendance}% attendance
+          </Text>
+        </View>
+        <View style={summaryBody}>
+          <View style={{ flex: 1 }}>
+            <Text style={summaryLabel}>Top muscle groups</Text>
+            {monthStats.topMuscles.length === 0 ? (
+              <Text style={summaryValue}>No sessions yet</Text>
+            ) : (
+              monthStats.topMuscles.map(item => (
+                <View key={item.group} style={summaryRow}>
+                  <View
+                    style={[dot, { backgroundColor: item.color }]}
+                  />
+                  <Text style={summaryValue}>
+                    {formatLabel(item.group)} · {item.count}
+                  </Text>
+                </View>
+              ))
+            )}
+          </View>
+          <View style={summaryChart}>
+            <MusclePie data={monthStats.pieData} radius={38} />
+          </View>
+        </View>
+      </Card>
+
       <View style={weekdayRow}>
         {DAY_NAMES.map(label => (
           <Text
             key={label}
             style={{
-              color: palette.mutedText,
+              color:
+                label === 'SUN' || label === 'SAT'
+                  ? palette.danger
+                  : palette.mutedText,
               fontSize: 12,
               flex: 1,
               textAlign: 'center',
@@ -260,30 +376,41 @@ const CalendarScreen = () => {
         ))}
       </View>
 
-      <Animated.View
-        style={[grid, { opacity: monthAnim }]}
-        {...panResponder.panHandlers}
-      >
-        {days.map(day => {
+      <Animated.View style={{ opacity: monthAnim }} {...panResponder.panHandlers}>
+        <View style={grid}>
+          {days.map((day, index) => {
           const dateKey = roundToLocalDay(day.getTime());
           const colors = dayColorMap.get(dateKey) ?? [];
           const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
           const isSelected =
             roundToLocalDay(selectedDate.getTime()) === dateKey;
+          const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+          const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
+          const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
           return (
             <TouchableOpacity
               key={day.toISOString()}
               style={[
                 cell,
+                {
+                  borderRightWidth: isLastColumn ? 0 : 1,
+                  borderBottomWidth: isLastRow ? 0 : 1,
+                },
                 !isCurrentMonth && { opacity: 0.3 },
                 isSelected && { borderColor: palette.primary, borderWidth: 2 },
+                isWeekend && { backgroundColor: addAlpha(palette.surface, 0.35) },
               ]}
               onPress={() => {
                 actions.setSelectedDate(day);
                 actions.navigate(asScreenKey('home'));
               }}
             >
-              <Text style={{ color: palette.text, fontWeight: '600' }}>
+              <Text
+                style={{
+                  color: isWeekend ? palette.warning : palette.text,
+                  fontWeight: '600',
+                }}
+              >
                 {day.getDate()}
               </Text>
               <View style={dotRow}>
@@ -296,32 +423,19 @@ const CalendarScreen = () => {
               </View>
             </TouchableOpacity>
           );
-        })}
+          })}
+        </View>
       </Animated.View>
 
       {legendEntries.length > 0 ? (
-        <>
-          <TouchableOpacity
-            onPress={() =>
-              dispatch({ type: 'calendar/legend', expanded: !legendExpanded })
-            }
-            style={legendToggle}
-          >
-            <Text style={{ color: palette.primary, fontWeight: '600' }}>
-              {legendExpanded ? 'Hide muscle legend' : 'Show muscle legend'}
-            </Text>
-          </TouchableOpacity>
-          {legendExpanded ? (
-            <View style={legendContainer}>
-              {legendEntries.map(entry => (
-                <View key={entry.key} style={legendItem}>
-                  <View style={[dot, { backgroundColor: entry.color }]} />
-                  <Text style={{ color: palette.text }}>{entry.label}</Text>
-                </View>
-              ))}
+        <View style={legendContainer}>
+          {legendEntries.map(entry => (
+            <View key={entry.key} style={legendItem}>
+              <View style={[dot, { backgroundColor: entry.color }]} />
+              <Text style={{ color: palette.text }}>{entry.label}</Text>
             </View>
-          ) : null}
-        </>
+          ))}
+        </View>
       ) : null}
 
       {yearSheetOpen ? (
@@ -479,14 +593,20 @@ const weekdayRow = {
 const grid = {
   flexDirection: 'row' as const,
   flexWrap: 'wrap' as const,
-  paddingHorizontal: spacing(1),
+  paddingHorizontal: spacing(1.5),
+  paddingBottom: spacing(1),
+  backgroundColor: palette.surface,
+  borderRadius: radius.card,
+  borderWidth: 1,
+  borderColor: palette.border,
+  marginHorizontal: spacing(1.5),
+  overflow: 'hidden' as const,
 };
 
 const cell: ViewStyle = {
   width: `${100 / DAYS_IN_WEEK}%`,
-  paddingVertical: spacing(2),
+  paddingVertical: spacing(1.75),
   alignItems: 'center',
-  borderWidth: 1,
   borderColor: palette.border,
 };
 
@@ -511,16 +631,141 @@ const legendContainer = {
   justifyContent: 'center' as const,
 };
 
-const legendToggle = {
-  paddingHorizontal: spacing(2),
-  paddingTop: spacing(1),
-  alignItems: 'center' as const,
-};
-
 const legendItem = {
   flexDirection: 'row' as const,
   alignItems: 'center' as const,
   gap: spacing(0.5),
+};
+
+const summaryCard = {
+  marginHorizontal: spacing(2),
+  marginBottom: spacing(1.5),
+  gap: spacing(1),
+};
+
+const summaryHeader = {
+  gap: spacing(0.25),
+};
+
+const summaryTitle = {
+  color: palette.text,
+  fontSize: 16,
+  fontWeight: '700' as const,
+};
+
+const summarySubtitle = {
+  color: palette.mutedText,
+  fontSize: 12,
+};
+
+const summaryBody = {
+  flexDirection: 'row' as const,
+  gap: spacing(2),
+  alignItems: 'center' as const,
+};
+
+const summaryLabel = {
+  color: palette.mutedText,
+  fontSize: 12,
+  marginBottom: spacing(0.5),
+};
+
+const summaryValue = {
+  color: palette.text,
+  fontSize: 12,
+};
+
+const summaryRow = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: spacing(0.5),
+  marginBottom: spacing(0.25),
+};
+
+const summaryChart = {
+  width: 80,
+  alignItems: 'center' as const,
+  justifyContent: 'center' as const,
+};
+
+const formatLabel = (value: MuscleGroup) =>
+  value
+    .split('_')
+    .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(' ');
+
+const addAlpha = (hex: string, alpha: number) => {
+  const normalized = Math.max(0, Math.min(1, alpha));
+  const alphaHex = Math.round(normalized * 255)
+    .toString(16)
+    .padStart(2, '0');
+  return `${hex}${alphaHex}`;
+};
+
+const MusclePie = ({
+  data,
+  radius = 36,
+}: {
+  data: {
+    key: ReturnType<typeof asDisplayLabel>;
+    label: ReturnType<typeof asDisplayLabel>;
+    percent: number;
+    color?: ColorHex;
+  }[];
+  radius?: number;
+}) => {
+  if (!data.length) return null;
+  const center = radius;
+  let currentAngle = 0;
+  const arcs = data.map(slice => {
+    const sweep = (slice.percent / 100) * 360;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + sweep;
+    currentAngle = endAngle;
+    return {
+      key: slice.key,
+      color: slice.color ?? palette.primary,
+      path: describeArc(center, center, radius, startAngle, endAngle),
+    };
+  });
+  return (
+    <Svg width={radius * 2} height={radius * 2}>
+      {arcs.map(arc => (
+        <Path key={arc.key} d={arc.path} fill={arc.color} opacity={0.9} />
+      ))}
+    </Svg>
+  );
+};
+
+const polarToCartesian = (
+  centerX: number,
+  centerY: number,
+  radius: number,
+  angleInDegrees: number,
+) => {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
+  return {
+    x: centerX + radius * Math.cos(angleInRadians),
+    y: centerY + radius * Math.sin(angleInRadians),
+  };
+};
+
+const describeArc = (
+  x: number,
+  y: number,
+  radius: number,
+  startAngle: number,
+  endAngle: number,
+) => {
+  const start = polarToCartesian(x, y, radius, endAngle);
+  const end = polarToCartesian(x, y, radius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
+  return [
+    `M ${x} ${y}`,
+    `L ${start.x} ${start.y}`,
+    `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`,
+    'Z',
+  ].join(' ');
 };
 
 const sheetOverlay = {

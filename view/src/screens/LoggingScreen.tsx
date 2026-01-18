@@ -846,7 +846,7 @@ const dateButton = {
 };
 
 const dangerButton = {
-  paddingVertical: spacing(1.25),
+  paddingVertical: spacing(1.5),
   borderRadius: radius.card,
   backgroundColor: palette.danger,
   alignItems: 'center' as const,
@@ -942,13 +942,14 @@ const InputPill = ({
       activeOpacity={0.85}
       style={{
         flex: 1,
+        height: 48,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: palette.border,
         borderRadius: radius.pill,
-        paddingVertical: spacing(0.75),
+        paddingVertical: 0,
         paddingHorizontal: spacing(1.5),
         backgroundColor: palette.surface,
       }}
@@ -970,6 +971,9 @@ const InputPill = ({
           fontSize: 18,
           fontWeight: '600',
           textAlign: 'center',
+          lineHeight: 22,
+          paddingVertical: 0,
+          height: 48,
           minWidth: 48,
         }}
       />

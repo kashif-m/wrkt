@@ -44,6 +44,7 @@ local.properties
 
 # React Native view app artifacts
 view/android/app/build/
+view/android/app/.externalNativeBuild/
 view/android/.gradle/
 view/android/.cxx/
 view/android/.idea/
