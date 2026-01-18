@@ -287,7 +287,8 @@ const SegmentedControl = <T extends AnalyticsRangeKey | AnalyticsMetricKey>({
       >
         <Text
           style={{
-            color: selected === option.key ? asColorHex('#0f172a') : palette.text,
+            color:
+              selected === option.key ? asColorHex('#0f172a') : palette.text,
             fontWeight: '600',
           }}
         >
@@ -299,16 +300,20 @@ const SegmentedControl = <T extends AnalyticsRangeKey | AnalyticsMetricKey>({
 );
 
 const scheduleIdle = (work: () => void) => {
-  const idleCallback = (globalThis as typeof globalThis & {
-    requestIdleCallback?: (cb: () => void) => number;
-    cancelIdleCallback?: (id: number) => void;
-  }).requestIdleCallback;
+  const idleCallback = (
+    globalThis as typeof globalThis & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (id: number) => void;
+    }
+  ).requestIdleCallback;
   if (idleCallback) {
     const id = idleCallback(work);
     return () => {
-      const cancel = (globalThis as typeof globalThis & {
-        cancelIdleCallback?: (id: number) => void;
-      }).cancelIdleCallback;
+      const cancel = (
+        globalThis as typeof globalThis & {
+          cancelIdleCallback?: (id: number) => void;
+        }
+      ).cancelIdleCallback;
       cancel?.(id);
     };
   }

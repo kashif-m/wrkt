@@ -140,11 +140,11 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
     const meta = (event.meta ?? {}) as JsonObject;
     const ts = event.ts;
     const logId =
-      typeof meta.fitnotes_log_id === 'number'
-        ? meta.fitnotes_log_id
-        : index;
+      typeof meta.fitnotes_log_id === 'number' ? meta.fitnotes_log_id : index;
     const resolvedSlug = nameToSlug.get(
-      String(event.exercise ?? '').trim().toLowerCase(),
+      String(event.exercise ?? '')
+        .trim()
+        .toLowerCase(),
     );
     const resolvedName =
       resolvedSlug && slugToName.has(resolvedSlug)

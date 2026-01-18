@@ -116,7 +116,13 @@ const ExerciseBrowser = () => {
     if (activeTab === 'favorites') return favoriteExercises;
     if (selectedGroup) return filteredExercises;
     return allExercises;
-  }, [activeTab, allExercises, favoriteExercises, filteredExercises, selectedGroup]);
+  }, [
+    activeTab,
+    allExercises,
+    favoriteExercises,
+    filteredExercises,
+    selectedGroup,
+  ]);
 
   const headerTitle = useMemo((): LabelText => {
     if (mode === 'manage') return asLabelText('Manage Exercises');
@@ -151,41 +157,39 @@ const ExerciseBrowser = () => {
     const groupColor = muscleColorMap[group] ?? palette.primary;
     const isActive = selectedGroup === group;
     return (
-    <TouchableOpacity
-      key={group}
-      onPress={() => {
-        dispatch({
-          type: 'browser/group',
-          group: selectedGroup === group ? null : group,
-        });
-        dispatch({ type: 'browser/query', query: asSearchQuery('') });
-      }}
-    >
-      <View
-        style={[
-          groupTag,
-          {
-            backgroundColor: isActive
-              ? groupColor
-              : addAlpha(groupColor, 0.2),
-            borderColor: isActive
-              ? groupColor
-              : addAlpha(groupColor, 0.45),
-          },
-        ]}
+      <TouchableOpacity
+        key={group}
+        onPress={() => {
+          dispatch({
+            type: 'browser/group',
+            group: selectedGroup === group ? null : group,
+          });
+          dispatch({ type: 'browser/query', query: asSearchQuery('') });
+        }}
       >
-        <Text
-          style={{
-            color: isActive ? '#0f172a' : groupColor,
-            fontWeight: '600',
-            fontSize: 12,
-          }}
+        <View
+          style={[
+            groupTag,
+            {
+              backgroundColor: isActive
+                ? groupColor
+                : addAlpha(groupColor, 0.2),
+              borderColor: isActive ? groupColor : addAlpha(groupColor, 0.45),
+            },
+          ]}
         >
-          {formatLabel(group)}
-        </Text>
-      </View>
-    </TouchableOpacity>
-  );
+          <Text
+            style={{
+              color: isActive ? '#0f172a' : groupColor,
+              fontWeight: '600',
+              fontSize: 12,
+            }}
+          >
+            {formatLabel(group)}
+          </Text>
+        </View>
+      </TouchableOpacity>
+    );
   };
 
   const renderExerciseRow = ({
@@ -412,7 +416,9 @@ const ExerciseBrowser = () => {
                       }}
                       style={sheetAction}
                     >
-                      <Text style={[sheetActionLabel, { color: palette.danger }]}>
+                      <Text
+                        style={[sheetActionLabel, { color: palette.danger }]}
+                      >
                         Hide exercise
                       </Text>
                     </TouchableOpacity>
@@ -425,7 +431,10 @@ const ExerciseBrowser = () => {
                           type: 'browser/form',
                           entry: contextEntry.entry,
                         });
-                        dispatch({ type: 'browser/returnMode', mode: 'manage' });
+                        dispatch({
+                          type: 'browser/returnMode',
+                          mode: 'manage',
+                        });
                         dispatch({
                           type: 'browser/formDraft',
                           draft: draftFromEntry(contextEntry.entry),
@@ -458,7 +467,9 @@ const ExerciseBrowser = () => {
                       }}
                       style={sheetAction}
                     >
-                      <Text style={[sheetActionLabel, { color: palette.danger }]}>
+                      <Text
+                        style={[sheetActionLabel, { color: palette.danger }]}
+                      >
                         Delete exercise
                       </Text>
                     </TouchableOpacity>
@@ -634,7 +645,9 @@ const ExerciseBrowser = () => {
                   <>
                     <View style={{ gap: spacing(1) }}>
                       {filteredGroups.length === 0 ? (
-                        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        <Text
+                          style={{ color: palette.mutedText, fontSize: 12 }}
+                        >
                           No muscle groups found.
                         </Text>
                       ) : (
@@ -646,7 +659,9 @@ const ExerciseBrowser = () => {
                     <View style={{ gap: spacing(1) }}>
                       <SectionHeading label={asLabelText('Exercises')} />
                       {searchExercises.length === 0 ? (
-                        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        <Text
+                          style={{ color: palette.mutedText, fontSize: 12 }}
+                        >
                           No exercises found.
                         </Text>
                       ) : (
@@ -702,7 +717,9 @@ const ExerciseBrowser = () => {
                   {activeTab === 'all' ? (
                     <View style={{ gap: spacing(1) }}>
                       {filteredGroups.length === 0 ? (
-                        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        <Text
+                          style={{ color: palette.mutedText, fontSize: 12 }}
+                        >
                           No muscle groups available.
                         </Text>
                       ) : (
@@ -966,8 +983,16 @@ const ExerciseForm = ({
   onSubmit: (values: ExerciseFormValues) => Promise<void>;
   onCancel: () => void;
 }) => {
-  const { displayName, slug, primary, modality, loggingMode, tags, saving, error } =
-    draft;
+  const {
+    displayName,
+    slug,
+    primary,
+    modality,
+    loggingMode,
+    tags,
+    saving,
+    error,
+  } = draft;
   const [customGroupInput, setCustomGroupInput] = useState('');
   const [localCustomGroups, setLocalCustomGroups] = useState<MuscleGroup[]>([]);
 
@@ -1128,7 +1153,8 @@ const ExerciseForm = ({
               >
                 <Text
                   style={{
-                    color: loggingMode === typedOption ? '#0f172a' : palette.text,
+                    color:
+                      loggingMode === typedOption ? '#0f172a' : palette.text,
                   }}
                 >
                   {formatLabel(typedOption)}
@@ -1167,7 +1193,9 @@ const ExerciseForm = ({
         </TouchableOpacity>
 
         <TouchableOpacity onPress={onCancel} style={secondaryButton}>
-          <Text style={{ color: palette.mutedText, fontWeight: '600' as const }}>
+          <Text
+            style={{ color: palette.mutedText, fontWeight: '600' as const }}
+          >
             Cancel
           </Text>
         </TouchableOpacity>
@@ -1193,14 +1221,10 @@ const ManageCustomExercises = ({
 }) => {
   const query = searchQuery.trim().toLowerCase();
   const activeFiltered = query
-    ? active.filter(entry =>
-        entry.display_name.toLowerCase().includes(query),
-      )
+    ? active.filter(entry => entry.display_name.toLowerCase().includes(query))
     : active;
   const archivedFiltered = query
-    ? archived.filter(entry =>
-        entry.display_name.toLowerCase().includes(query),
-      )
+    ? archived.filter(entry => entry.display_name.toLowerCase().includes(query))
     : archived;
   const renderRow = (entry: ExerciseCatalogEntry, archivedFlag: boolean) => (
     <TouchableOpacity

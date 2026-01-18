@@ -138,8 +138,8 @@ pub extern "C" fn strata_exercise_catalog() -> FfiResult {
 pub extern "C" fn strata_import_fitnotes(path_ptr: *const c_char) -> FfiResult {
     handle(|| {
         let path = cstr_to_str(path_ptr)?;
-        let bundle = workout_pack::import::fitnotes::import_fitnotes(path)
-            .map_err(|err| err.to_string())?;
+        let bundle =
+            workout_pack::import::fitnotes::import_fitnotes(path).map_err(|err| err.to_string())?;
         Ok(bundle)
     })
 }

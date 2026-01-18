@@ -40,10 +40,8 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
     let exercises = load_exercises(&conn)?;
     let logs = load_logs(&conn)?;
 
-    let category_map: HashMap<i64, FitNotesCategory> = categories
-        .into_iter()
-        .map(|cat| (cat.id, cat))
-        .collect();
+    let category_map: HashMap<i64, FitNotesCategory> =
+        categories.into_iter().map(|cat| (cat.id, cat)).collect();
     let exercise_map: HashMap<i64, FitNotesExercise> = exercises
         .iter()
         .map(|exercise| (exercise.id, exercise.clone()))
@@ -56,9 +54,7 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
     let mut used_slugs: HashMap<String, usize> = HashMap::new();
     for exercise in &exercises {
         let category = category_map.get(&exercise.category_id);
-        let category_name = category
-            .map(|cat| cat.name.as_str())
-            .unwrap_or("Unknown");
+        let category_name = category.map(|cat| cat.name.as_str()).unwrap_or("Unknown");
         let (primary_group, tags) = map_category(category_name);
         let logging_mode = map_logging_mode(exercise.exercise_type_id);
         let modality = map_modality(exercise.exercise_type_id);
@@ -114,7 +110,10 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
         meta.insert("fitnotes_log_id".into(), json!(entry.id));
         meta.insert("fitnotes_exercise_id".into(), json!(entry.exercise_id));
         meta.insert("fitnotes_unit".into(), json!(entry.unit));
-        meta.insert("fitnotes_weight_unit_id".into(), json!(exercise.weight_unit_id));
+        meta.insert(
+            "fitnotes_weight_unit_id".into(),
+            json!(exercise.weight_unit_id),
+        );
         meta.insert(
             "fitnotes_exercise_type_id".into(),
             json!(exercise.exercise_type_id),
@@ -122,18 +121,19 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
         if !entry.date.is_empty() {
             meta.insert("fitnotes_date".into(), json!(entry.date.clone()));
         }
-        let reps = entry.reps.and_then(|value| {
-            if value > 0 {
-                Some(value as i32)
-            } else {
-                None
-            }
-        });
-        let weight = entry.metric_weight.and_then(|value| if value > 0.0 { Some(value) } else { None });
-        let distance = entry.distance.and_then(|value| if value > 0.0 { Some(value) } else { None });
-        let duration = entry
-            .duration_seconds
+        let reps = entry
+            .reps
+            .and_then(|value| if value > 0 { Some(value as i32) } else { None });
+        let weight = entry
+            .metric_weight
             .and_then(|value| if value > 0.0 { Some(value) } else { None });
+        let distance = entry
+            .distance
+            .and_then(|value| if value > 0.0 { Some(value) } else { None });
+        let duration =
+            entry
+                .duration_seconds
+                .and_then(|value| if value > 0.0 { Some(value) } else { None });
         let pr = entry
             .is_personal_record
             .and_then(|value| if value > 0 { Some(true) } else { None });
@@ -238,7 +238,9 @@ fn parse_date_to_noon(value: &str) -> Option<i64> {
     let year: i32 = parts[0].parse().ok()?;
     let month: u32 = parts[1].parse().ok()?;
     let day: u32 = parts[2].parse().ok()?;
-    let date_time = Local.with_ymd_and_hms(year, month, day, 12, 0, 0).single()?;
+    let date_time = Local
+        .with_ymd_and_hms(year, month, day, 12, 0, 0)
+        .single()?;
     Some(date_time.timestamp_millis())
 }
 
@@ -283,7 +285,13 @@ fn slugify(value: &str) -> String {
         .trim()
         .to_lowercase()
         .chars()
-        .map(|char| if char.is_ascii_alphanumeric() { char } else { '_' })
+        .map(|char| {
+            if char.is_ascii_alphanumeric() {
+                char
+            } else {
+                '_'
+            }
+        })
         .collect::<String>()
         .trim_matches('_')
         .chars()

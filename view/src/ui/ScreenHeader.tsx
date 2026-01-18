@@ -1,5 +1,11 @@
 import React from 'react';
-import { StyleProp, Text, TouchableOpacity, View, ViewStyle } from 'react-native';
+import {
+  StyleProp,
+  Text,
+  TouchableOpacity,
+  View,
+  ViewStyle,
+} from 'react-native';
 import { palette, spacing, typography } from './theme';
 import ArrowLeftIcon from '../assets/arrow-left.svg';
 import { LabelText, unwrapLabelText } from '../domain/types';

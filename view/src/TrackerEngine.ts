@@ -103,7 +103,12 @@ export const suggest = async (
   events: JsonObject[],
   planner: PlannerKind,
 ) => {
-  return call<JsonArray>('suggest', dsl, JSON.stringify(events) as JsonText, planner);
+  return call<JsonArray>(
+    'suggest',
+    dsl,
+    JSON.stringify(events) as JsonText,
+    planner,
+  );
 };
 
 export const simulate = async (

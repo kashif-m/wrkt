@@ -223,9 +223,6 @@ export const buildVolumeQuery = (grain: TimeGrain): JsonObject => {
   const bucketField = grain === 'week' ? 'week_bucket' : 'day_bucket';
   return {
     metric: asJsonString('total_volume'),
-    group_by: [
-      asJsonString('exercise'),
-      asJsonString(bucketField),
-    ],
+    group_by: [asJsonString('exercise'), asJsonString(bucketField)],
   };
 };

@@ -147,7 +147,10 @@ const CalendarScreen = () => {
     const muscleSessionCounts = new Map<MuscleGroup, number>();
     dayGroups.forEach(groups => {
       groups.forEach(group => {
-        muscleSessionCounts.set(group, (muscleSessionCounts.get(group) ?? 0) + 1);
+        muscleSessionCounts.set(
+          group,
+          (muscleSessionCounts.get(group) ?? 0) + 1,
+        );
       });
     });
     const sessions = sessionDays.size;
@@ -341,9 +344,7 @@ const CalendarScreen = () => {
             ) : (
               monthStats.topMuscles.map(item => (
                 <View key={item.group} style={summaryRow}>
-                  <View
-                    style={[dot, { backgroundColor: item.color }]}
-                  />
+                  <View style={[dot, { backgroundColor: item.color }]} />
                   <Text style={summaryValue}>
                     {formatLabel(item.group)} · {item.count}
                   </Text>
@@ -376,53 +377,61 @@ const CalendarScreen = () => {
         ))}
       </View>
 
-      <Animated.View style={{ opacity: monthAnim }} {...panResponder.panHandlers}>
+      <Animated.View
+        style={{ opacity: monthAnim }}
+        {...panResponder.panHandlers}
+      >
         <View style={grid}>
           {days.map((day, index) => {
-          const dateKey = roundToLocalDay(day.getTime());
-          const colors = dayColorMap.get(dateKey) ?? [];
-          const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
-          const isSelected =
-            roundToLocalDay(selectedDate.getTime()) === dateKey;
-          const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-          const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
-          const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
-          return (
-            <TouchableOpacity
-              key={day.toISOString()}
-              style={[
-                cell,
-                {
-                  borderRightWidth: isLastColumn ? 0 : 1,
-                  borderBottomWidth: isLastRow ? 0 : 1,
-                },
-                !isCurrentMonth && { opacity: 0.3 },
-                isSelected && { borderColor: palette.primary, borderWidth: 2 },
-                isWeekend && { backgroundColor: addAlpha(palette.surface, 0.35) },
-              ]}
-              onPress={() => {
-                actions.setSelectedDate(day);
-                actions.navigate(asScreenKey('home'));
-              }}
-            >
-              <Text
-                style={{
-                  color: isWeekend ? palette.warning : palette.text,
-                  fontWeight: '600',
+            const dateKey = roundToLocalDay(day.getTime());
+            const colors = dayColorMap.get(dateKey) ?? [];
+            const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
+            const isSelected =
+              roundToLocalDay(selectedDate.getTime()) === dateKey;
+            const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+            const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
+            const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
+            return (
+              <TouchableOpacity
+                key={day.toISOString()}
+                style={[
+                  cell,
+                  {
+                    borderRightWidth: isLastColumn ? 0 : 1,
+                    borderBottomWidth: isLastRow ? 0 : 1,
+                  },
+                  !isCurrentMonth && { opacity: 0.3 },
+                  isSelected && {
+                    borderColor: palette.primary,
+                    borderWidth: 2,
+                  },
+                  isWeekend && {
+                    backgroundColor: addAlpha(palette.surface, 0.35),
+                  },
+                ]}
+                onPress={() => {
+                  actions.setSelectedDate(day);
+                  actions.navigate(asScreenKey('home'));
                 }}
               >
-                {day.getDate()}
-              </Text>
-              <View style={dotRow}>
-                {colors.slice(0, 3).map(color => (
-                  <View
-                    key={`${dateKey}-${color}`}
-                    style={[dot, { backgroundColor: color }]}
-                  />
-                ))}
-              </View>
-            </TouchableOpacity>
-          );
+                <Text
+                  style={{
+                    color: isWeekend ? palette.warning : palette.text,
+                    fontWeight: '600',
+                  }}
+                >
+                  {day.getDate()}
+                </Text>
+                <View style={dotRow}>
+                  {colors.slice(0, 3).map(color => (
+                    <View
+                      key={`${dateKey}-${color}`}
+                      style={[dot, { backgroundColor: color }]}
+                    />
+                  ))}
+                </View>
+              </TouchableOpacity>
+            );
           })}
         </View>
       </Animated.View>

@@ -11,12 +11,7 @@ import {
 } from 'react-native';
 import Svg, { Polyline, Circle } from 'react-native-svg';
 import { WorkoutEvent } from '../workoutFlows';
-import {
-  Card,
-  Divider,
-  PrimaryButton,
-  BodyText,
-} from '../ui/components';
+import { Card, Divider, PrimaryButton, BodyText } from '../ui/components';
 import { palette, radius, spacing } from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { getMuscleColor } from '../ui/muscleColors';
@@ -250,16 +245,20 @@ const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
 };
 
 const scheduleIdle = (work: () => void) => {
-  const idleCallback = (globalThis as typeof globalThis & {
-    requestIdleCallback?: (cb: () => void) => number;
-    cancelIdleCallback?: (id: number) => void;
-  }).requestIdleCallback;
+  const idleCallback = (
+    globalThis as typeof globalThis & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (id: number) => void;
+    }
+  ).requestIdleCallback;
   if (idleCallback) {
     const id = idleCallback(work);
     return () => {
-      const cancel = (globalThis as typeof globalThis & {
-        cancelIdleCallback?: (id: number) => void;
-      }).cancelIdleCallback;
+      const cancel = (
+        globalThis as typeof globalThis & {
+          cancelIdleCallback?: (id: number) => void;
+        }
+      ).cancelIdleCallback;
       cancel?.(id);
     };
   }
@@ -404,7 +403,13 @@ const LoggingScreen = () => {
         ),
         value,
       }));
-  }, [historySets, historyReady, selectedMetric, selectedTrendRange, sessionTab]);
+  }, [
+    historySets,
+    historyReady,
+    selectedMetric,
+    selectedTrendRange,
+    sessionTab,
+  ]);
 
   const trackDisabled =
     !selectedExercise ||
@@ -901,11 +906,7 @@ const Stepper = ({
       >
         <Text style={{ color: palette.text, fontSize: 20 }}>-</Text>
       </TouchableOpacity>
-      <InputPill
-        value={value}
-        unit={unit}
-        onChange={onChange}
-      />
+      <InputPill value={value} unit={unit} onChange={onChange} />
       <TouchableOpacity
         onPress={onIncrement}
         style={{

@@ -1,7 +1,12 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useAppActions } from '../state/appContext';
-import { Card, ScreenContainer, SectionHeading, ListRow } from '../ui/components';
+import {
+  Card,
+  ScreenContainer,
+  SectionHeading,
+  ListRow,
+} from '../ui/components';
 import { palette, spacing, typography } from '../ui/theme';
 import { asLabelText } from '../domain/types';
 

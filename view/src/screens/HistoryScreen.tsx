@@ -5,7 +5,12 @@ import { Card, SectionHeading, EmptyState, ListRow } from '../ui/components';
 import { spacing, palette, radius } from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { useAppState } from '../state/appContext';
-import { ExerciseName, LabelText, asExerciseName, asLabelText } from '../domain/types';
+import {
+  ExerciseName,
+  LabelText,
+  asExerciseName,
+  asLabelText,
+} from '../domain/types';
 
 const HistoryScreen = () => {
   const state = useAppState();
@@ -34,7 +39,9 @@ const HistoryScreen = () => {
         <Card>
           <EmptyState
             title={asLabelText('No workouts yet')}
-            subtitle={asLabelText('Log a session to start building your history.')}
+            subtitle={asLabelText(
+              'Log a session to start building your history.',
+            )}
           />
         </Card>
       ) : (

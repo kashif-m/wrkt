@@ -1,7 +1,12 @@
 import React from 'react';
 import { Text, View } from 'react-native';
 import { useAppActions, useAppState } from '../state/appContext';
-import { Card, PrimaryButton, ScreenContainer, SectionHeading } from '../ui/components';
+import {
+  Card,
+  PrimaryButton,
+  ScreenContainer,
+  SectionHeading,
+} from '../ui/components';
 import { palette, spacing, typography } from '../ui/theme';
 import { asLabelText, asScreenKey } from '../domain/types';
 
@@ -41,13 +46,22 @@ const ImportSummaryScreen = () => {
         <Card>
           <SectionHeading label={asLabelText('Summary')} />
           <View style={{ gap: spacing(1) }}>
-            <SummaryRow label="Events imported" value={summary.eventsImported} />
-            <SummaryRow label="Exercises added" value={summary.exercisesAdded} />
+            <SummaryRow
+              label="Events imported"
+              value={summary.eventsImported}
+            />
+            <SummaryRow
+              label="Exercises added"
+              value={summary.exercisesAdded}
+            />
             <SummaryRow
               label="Exercises skipped"
               value={summary.exercisesSkipped}
             />
-            <SummaryRow label="Favorites added" value={summary.favoritesAdded} />
+            <SummaryRow
+              label="Favorites added"
+              value={summary.favoritesAdded}
+            />
             <SummaryRow label="Warnings" value={summary.warningsCount} />
           </View>
         </Card>

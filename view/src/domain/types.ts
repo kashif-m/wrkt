@@ -36,10 +36,21 @@ export type ToastTone = Brand<ToastToneValue, 'ToastTone'>;
 export type PlannerKindValue = 'strength' | 'hypertrophy' | 'conditioning';
 export type PlannerKind = Brand<PlannerKindValue, 'PlannerKind'>;
 export type AnalyticsRangeKeyValue = '8w' | '16w' | '6m' | '1y' | 'all';
-export type AnalyticsRangeKey = Brand<AnalyticsRangeKeyValue, 'AnalyticsRangeKey'>;
+export type AnalyticsRangeKey = Brand<
+  AnalyticsRangeKeyValue,
+  'AnalyticsRangeKey'
+>;
 export type AnalyticsMetricKeyValue = 'volume' | 'sessions';
-export type AnalyticsMetricKey = Brand<AnalyticsMetricKeyValue, 'AnalyticsMetricKey'>;
-export type NavKeyValue = 'home' | 'calendar' | 'browser' | 'analytics' | 'more';
+export type AnalyticsMetricKey = Brand<
+  AnalyticsMetricKeyValue,
+  'AnalyticsMetricKey'
+>;
+export type NavKeyValue =
+  | 'home'
+  | 'calendar'
+  | 'browser'
+  | 'analytics'
+  | 'more';
 export type NavKey = Brand<NavKeyValue, 'NavKey'>;
 export type ScreenKeyValue =
   | 'home'
@@ -131,16 +142,21 @@ export const asPlannerKind = (value: PlannerKindValue): PlannerKind =>
   value as PlannerKind;
 export const unwrapPlannerKind = (value: PlannerKind): PlannerKindValue =>
   value as PlannerKindValue;
-export const asAnalyticsRangeKey = (value: AnalyticsRangeKeyValue): AnalyticsRangeKey =>
-  value as AnalyticsRangeKey;
-export const asAnalyticsMetricKey = (value: AnalyticsMetricKeyValue): AnalyticsMetricKey =>
-  value as AnalyticsMetricKey;
-export const unwrapAnalyticsRangeKey = (value: AnalyticsRangeKey): AnalyticsRangeKeyValue =>
-  value as AnalyticsRangeKeyValue;
-export const unwrapAnalyticsMetricKey = (value: AnalyticsMetricKey): AnalyticsMetricKeyValue =>
-  value as AnalyticsMetricKeyValue;
+export const asAnalyticsRangeKey = (
+  value: AnalyticsRangeKeyValue,
+): AnalyticsRangeKey => value as AnalyticsRangeKey;
+export const asAnalyticsMetricKey = (
+  value: AnalyticsMetricKeyValue,
+): AnalyticsMetricKey => value as AnalyticsMetricKey;
+export const unwrapAnalyticsRangeKey = (
+  value: AnalyticsRangeKey,
+): AnalyticsRangeKeyValue => value as AnalyticsRangeKeyValue;
+export const unwrapAnalyticsMetricKey = (
+  value: AnalyticsMetricKey,
+): AnalyticsMetricKeyValue => value as AnalyticsMetricKeyValue;
 export const asNavKey = (value: NavKeyValue): NavKey => value as NavKey;
-export const unwrapNavKey = (value: NavKey): NavKeyValue => value as NavKeyValue;
+export const unwrapNavKey = (value: NavKey): NavKeyValue =>
+  value as NavKeyValue;
 export const asScreenKey = (value: ScreenKeyValue): ScreenKey =>
   value as ScreenKey;
 export const unwrapScreenKey = (value: ScreenKey): ScreenKeyValue =>
@@ -148,8 +164,7 @@ export const unwrapScreenKey = (value: ScreenKey): ScreenKeyValue =>
 export const asEventId = (value: string): EventId => value as EventId;
 export const asTrackerId = (value: string): TrackerId => value as TrackerId;
 export const asJsonText = (value: string): JsonText => value as JsonText;
-export const asJsonString = (value: string): JsonString =>
-  value as JsonString;
+export const asJsonString = (value: string): JsonString => value as JsonString;
 export const asDslText = (value: string): DslText => value as DslText;
 export const asStorageKey = (value: string): StorageKey => value as StorageKey;
 export const unwrapEventId = (value: EventId): string => value as string;

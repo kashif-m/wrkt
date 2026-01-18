@@ -257,7 +257,10 @@ export const deleteCustomExercise = async (slug: ExerciseSlug) => {
   return next;
 };
 
-export const setExerciseHidden = async (slug: ExerciseSlug, hidden: boolean) => {
+export const setExerciseHidden = async (
+  slug: ExerciseSlug,
+  hidden: boolean,
+) => {
   const current = await readHiddenSlugs();
   const next = hidden
     ? Array.from(new Set([...current, slug]))

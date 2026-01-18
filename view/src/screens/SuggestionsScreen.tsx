@@ -117,7 +117,9 @@ const SuggestionsScreen = () => {
           </BodyText>
         ) : suggestions.length === 0 ? (
           <BodyText style={{ color: palette.mutedText }}>
-            {asLabelText('Log a recent set for this focus to unlock coaching tips.')}
+            {asLabelText(
+              'Log a recent set for this focus to unlock coaching tips.',
+            )}
           </BodyText>
         ) : (
           suggestions.map(suggestion => (

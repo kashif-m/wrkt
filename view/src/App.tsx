@@ -152,7 +152,8 @@ const AppInner = () => {
       return best;
     }, null);
     const isPr =
-      existingPr || (typeof currentScore === 'number' &&
+      existingPr ||
+      (typeof currentScore === 'number' &&
         (bestScore === null || currentScore > bestScore));
     if (!isPr) return payload;
     return {
@@ -373,7 +374,9 @@ const AppInner = () => {
         pr_ts?: number;
       }) => {
         const eventTs = buildLogTimestamp(state.logging.logDate);
-        const eventId = asEventId(`evt-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
+        const eventId = asEventId(
+          `evt-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
+        );
         if (__DEV__) {
           console.log('[logSet] date', state.logging.logDate.toISOString());
           console.log('[logSet] timestamp', eventTs);
@@ -411,11 +414,7 @@ const AppInner = () => {
           event => event.event_id === eventId,
         );
         const eventTs = existingEvent?.ts ?? state.logging.logDate.getTime();
-        const enrichedPayload = buildPrPayload(
-          payload,
-          eventTs,
-          existingEvent,
-        );
+        const enrichedPayload = buildPrPayload(payload, eventTs, existingEvent);
         const nextState = await updateLoggedSet(
           { events: state.events } as WorkoutState,
           eventId,
@@ -529,9 +528,9 @@ const AppInner = () => {
           ) ?? null;
         const headerSubtitle = selectedExercise
           ? asLabelText(
-              `${formatLabel(selectedExercise.primary_muscle_group)} · ${formatLabel(
-                selectedExercise.modality,
-              )}`,
+              `${formatLabel(
+                selectedExercise.primary_muscle_group,
+              )} · ${formatLabel(selectedExercise.modality)}`,
             )
           : undefined;
         const isFavorite = selectedExercise
@@ -556,10 +555,7 @@ const AppInner = () => {
                 selectedExercise ? (
                   <TouchableOpacity
                     onPress={() =>
-                      actions.toggleFavorite(
-                        selectedExercise.slug,
-                        !isFavorite,
-                      )
+                      actions.toggleFavorite(selectedExercise.slug, !isFavorite)
                     }
                     style={{
                       width: 36,
@@ -631,11 +627,11 @@ const AppInner = () => {
             state.nav.screen === asScreenKey('importSummary')
               ? asNavKey('more')
               : state.nav.screen === asScreenKey('calendar') ||
-                  state.nav.screen === asScreenKey('browser') ||
-                  state.nav.screen === asScreenKey('analytics') ||
-                  state.nav.screen === asScreenKey('more')
-                ? (state.nav.screen as unknown as NavKey)
-                : asNavKey('home')
+                state.nav.screen === asScreenKey('browser') ||
+                state.nav.screen === asScreenKey('analytics') ||
+                state.nav.screen === asScreenKey('more')
+              ? (state.nav.screen as unknown as NavKey)
+              : asNavKey('home')
           }
           onSelect={key => {
             if (key === asNavKey('home')) {

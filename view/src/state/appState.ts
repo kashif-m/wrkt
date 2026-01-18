@@ -44,7 +44,6 @@ export type TrendMetricKey =
   | 'workout_volume'
   | 'workout_reps';
 
-
 export type LoggingFields = {
   reps: NumericInput;
   weight: NumericInput;
@@ -233,7 +232,10 @@ export const createInitialState = (): RootState => {
 export const reducer = (state: RootState, action: Action): RootState => {
   switch (action.type) {
     case 'nav/replace':
-      return { ...state, nav: { screen: action.screen, stack: [action.screen] } };
+      return {
+        ...state,
+        nav: { screen: action.screen, stack: [action.screen] },
+      };
     case 'nav/push':
       return {
         ...state,
