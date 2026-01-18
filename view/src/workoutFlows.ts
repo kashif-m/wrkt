@@ -95,6 +95,12 @@ export const logSet = async (
       ...eventJson,
       tracker_id,
     })) as WorkoutEvent;
+    normalized = {
+      ...normalized,
+      event_id: eventJson.event_id,
+      tracker_id,
+      ts: eventJson.ts,
+    };
   } catch (error) {
     console.warn(
       'TrackerEngine validateEvent unavailable, persisting raw payload',
@@ -125,6 +131,12 @@ export const updateLoggedSet = async (
   };
   try {
     normalized = (await validateEvent(WORKOUT_DSL, normalized)) as WorkoutEvent;
+    normalized = {
+      ...normalized,
+      event_id: target.event_id,
+      tracker_id,
+      ts: target.ts,
+    };
   } catch (error) {
     console.warn(
       'TrackerEngine validateEvent unavailable during update, persisting raw payload',

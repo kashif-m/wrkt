@@ -53,7 +53,7 @@ export type LoggingFields = {
 };
 
 export type RootState = {
-    nav: { screen: ScreenKey };
+  nav: { screen: ScreenKey; stack: ScreenKey[] };
   selectedDate: Date;
   events: WorkoutEvent[];
   catalog: {
@@ -121,7 +121,9 @@ export type RootState = {
 };
 
 export type Action =
-  | { type: 'nav/set'; screen: ScreenKey }
+  | { type: 'nav/replace'; screen: ScreenKey }
+  | { type: 'nav/push'; screen: ScreenKey }
+  | { type: 'nav/pop' }
   | { type: 'date/set'; date: Date }
   | { type: 'date/shift'; deltaDays: number }
   | { type: 'events/set'; events: WorkoutEvent[] }
@@ -172,7 +174,7 @@ export const initialFields: LoggingFields = {
 export const createInitialState = (): RootState => {
   const today = new Date();
   return {
-    nav: { screen: asScreenKey('home') },
+    nav: { screen: asScreenKey('home'), stack: [asScreenKey('home')] },
     selectedDate: today,
     events: [],
     catalog: { entries: [], favorites: [], custom: [] },
@@ -230,8 +232,27 @@ export const createInitialState = (): RootState => {
 
 export const reducer = (state: RootState, action: Action): RootState => {
   switch (action.type) {
-    case 'nav/set':
-      return { ...state, nav: { screen: action.screen } };
+    case 'nav/replace':
+      return { ...state, nav: { screen: action.screen, stack: [action.screen] } };
+    case 'nav/push':
+      return {
+        ...state,
+        nav: {
+          screen: action.screen,
+          stack: [...state.nav.stack, action.screen],
+        },
+      };
+    case 'nav/pop': {
+      if (state.nav.stack.length <= 1) return state;
+      const nextStack = state.nav.stack.slice(0, -1);
+      return {
+        ...state,
+        nav: {
+          screen: nextStack[nextStack.length - 1],
+          stack: nextStack,
+        },
+      };
+    }
     case 'date/set':
       return {
         ...state,

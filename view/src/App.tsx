@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useReducer } from 'react';
-import { Text, TouchableOpacity, View } from 'react-native';
+import { BackHandler, Text, TouchableOpacity, View } from 'react-native';
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -44,8 +44,10 @@ import {
   fetchMergedCatalog,
   listCustomExercises,
   loadFavoriteExercises,
+  deleteCustomExercise,
   saveCustomExercise,
   setCustomExerciseArchived,
+  setExerciseHidden,
   setExerciseFavorite,
 } from './exercise/catalogStorage';
 import {
@@ -56,6 +58,7 @@ import {
   asExerciseName,
   asNumericInput,
   asLabelText,
+  asExerciseSource,
   asSearchQuery,
   unwrapLoggingMode,
   LabelText,
@@ -104,10 +107,14 @@ const AppInner = () => {
         return null;
       case 'reps':
         return reps ?? null;
+      case 'time':
+        return duration ?? null;
+      case 'distance':
+        return distance ?? null;
       case 'time_distance':
         return duration ?? distance ?? null;
-      case 'distance_time':
-        return distance ?? duration ?? null;
+      case 'distance_weight':
+        return distance ?? weight ?? null;
       default:
         return null;
     }
@@ -215,10 +222,77 @@ const AppInner = () => {
     return () => clearTimeout(timer);
   }, [state.logging.status]);
 
+  const replaceScreen = useCallback(
+    (screen: typeof state.nav.screen) =>
+      dispatch({ type: 'nav/replace', screen }),
+    [dispatch],
+  );
+
+  const pushScreen = useCallback(
+    (screen: typeof state.nav.screen) => dispatch({ type: 'nav/push', screen }),
+    [dispatch],
+  );
+
+  const handleBack = useCallback(() => {
+    if (state.browser.menuOpen) {
+      dispatch({ type: 'browser/menu', open: false });
+      return true;
+    }
+    if (state.browser.searchExpanded) {
+      dispatch({ type: 'browser/search', expanded: false });
+      dispatch({ type: 'browser/query', query: asSearchQuery('') });
+      return true;
+    }
+    if (state.nav.screen === asScreenKey('browser')) {
+      if (state.browser.mode === 'form') {
+        dispatch({
+          type: 'browser/mode',
+          mode: state.browser.returnMode,
+        });
+        return true;
+      }
+      if (state.browser.mode === 'manage') {
+        dispatch({ type: 'browser/mode', mode: 'groups' });
+        return true;
+      }
+      if (state.browser.mode === 'exercises') {
+        dispatch({ type: 'browser/mode', mode: 'groups' });
+        dispatch({ type: 'browser/query', query: asSearchQuery('') });
+        return true;
+      }
+      if (state.browser.mode === 'groups' && state.browser.selectedGroup) {
+        dispatch({ type: 'browser/group', group: null });
+        dispatch({ type: 'browser/query', query: asSearchQuery('') });
+        return true;
+      }
+    }
+    if (state.nav.screen === asScreenKey('importSummary')) {
+      replaceScreen(asScreenKey('more'));
+      return true;
+    }
+    if (state.nav.stack.length > 1) {
+      dispatch({ type: 'nav/pop' });
+      return true;
+    }
+    if (state.nav.screen !== asScreenKey('home')) {
+      replaceScreen(asScreenKey('home'));
+      return true;
+    }
+    return false;
+  }, [dispatch, replaceScreen, state]);
+
+  useEffect(() => {
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      handleBack,
+    );
+    return () => subscription.remove();
+  }, [handleBack]);
+
   const actions = useMemo(
     () => ({
-      navigate: (screen: typeof state.nav.screen) =>
-        dispatch({ type: 'nav/set', screen }),
+      navigate: (screen: typeof state.nav.screen) => replaceScreen(screen),
+      handleBack,
       setSelectedDate: (date: Date) => dispatch({ type: 'date/set', date }),
       shiftDate: (deltaDays: number) =>
         dispatch({ type: 'date/shift', deltaDays }),
@@ -238,13 +312,17 @@ const AppInner = () => {
         dispatch({ type: 'browser/menu', open: false });
         dispatch({ type: 'browser/context', context: null });
         dispatch({ type: 'browser/tab', tab: 'all' });
-        dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
+        replaceScreen(asScreenKey('browser'));
       },
       openLogForExercise: (
         exerciseName: ExerciseName | undefined,
         date: Date,
         tab: typeof state.logging.tab,
       ) => {
+        dispatch({ type: 'browser/search', expanded: false });
+        dispatch({ type: 'browser/query', query: asSearchQuery('') });
+        dispatch({ type: 'browser/menu', open: false });
+        dispatch({ type: 'browser/context', context: null });
         dispatch({ type: 'log/date', date });
         dispatch({ type: 'log/exercise', exerciseName });
         dispatch({ type: 'log/tab', tab });
@@ -283,7 +361,7 @@ const AppInner = () => {
         } else {
           dispatch({ type: 'log/fields', fields: { ...initialFields } });
         }
-        dispatch({ type: 'nav/set', screen: asScreenKey('log') });
+        pushScreen(asScreenKey('log'));
       },
       logSet: async (payload: {
         exercise: ExerciseName;
@@ -294,10 +372,17 @@ const AppInner = () => {
         pr?: boolean;
         pr_ts?: number;
       }) => {
-        const eventTs = state.logging.logDate.getTime();
+        const eventTs = buildLogTimestamp(state.logging.logDate);
+        const eventId = asEventId(`evt-${Date.now()}-${Math.round(Math.random() * 1e6)}`);
+        if (__DEV__) {
+          console.log('[logSet] date', state.logging.logDate.toISOString());
+          console.log('[logSet] timestamp', eventTs);
+          console.log('[logSet] event_id', eventId);
+          console.log('[logSet] payload', payload);
+        }
         const enrichedPayload = buildPrPayload(payload, eventTs);
         const event = await logSet({ events: state.events } as WorkoutState, {
-          event_id: asEventId(`evt-${Date.now()}`),
+          event_id: eventId,
           tracker_id: asTrackerId('workout'),
           ts: eventTs,
           payload: enrichedPayload,
@@ -305,7 +390,10 @@ const AppInner = () => {
         });
         const nextEvents = (event as WorkoutState).events;
         dispatch({ type: 'events/set', events: nextEvents });
-        await insertEvent(nextEvents[nextEvents.length - 1]);
+        const createdEvent =
+          nextEvents.find(item => item.event_id === eventId) ??
+          nextEvents[nextEvents.length - 1];
+        await insertEvent(createdEvent);
       },
       updateSet: async (
         eventId: EventId,
@@ -360,6 +448,23 @@ const AppInner = () => {
         await setCustomExerciseArchived(slug, archived);
         await refreshCatalog();
       },
+      deleteExercise: async (entry: ExerciseCatalogEntry) => {
+        const hasEvents = state.events.some(
+          event =>
+            asExerciseName(String(event.payload?.exercise ?? '')) ===
+            entry.display_name,
+        );
+        if (entry.source === asExerciseSource('custom')) {
+          if (hasEvents) {
+            await setCustomExerciseArchived(entry.slug, true);
+          } else {
+            await deleteCustomExercise(entry.slug);
+          }
+        } else {
+          await setExerciseHidden(entry.slug, true);
+        }
+        await refreshCatalog();
+      },
       toggleFavorite: async (slug: ExerciseSlug, next: boolean) => {
         const favorites = await setExerciseFavorite(slug, next);
         dispatch({ type: 'catalog/favorites', favorites });
@@ -380,23 +485,24 @@ const AppInner = () => {
             warnings: result.warnings,
           },
         });
-        dispatch({ type: 'nav/set', screen: asScreenKey('importSummary') });
+        pushScreen(asScreenKey('importSummary'));
         await refreshFromStorage();
         await refreshCatalog();
       },
     }),
     [
+      handleBack,
+      pushScreen,
       refreshCatalog,
       refreshFromStorage,
+      replaceScreen,
       state.catalog.entries,
       state.events,
       state.logging.logDate,
-      state.nav.screen,
       state.suggestions.planner,
     ],
   );
 
-  const goHome = () => dispatch({ type: 'nav/set', screen: asScreenKey('home') });
   const logHeaderBackground =
     state.nav.screen === asScreenKey('log')
       ? (() => {
@@ -443,7 +549,7 @@ const AppInner = () => {
                 asLabelText('Log workout')
               }
               subtitle={headerSubtitle}
-              onBack={goHome}
+              onBack={actions.handleBack}
               tintColor={headerTone}
               subtitleColor={subtitleTone}
               rightSlot={
@@ -496,7 +602,7 @@ const AppInner = () => {
             <AnalyticsScreen />
           </View>
         );
-      case asScreenKey('coach'):
+      case asScreenKey('more'):
         return <MoreScreen />;
       case asScreenKey('importSummary'):
         return <ImportSummaryScreen />;
@@ -523,25 +629,25 @@ const AppInner = () => {
         <BottomNav
           current={
             state.nav.screen === asScreenKey('importSummary')
-              ? asNavKey('coach')
+              ? asNavKey('more')
               : state.nav.screen === asScreenKey('calendar') ||
                   state.nav.screen === asScreenKey('browser') ||
                   state.nav.screen === asScreenKey('analytics') ||
-                  state.nav.screen === asScreenKey('coach')
+                  state.nav.screen === asScreenKey('more')
                 ? (state.nav.screen as unknown as NavKey)
                 : asNavKey('home')
           }
           onSelect={key => {
             if (key === asNavKey('home')) {
-              dispatch({ type: 'nav/set', screen: asScreenKey('home') });
+              replaceScreen(asScreenKey('home'));
             } else if (key === asNavKey('calendar')) {
-              dispatch({ type: 'nav/set', screen: asScreenKey('calendar') });
+              replaceScreen(asScreenKey('calendar'));
             } else if (key === asNavKey('browser')) {
-              dispatch({ type: 'nav/set', screen: asScreenKey('browser') });
+              replaceScreen(asScreenKey('browser'));
             } else if (key === asNavKey('analytics')) {
-              dispatch({ type: 'nav/set', screen: asScreenKey('analytics') });
-            } else if (key === asNavKey('coach')) {
-              dispatch({ type: 'nav/set', screen: asScreenKey('coach') });
+              replaceScreen(asScreenKey('analytics'));
+            } else if (key === asNavKey('more')) {
+              replaceScreen(asScreenKey('more'));
             }
           }}
         />
@@ -593,6 +699,17 @@ const toRgba = (hex: string, alpha: number) => {
   const { r, g, b } = parseHex(hex);
   const normalized = Math.max(0, Math.min(1, alpha));
   return `rgba(${r}, ${g}, ${b}, ${normalized})`;
+};
+
+const buildLogTimestamp = (date: Date, now = new Date()) => {
+  const combined = new Date(date);
+  combined.setHours(
+    now.getHours(),
+    now.getMinutes(),
+    now.getSeconds(),
+    now.getMilliseconds(),
+  );
+  return combined.getTime();
 };
 
 export default App;

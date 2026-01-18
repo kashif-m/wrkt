@@ -1,5 +1,8 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  InputAccessoryView,
+  Keyboard,
+  Platform,
   ScrollView,
   Text,
   TextInput,
@@ -41,6 +44,7 @@ import {
 } from '../domain/types';
 
 const sessionTabs = ['Track', 'History', 'Trends'] as const;
+const INPUT_ACCESSORY_ID = 'logging-numeric-accessory';
 export type SessionTab = (typeof sessionTabs)[number];
 
 const INITIAL_FIELDS: LoggingFields = {
@@ -185,6 +189,22 @@ const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
       step: 1,
     },
   ],
+  time: [
+    {
+      key: 'duration',
+      label: asDisplayLabel('Time'),
+      unit: asDisplayLabel('min'),
+      step: 0.5,
+    },
+  ],
+  distance: [
+    {
+      key: 'distance',
+      label: asDisplayLabel('Distance'),
+      unit: asDisplayLabel('m'),
+      step: 50,
+    },
+  ],
   time_distance: [
     {
       key: 'duration',
@@ -199,7 +219,7 @@ const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
       step: 50,
     },
   ],
-  distance_time: [
+  distance_weight: [
     {
       key: 'distance',
       label: asDisplayLabel('Distance'),
@@ -207,10 +227,10 @@ const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
       step: 50,
     },
     {
-      key: 'duration',
-      label: asDisplayLabel('Time'),
-      unit: asDisplayLabel('min'),
-      step: 0.5,
+      key: 'weight',
+      label: asDisplayLabel('Weight'),
+      unit: asDisplayLabel('kg'),
+      step: 2.5,
     },
   ],
   default: [
@@ -227,6 +247,24 @@ const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
       step: 2.5,
     },
   ],
+};
+
+const scheduleIdle = (work: () => void) => {
+  const idleCallback = (globalThis as typeof globalThis & {
+    requestIdleCallback?: (cb: () => void) => number;
+    cancelIdleCallback?: (id: number) => void;
+  }).requestIdleCallback;
+  if (idleCallback) {
+    const id = idleCallback(work);
+    return () => {
+      const cancel = (globalThis as typeof globalThis & {
+        cancelIdleCallback?: (id: number) => void;
+      }).cancelIdleCallback;
+      cancel?.(id);
+    };
+  }
+  const timeout = setTimeout(work, 0);
+  return () => clearTimeout(timeout);
 };
 
 const LoggingScreen = () => {
@@ -247,6 +285,8 @@ const LoggingScreen = () => {
   const selectedMetric = state.logging.selectedMetric;
   const loggingDate = state.logging.logDate;
   const editingEventId = state.logging.editingEventId;
+  const [historySets, setHistorySets] = useState<WorkoutEvent[]>([]);
+  const [historyReady, setHistoryReady] = useState(false);
   const shiftLogDate = (deltaDays: number) => {
     const next = new Date(loggingDate);
     next.setDate(next.getDate() + deltaDays);
@@ -260,8 +300,11 @@ const LoggingScreen = () => {
       : FIELD_CONFIGS.default;
   }, [selectedExercise]);
 
+  const needsTodaySets = sessionTab === 'Track';
+  const needsHistorySets = sessionTab === 'History' || sessionTab === 'Trends';
+
   const todaySets = useMemo(() => {
-    if (!selectedExercise) return [];
+    if (!selectedExercise || !needsTodaySets) return [];
     const start = new Date(loggingDate);
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
@@ -274,16 +317,27 @@ const LoggingScreen = () => {
         event.ts < end.getTime()
       );
     });
-  }, [state.events, selectedExercise, loggingDate]);
+  }, [state.events, selectedExercise, loggingDate, needsTodaySets]);
 
-  const historySets = useMemo(() => {
-    if (!selectedExercise) return [];
-    return state.events.filter(
-      event => readExerciseName(event) === selectedExercise.display_name,
-    );
-  }, [state.events, selectedExercise]);
+  useEffect(() => {
+    if (!selectedExercise || !needsHistorySets) {
+      setHistorySets([]);
+      setHistoryReady(false);
+      return;
+    }
+    setHistoryReady(false);
+    const cancel = scheduleIdle(() => {
+      const filtered = state.events.filter(
+        event => readExerciseName(event) === selectedExercise.display_name,
+      );
+      setHistorySets(filtered);
+      setHistoryReady(true);
+    });
+    return () => cancel();
+  }, [needsHistorySets, selectedExercise, state.events]);
 
   const groupedHistory = useMemo(() => {
+    if (sessionTab !== 'History') return [];
     const groups = new Map<number, WorkoutEvent[]>();
     historySets.forEach(event => {
       const day = roundToLocalDay(event.ts);
@@ -302,17 +356,19 @@ const LoggingScreen = () => {
         }),
         events: events.sort((a, b) => b.ts - a.ts),
       }));
-  }, [historySets]);
+  }, [historySets, sessionTab]);
 
   const prEventIds = useMemo(() => {
-    const ids = historySets
+    const source = needsHistorySets ? historySets : todaySets;
+    const ids = source
       .filter(event => event.payload?.pr === true)
       .map(event => event.event_id);
     return new Set(ids);
-  }, [historySets]);
+  }, [historySets, needsHistorySets, todaySets]);
 
   const trendData = useMemo(() => {
-    if (!historySets.length) return [];
+    if (sessionTab !== 'Trends' || !historyReady || !historySets.length)
+      return [];
     const range =
       trendRangeOptions.find(option => option.key === selectedTrendRange) ??
       trendRangeOptions[0];
@@ -348,7 +404,7 @@ const LoggingScreen = () => {
         ),
         value,
       }));
-  }, [historySets, selectedMetric, selectedTrendRange]);
+  }, [historySets, historyReady, selectedMetric, selectedTrendRange, sessionTab]);
 
   const trackDisabled =
     !selectedExercise ||
@@ -549,6 +605,11 @@ const LoggingScreen = () => {
 
             {sessionTab === 'History' && (
               <>
+                {!historyReady ? (
+                  <BodyText style={{ color: palette.mutedText }}>
+                    Loading history...
+                  </BodyText>
+                ) : null}
                 {groupedHistory.length === 0 ? (
                   <BodyText style={{ color: palette.mutedText }}>
                     Log sets to unlock history.
@@ -585,6 +646,11 @@ const LoggingScreen = () => {
 
             {sessionTab === 'Trends' && (
               <>
+                {!historyReady ? (
+                  <BodyText style={{ color: palette.mutedText }}>
+                    Loading trends...
+                  </BodyText>
+                ) : null}
                 <View style={{ marginBottom: spacing(1) }}>
                   <Text
                     style={{
@@ -710,7 +776,7 @@ const LoggingScreen = () => {
                 disabled={trackDisabled}
               />
               <TouchableOpacity onPress={handleDeleteSet} style={dangerButton}>
-                <Text style={{ color: palette.danger, fontWeight: '600' }}>
+                <Text style={{ color: '#fffaf2', fontWeight: '600' }}>
                   Delete set
                 </Text>
               </TouchableOpacity>
@@ -723,6 +789,26 @@ const LoggingScreen = () => {
             />
           )}
         </View>
+      )}
+      {Platform.OS === 'ios' && (
+        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
+          <View
+            style={{
+              paddingHorizontal: spacing(2),
+              paddingVertical: spacing(1),
+              borderTopWidth: 1,
+              borderColor: palette.border,
+              backgroundColor: palette.background,
+              alignItems: 'flex-end',
+            }}
+          >
+            <TouchableOpacity onPress={() => Keyboard.dismiss()}>
+              <Text style={{ color: palette.primary, fontWeight: '700' }}>
+                Done
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </InputAccessoryView>
       )}
     </View>
   );
@@ -762,8 +848,7 @@ const dateButton = {
 const dangerButton = {
   paddingVertical: spacing(1.25),
   borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.danger,
+  backgroundColor: palette.danger,
   alignItems: 'center' as const,
 };
 
@@ -873,9 +958,13 @@ const InputPill = ({
         value={value}
         onChangeText={next => onChange(asNumericInput(next))}
         keyboardType="numeric"
+        returnKeyType="done"
+        blurOnSubmit
+        onSubmitEditing={() => Keyboard.dismiss()}
         placeholder="0"
         placeholderTextColor={palette.mutedText}
         selectTextOnFocus
+        inputAccessoryViewID={INPUT_ACCESSORY_ID}
         style={{
           color: palette.text,
           fontSize: 18,

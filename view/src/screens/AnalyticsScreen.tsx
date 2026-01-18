@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScrollView,
   View,
@@ -298,6 +298,24 @@ const SegmentedControl = <T extends AnalyticsRangeKey | AnalyticsMetricKey>({
   </View>
 );
 
+const scheduleIdle = (work: () => void) => {
+  const idleCallback = (globalThis as typeof globalThis & {
+    requestIdleCallback?: (cb: () => void) => number;
+    cancelIdleCallback?: (id: number) => void;
+  }).requestIdleCallback;
+  if (idleCallback) {
+    const id = idleCallback(work);
+    return () => {
+      const cancel = (globalThis as typeof globalThis & {
+        cancelIdleCallback?: (id: number) => void;
+      }).cancelIdleCallback;
+      cancel?.(id);
+    };
+  }
+  const timeout = setTimeout(work, 0);
+  return () => clearTimeout(timeout);
+};
+
 const ExerciseHistory = ({ events }: { events: WorkoutEvent[] }) => {
   const grouped = useMemo(() => {
     const buckets = new Map<number, WorkoutEvent[]>();
@@ -354,9 +372,9 @@ const ExerciseHistory = ({ events }: { events: WorkoutEvent[] }) => {
             {sets
               .sort((a, b) => b.ts - a.ts)
               .slice(0, 4)
-              .map(set => (
+              .map((set, index) => (
                 <View
-                  key={set.event_id}
+                  key={`${set.event_id}-${set.ts}-${index}`}
                   style={{
                     flexDirection: 'row',
                     justifyContent: 'space-between',
@@ -443,11 +461,34 @@ const AnalyticsScreen = () => {
   const dispatch = useAppDispatch();
   const selectedRange = state.analytics.selectedRange;
   const selectedMetric = state.analytics.selectedMetric;
-  const volumeSeries = useMemo(
-    () => computeSeries(state.events, selectedMetric, selectedRange),
-    [state.events, selectedMetric, selectedRange],
-  );
-  const prs = useMemo(() => computePRs(state.events), [state.events]);
+  const [volumeSeries, setVolumeSeries] = useState<VolumePoint[]>([]);
+  const [prs, setPrs] = useState<PersonalRecord[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cancel = scheduleIdle(() => {
+      if (cancelled) return;
+      setVolumeSeries(
+        computeSeries(state.events, selectedMetric, selectedRange),
+      );
+    });
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [state.events, selectedMetric, selectedRange]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cancel = scheduleIdle(() => {
+      if (cancelled) return;
+      setPrs(computePRs(state.events));
+    });
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [state.events]);
 
   return (
     <ScrollView

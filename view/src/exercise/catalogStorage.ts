@@ -27,6 +27,7 @@ import {
 
 const CUSTOM_EXERCISES_KEY = 'strata.workout.customExercises';
 const FAVORITES_KEY = 'strata.workout.favoriteExercises';
+const HIDDEN_EXERCISES_KEY = 'strata.workout.hiddenExercises';
 
 export interface BaseExerciseCatalogEntry {
   slug: ExerciseSlug;
@@ -83,6 +84,24 @@ const readFavoriteSlugs = async (): Promise<ExerciseSlug[]> => {
 
 const writeFavoriteSlugs = async (slugs: ExerciseSlug[]) => {
   await AsyncStorage.setItem(FAVORITES_KEY, JSON.stringify(slugs));
+};
+
+const readHiddenSlugs = async (): Promise<ExerciseSlug[]> => {
+  const raw = await AsyncStorage.getItem(HIDDEN_EXERCISES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? parsed.map(item => asExerciseSlug(String(item)))
+      : [];
+  } catch (error) {
+    console.warn('Failed to parse hidden exercises', error);
+    return [];
+  }
+};
+
+const writeHiddenSlugs = async (slugs: ExerciseSlug[]) => {
+  await AsyncStorage.setItem(HIDDEN_EXERCISES_KEY, JSON.stringify(slugs));
 };
 
 const normalizeEntry = (entry: JsonObject): BaseExerciseCatalogEntry => {
@@ -158,12 +177,16 @@ export const fetchMergedCatalog = async (): Promise<ExerciseCatalogEntry[]> => {
   console.debug('Fetched catalog from Rust', baseData);
   const base = parseCatalog(baseData);
   const custom = await readCustomExercises();
+  const hidden = await readHiddenSlugs();
+  const hiddenSet = new Set(hidden.map(slug => String(slug)));
   console.debug('Merged default and custom catalog', {
     baseCount: base.length,
     customCount: custom.length,
   });
   const merged = [
-    ...base.map(entry => ({ ...entry, source: asExerciseSource('default') })),
+    ...base
+      .filter(entry => !hiddenSet.has(String(entry.slug)))
+      .map(entry => ({ ...entry, source: asExerciseSource('default') })),
     ...custom
       .filter(entry => !entry.archived)
       .map(entry => ({ ...entry, source: asExerciseSource('custom') })),
@@ -225,6 +248,22 @@ export const setCustomExerciseArchived = async (
   );
   await writeCustomExercises(updated);
   return updated;
+};
+
+export const deleteCustomExercise = async (slug: ExerciseSlug) => {
+  const existing = await readCustomExercises();
+  const next = existing.filter(entry => entry.slug !== slug);
+  await writeCustomExercises(next);
+  return next;
+};
+
+export const setExerciseHidden = async (slug: ExerciseSlug, hidden: boolean) => {
+  const current = await readHiddenSlugs();
+  const next = hidden
+    ? Array.from(new Set([...current, slug]))
+    : current.filter(item => item !== slug);
+  await writeHiddenSlugs(next);
+  return next;
 };
 
 export const loadFavoriteExercises = async () => readFavoriteSlugs();

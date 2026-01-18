@@ -165,7 +165,7 @@
     "primary_muscle_group": "core",
     "secondary_groups": ["grip"],
     "modality": "hypertrophy",
-    "logging_mode": "distance_time",
+    "logging_mode": "distance_weight",
     "suggested_load_range": { "min": 20, "max": 60 },
     "tags": ["carry", "dumbbell"]
   },

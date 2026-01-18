@@ -91,6 +91,9 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
   const trackerId = await getTrackerIdentifier();
   const catalog = await fetchMergedCatalog();
   const catalogSlugs = new Set(catalog.map(entry => String(entry.slug)));
+  const slugToName = new Map(
+    catalog.map(entry => [String(entry.slug), String(entry.display_name)]),
+  );
   const custom = await listCustomExercises(true);
   const customSlugs = new Set(custom.map(entry => String(entry.slug)));
   let exercisesAdded = 0;
@@ -117,6 +120,7 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
       continue;
     }
     await saveCustomExercise(exercise);
+    slugToName.set(slug, String(exercise.display_name));
     exercisesAdded += 1;
   }
 
@@ -126,6 +130,12 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
   }
 
   const offsetMinutes = getLocalOffsetMinutes();
+  const nameToSlug = new Map(
+    bundle.exercises.map(entry => [
+      entry.display_name.trim().toLowerCase(),
+      entry.slug,
+    ]),
+  );
   const importedEvents: WorkoutEvent[] = bundle.events.map((event, index) => {
     const meta = (event.meta ?? {}) as JsonObject;
     const ts = event.ts;
@@ -133,12 +143,19 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
       typeof meta.fitnotes_log_id === 'number'
         ? meta.fitnotes_log_id
         : index;
+    const resolvedSlug = nameToSlug.get(
+      String(event.exercise ?? '').trim().toLowerCase(),
+    );
+    const resolvedName =
+      resolvedSlug && slugToName.has(resolvedSlug)
+        ? slugToName.get(resolvedSlug)
+        : event.exercise;
     return {
       event_id: asEventId(`import-fitnotes-${logId}`),
       tracker_id: trackerId,
       ts,
       payload: {
-        exercise: event.exercise,
+        exercise: resolvedName,
         reps: event.reps,
         weight: event.weight,
         distance: event.distance,

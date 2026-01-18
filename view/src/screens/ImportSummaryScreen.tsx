@@ -19,7 +19,7 @@ const ImportSummaryScreen = () => {
           </Text>
           <PrimaryButton
             label={asLabelText('Back to more')}
-            onPress={() => actions.navigate(asScreenKey('coach'))}
+            onPress={() => actions.navigate(asScreenKey('more'))}
           />
         </View>
       </ScreenContainer>
@@ -76,7 +76,7 @@ const ImportSummaryScreen = () => {
       <View style={{ paddingHorizontal: spacing(2), marginTop: spacing(2) }}>
         <PrimaryButton
           label={asLabelText('Done')}
-          onPress={() => actions.navigate(asScreenKey('coach'))}
+          onPress={() => actions.navigate(asScreenKey('more'))}
         />
       </View>
     </ScreenContainer>

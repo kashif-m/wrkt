@@ -29,8 +29,10 @@ pub enum Modality {
 pub enum LoggingMode {
     Reps,
     RepsWeight,
+    Time,
+    Distance,
     TimeDistance,
-    DistanceTime,
+    DistanceWeight,
     Mixed,
 }
 

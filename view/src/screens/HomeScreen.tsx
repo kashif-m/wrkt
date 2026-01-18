@@ -248,17 +248,16 @@ const HomeScreen = () => {
                 ) : null}
               </View>
             </View>
-          </Card>
-
-          <View style={statsRow}>
-            <Card style={statCard}>
-              <Text style={statTitle}>Sets logged</Text>
-              <View>
-                <Text style={statValue}>{totalSets} sets</Text>
-                <Text style={statMuted}>{averageSets} avg</Text>
+            <View style={statsRow}>
+              <View style={statCard}>
+                <Text style={statTitle}>Sets logged</Text>
+                <View>
+                  <Text style={statValue}>{totalSets} sets</Text>
+                  <Text style={statMuted}>{averageSets} avg</Text>
+                </View>
               </View>
-            </Card>
-          </View>
+            </View>
+          </Card>
 
           {emptyState ? null : (
             <Card style={listContainer}>

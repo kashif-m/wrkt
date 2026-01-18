@@ -31,7 +31,6 @@ import {
   asMuscleGroup,
   asNumericInput,
   asSearchQuery,
-  asScreenKey,
   asErrorMessage,
   asTag,
 } from '../domain/types';
@@ -113,6 +112,12 @@ const ExerciseBrowser = () => {
     [catalog],
   );
 
+  const visibleExercises = useMemo(() => {
+    if (activeTab === 'favorites') return favoriteExercises;
+    if (selectedGroup) return filteredExercises;
+    return allExercises;
+  }, [activeTab, allExercises, favoriteExercises, filteredExercises, selectedGroup]);
+
   const headerTitle = useMemo((): LabelText => {
     if (mode === 'manage') return asLabelText('Manage Exercises');
     if (mode === 'form')
@@ -131,31 +136,6 @@ const ExerciseBrowser = () => {
     },
     [dispatch, formDraft],
   );
-
-  const goBack = () => {
-    if (mode === 'exercises') {
-      dispatch({ type: 'browser/mode', mode: 'groups' });
-      dispatch({ type: 'browser/query', query: asSearchQuery('') });
-      return;
-    }
-    if (mode === 'groups' && selectedGroup) {
-      dispatch({ type: 'browser/group', group: null });
-      dispatch({ type: 'browser/query', query: asSearchQuery('') });
-      return;
-    }
-    if (mode === 'manage') {
-      dispatch({ type: 'browser/mode', mode: 'groups' });
-      return;
-    }
-    if (mode === 'form') {
-      dispatch({
-        type: 'browser/mode',
-        mode: state.browser.returnMode,
-      });
-      return;
-    }
-    actions.navigate(asScreenKey('home'));
-  };
 
   const collapseSearch = () => {
     dispatch({ type: 'browser/search', expanded: false });
@@ -247,6 +227,8 @@ const ExerciseBrowser = () => {
     </TouchableOpacity>
   );
 
+  const showSearch = mode !== 'manage';
+
   return (
     <View style={{ flex: 1 }}>
       <ScreenHeader
@@ -258,28 +240,36 @@ const ExerciseBrowser = () => {
               : asLabelText('All exercises')
             : undefined
         }
-        onBack={goBack}
+        onBack={actions.handleBack}
         rightSlot={
           <View style={{ flexDirection: 'row', gap: spacing(1) }}>
-            <TouchableOpacity
-              onPress={() => {
-                if (searchExpanded) {
-                  dispatch({ type: 'browser/query', query: asSearchQuery('') });
-                }
-                dispatch({ type: 'browser/menu', open: false });
-                dispatch({ type: 'browser/search', expanded: !searchExpanded });
-              }}
-              style={[
-                iconButton,
-                searchExpanded && { backgroundColor: palette.primary },
-              ]}
-            >
-              <SearchIcon
-                width={16}
-                height={16}
-                color={searchExpanded ? '#0f172a' : palette.text}
-              />
-            </TouchableOpacity>
+            {showSearch ? (
+              <TouchableOpacity
+                onPress={() => {
+                  if (searchExpanded) {
+                    dispatch({
+                      type: 'browser/query',
+                      query: asSearchQuery(''),
+                    });
+                  }
+                  dispatch({ type: 'browser/menu', open: false });
+                  dispatch({
+                    type: 'browser/search',
+                    expanded: !searchExpanded,
+                  });
+                }}
+                style={[
+                  iconButton,
+                  searchExpanded && { backgroundColor: palette.primary },
+                ]}
+              >
+                <SearchIcon
+                  width={16}
+                  height={16}
+                  color={searchExpanded ? '#0f172a' : palette.text}
+                />
+              </TouchableOpacity>
+            ) : null}
             {mode === 'groups' ? (
               <TouchableOpacity
                 onPress={() => dispatch({ type: 'browser/menu', open: true })}
@@ -415,6 +405,17 @@ const ExerciseBrowser = () => {
                           : 'Add to favorites'}
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await actions.deleteExercise(contextEntry.entry);
+                        dispatch({ type: 'browser/context', context: null });
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={[sheetActionLabel, { color: palette.danger }]}>
+                        Hide exercise
+                      </Text>
+                    </TouchableOpacity>
                   </>
                 ) : (
                   <>
@@ -450,6 +451,17 @@ const ExerciseBrowser = () => {
                         {contextEntry.archived ? 'Restore' : 'Archive'}
                       </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={async () => {
+                        await actions.deleteExercise(contextEntry.entry);
+                        dispatch({ type: 'browser/context', context: null });
+                      }}
+                      style={sheetAction}
+                    >
+                      <Text style={[sheetActionLabel, { color: palette.danger }]}>
+                        Delete exercise
+                      </Text>
+                    </TouchableOpacity>
                   </>
                 )}
 
@@ -477,8 +489,16 @@ const ExerciseBrowser = () => {
 
       {mode === 'manage' ? (
         <ManageCustomExercises
-          active={customExercises.filter(entry => !entry.archived)}
-          archived={customExercises.filter(entry => entry.archived)}
+          active={customExercises
+            .filter(entry => !entry.archived)
+            .sort((a, b) => a.display_name.localeCompare(b.display_name))}
+          archived={customExercises
+            .filter(entry => entry.archived)
+            .sort((a, b) => a.display_name.localeCompare(b.display_name))}
+          searchQuery={query}
+          onSearch={value =>
+            dispatch({ type: 'browser/query', query: asSearchQuery(value) })
+          }
           onAdd={() => {
             dispatch({ type: 'browser/form', entry: null });
             dispatch({ type: 'browser/returnMode', mode: 'manage' });
@@ -502,16 +522,14 @@ const ExerciseBrowser = () => {
             });
             dispatch({ type: 'browser/mode', mode: 'form' });
           }}
-          onLongPress={(entry, archived) =>
-            {
-              dispatch({ type: 'browser/menu', open: false });
-              dispatch({ type: 'browser/search', expanded: false });
-              dispatch({
-                type: 'browser/context',
-                context: { entry, archived, custom: true },
-              });
-            }
-          }
+          onLongPress={(entry, archived) => {
+            dispatch({ type: 'browser/menu', open: false });
+            dispatch({ type: 'browser/search', expanded: false });
+            dispatch({
+              type: 'browser/context',
+              context: { entry, archived, custom: true },
+            });
+          }}
         />
       ) : mode === 'form' ? (
         <ExerciseForm
@@ -670,59 +688,51 @@ const ExerciseBrowser = () => {
             </View>
           )}
           {!searchExpanded && mode === 'groups' ? (
-            <ScrollView
+            <FlatList<ExerciseCatalogEntry>
+              data={visibleExercises}
+              keyExtractor={item => item.slug}
+              renderItem={renderExerciseRow}
               contentContainerStyle={{
                 paddingHorizontal: spacing(2),
                 paddingBottom: spacing(8),
-                gap: spacing(2),
+                gap: spacing(1.5),
               }}
-            >
-              {activeTab === 'all' ? (
-                <View style={{ gap: spacing(1) }}>
-                  {filteredGroups.length === 0 ? (
-                    <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                      No muscle groups available.
-                    </Text>
-                  ) : (
-                    <View style={groupTagWrap}>
-                      {filteredGroups.map(group => renderGroupTag(group))}
+              ListHeaderComponent={
+                <>
+                  {activeTab === 'all' ? (
+                    <View style={{ gap: spacing(1) }}>
+                      {filteredGroups.length === 0 ? (
+                        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                          No muscle groups available.
+                        </Text>
+                      ) : (
+                        <View style={groupTagWrap}>
+                          {filteredGroups.map(group => renderGroupTag(group))}
+                        </View>
+                      )}
                     </View>
-                  )}
-                </View>
-              ) : null}
-              <View style={{ gap: spacing(1) }}>
-                <SectionHeading
-                  label={asLabelText(
-                    selectedGroup
-                      ? `${formatLabel(selectedGroup)} exercises`
-                      : 'Exercises',
-                  )}
-                />
-                {(activeTab === 'favorites'
-                  ? favoriteExercises
-                  : selectedGroup
-                    ? filteredExercises
-                    : allExercises
-                ).length === 0 ? (
-                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                    No exercises available.
-                  </Text>
-                ) : (
-                  (activeTab === 'favorites'
-                    ? favoriteExercises
-                    : selectedGroup
-                      ? filteredExercises
-                      : allExercises
-                  ).map(item => (
-                    <View key={item.slug} style={{ marginBottom: spacing(0.5) }}>
-                      {renderExerciseRow({
-                        item,
-                      } as ListRenderItemInfo<ExerciseCatalogEntry>)}
-                    </View>
-                  ))
-                )}
-              </View>
-            </ScrollView>
+                  ) : null}
+                  <View style={{ gap: spacing(1) }}>
+                    <SectionHeading
+                      label={asLabelText(
+                        selectedGroup
+                          ? `${formatLabel(selectedGroup)} exercises`
+                          : 'Exercises',
+                      )}
+                    />
+                  </View>
+                </>
+              }
+              ListEmptyComponent={
+                <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                  No exercises available.
+                </Text>
+              }
+              initialNumToRender={20}
+              maxToRenderPerBatch={20}
+              windowSize={7}
+              removeClippedSubviews
+            />
           ) : mode === 'exercises' ? (
             <FlatList<ExerciseCatalogEntry>
               data={filteredExercises}
@@ -981,8 +991,10 @@ const ExerciseForm = ({
   const loggingOptions: LoggingModeValue[] = [
     'reps_weight',
     'reps',
+    'time',
+    'distance',
     'time_distance',
-    'distance_time',
+    'distance_weight',
   ];
 
   const handleAddCustomGroup = () => {
@@ -1044,6 +1056,7 @@ const ExerciseForm = ({
               slug: asExerciseSlug(slugify(formatted)),
             });
           }}
+          autoCapitalize="words"
           style={formInput}
           placeholder="Back Squat"
         />
@@ -1166,14 +1179,29 @@ const ExerciseForm = ({
 const ManageCustomExercises = ({
   active,
   archived,
+  searchQuery,
+  onSearch,
   onAdd,
   onLongPress,
 }: {
   active: ExerciseCatalogEntry[];
   archived: ExerciseCatalogEntry[];
+  searchQuery: SearchQuery;
+  onSearch: (value: string) => void;
   onAdd: () => void;
   onLongPress: (entry: ExerciseCatalogEntry, archived: boolean) => void;
 }) => {
+  const query = searchQuery.trim().toLowerCase();
+  const activeFiltered = query
+    ? active.filter(entry =>
+        entry.display_name.toLowerCase().includes(query),
+      )
+    : active;
+  const archivedFiltered = query
+    ? archived.filter(entry =>
+        entry.display_name.toLowerCase().includes(query),
+      )
+    : archived;
   const renderRow = (entry: ExerciseCatalogEntry, archivedFlag: boolean) => (
     <TouchableOpacity
       key={`${archivedFlag ? 'archived-' : ''}${entry.slug}`}
@@ -1202,18 +1230,30 @@ const ManageCustomExercises = ({
           + Add Exercise
         </Text>
       </TouchableOpacity>
+      <View>
+        <Text style={formLabel}>Search</Text>
+        <TextInput
+          value={searchQuery}
+          onChangeText={onSearch}
+          placeholder="Search exercises"
+          placeholderTextColor={palette.mutedText}
+          style={formInput}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
       <Text style={sectionLabel}>Active</Text>
-      {active.length === 0 ? (
+      {activeFiltered.length === 0 ? (
         <Text style={{ color: palette.mutedText }}>
           No custom exercises yet.
         </Text>
       ) : (
-        active.map(entry => renderRow(entry, false))
+        activeFiltered.map(entry => renderRow(entry, false))
       )}
-      {archived.length > 0 && (
+      {archivedFiltered.length > 0 && (
         <>
           <Text style={sectionLabel}>Archived</Text>
-          {archived.map(entry => renderRow(entry, true))}
+          {archivedFiltered.map(entry => renderRow(entry, true))}
         </>
       )}
     </ScrollView>

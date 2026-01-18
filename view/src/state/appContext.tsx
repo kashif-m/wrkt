@@ -11,6 +11,7 @@ const AppActionsContext = createContext<RootStateActions | null>(null);
 
 export type RootStateActions = {
   navigate: (screen: RootState['nav']['screen']) => void;
+  handleBack: () => boolean;
   setSelectedDate: (date: Date) => void;
   shiftDate: (deltaDays: number) => void;
   refreshAll: () => Promise<void>;
@@ -46,6 +47,7 @@ export type RootStateActions = {
     slug: ExerciseSlug,
     archived: boolean,
   ) => Promise<void>;
+  deleteExercise: (entry: ExerciseCatalogEntry) => Promise<void>;
   toggleFavorite: (slug: ExerciseSlug, next: boolean) => Promise<void>;
   importFitnotes: () => Promise<void>;
 };

@@ -46,6 +46,13 @@ export const init = async () => {
 };
 
 export const insertEvent = async (event: WorkoutEvent) => {
+  if (__DEV__) {
+    console.log('[storage] insertEvent', {
+      event_id: String(event.event_id),
+      tracker_id: String(event.tracker_id),
+      ts: event.ts,
+    });
+  }
   const events = await readStore();
   const merged = sortEventsByDeterministicOrder([...events, event]);
   await writeStore(merged);
@@ -79,7 +86,17 @@ export const fetchEvents = async (
 ): Promise<WorkoutEvent[]> => {
   const events = await readStore();
   const id = trackerId ?? (await getTrackerIdentifier());
+  if (__DEV__) {
+    console.log('[storage] fetchEvents', {
+      tracker_id: String(id),
+      total: events.length,
+      range,
+    });
+  }
   let filtered = events.filter(event => event.tracker_id === id);
+  if (__DEV__) {
+    console.log('[storage] fetchEvents filtered', { count: filtered.length });
+  }
   if (range) {
     const [start, end] = range;
     filtered = filtered.filter(event => event.ts >= start && event.ts <= end);

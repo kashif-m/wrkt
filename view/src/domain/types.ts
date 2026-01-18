@@ -15,8 +15,10 @@ export type Modality = Brand<ModalityValue, 'Modality'>;
 export type LoggingModeValue =
   | 'reps_weight'
   | 'reps'
+  | 'time'
+  | 'distance'
   | 'time_distance'
-  | 'distance_time';
+  | 'distance_weight';
 export type LoggingMode = Brand<LoggingModeValue, 'LoggingMode'>;
 export type Tag = Brand<string, 'Tag'>;
 export type ExerciseSource = Brand<'default' | 'custom', 'ExerciseSource'>;
@@ -37,7 +39,7 @@ export type AnalyticsRangeKeyValue = '8w' | '16w' | '6m' | '1y' | 'all';
 export type AnalyticsRangeKey = Brand<AnalyticsRangeKeyValue, 'AnalyticsRangeKey'>;
 export type AnalyticsMetricKeyValue = 'volume' | 'sessions';
 export type AnalyticsMetricKey = Brand<AnalyticsMetricKeyValue, 'AnalyticsMetricKey'>;
-export type NavKeyValue = 'home' | 'calendar' | 'browser' | 'analytics' | 'coach';
+export type NavKeyValue = 'home' | 'calendar' | 'browser' | 'analytics' | 'more';
 export type NavKey = Brand<NavKeyValue, 'NavKey'>;
 export type ScreenKeyValue =
   | 'home'
@@ -45,7 +47,7 @@ export type ScreenKeyValue =
   | 'browser'
   | 'log'
   | 'analytics'
-  | 'coach'
+  | 'more'
   | 'history'
   | 'importSummary';
 export type ScreenKey = Brand<ScreenKeyValue, 'ScreenKey'>;
@@ -83,8 +85,10 @@ const MODALITY_VALUES: ReadonlyArray<ModalityValue> = [
 const LOGGING_MODE_VALUES: ReadonlyArray<LoggingModeValue> = [
   'reps_weight',
   'reps',
+  'time',
+  'distance',
   'time_distance',
-  'distance_time',
+  'distance_weight',
 ];
 
 export const toModality = (

@@ -35,7 +35,7 @@ const BottomNav = ({ current, onSelect }: Props) => {
       icon: { outline: ChartIcon },
     },
     {
-      key: asNavKey('coach'),
+      key: asNavKey('more'),
       label: asLabelText('More'),
       icon: { outline: SettingsIcon },
     },
