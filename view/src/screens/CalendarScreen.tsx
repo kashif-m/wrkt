@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   Text,
@@ -49,12 +55,17 @@ const CalendarScreen = () => {
   const yearSheetOpen = state.calendar.yearSheetOpen;
   const monthAnim = useRef(new Animated.Value(1)).current;
   const sheetTranslate = useRef(new Animated.Value(0)).current;
+  const [showAllMuscles, setShowAllMuscles] = useState(false);
 
   useEffect(() => {
     if (yearSheetOpen) {
       sheetTranslate.setValue(0);
     }
   }, [yearSheetOpen, sheetTranslate]);
+
+  useEffect(() => {
+    setShowAllMuscles(false);
+  }, [visibleMonth]);
 
   const catalogMap = useMemo(() => {
     const map = new Map<ExerciseName, ExerciseCatalogEntry>();
@@ -157,14 +168,14 @@ const CalendarScreen = () => {
     const attendance = daysElapsed
       ? Math.round((sessions / daysElapsed) * 100)
       : 0;
-    const topMuscles = Array.from(muscleSessionCounts.entries())
+    const allMuscles = Array.from(muscleSessionCounts.entries())
       .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
       .map(([group, count]) => ({
         group,
         count,
         color: getMuscleColor(group),
       }));
+    const topMuscles = allMuscles.slice(0, 3);
     const totalSets = Array.from(muscleSetCounts.values()).reduce(
       (sum, count) => sum + count,
       0,
@@ -183,6 +194,7 @@ const CalendarScreen = () => {
       sessions,
       attendance,
       topMuscles,
+      allMuscles,
       pieData,
     };
   }, [events, visibleMonth, catalogMap]);
@@ -222,31 +234,37 @@ const CalendarScreen = () => {
     [animateToMonth, visibleMonth],
   );
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (
-          _: GestureResponderEvent,
-          gesture: PanResponderGestureState,
-        ) => {
-          return (
-            Math.abs(gesture.dx) > Math.abs(gesture.dy) &&
-            Math.abs(gesture.dx) > 20
-          );
-        },
-        onPanResponderRelease: (
-          _: GestureResponderEvent,
-          gesture: PanResponderGestureState,
-        ) => {
-          if (gesture.dx > 20) {
-            handleShift(-1);
-          } else if (gesture.dx < -20) {
-            handleShift(1);
-          }
-        },
-      }),
-    [handleShift],
-  );
+  const panResponder = useMemo(() => {
+    const edgeWidth = 24;
+    const shouldHandle = (gesture: PanResponderGestureState) => {
+      const startX =
+        typeof gesture.x0 === 'number' ? gesture.x0 : edgeWidth + 1;
+      if (startX <= edgeWidth) return false;
+      return (
+        Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 20
+      );
+    };
+    return PanResponder.create({
+      onMoveShouldSetPanResponderCapture: (
+        _: GestureResponderEvent,
+        gesture: PanResponderGestureState,
+      ) => shouldHandle(gesture),
+      onMoveShouldSetPanResponder: (
+        _: GestureResponderEvent,
+        gesture: PanResponderGestureState,
+      ) => shouldHandle(gesture),
+      onPanResponderRelease: (
+        _: GestureResponderEvent,
+        gesture: PanResponderGestureState,
+      ) => {
+        if (gesture.dx > 20) {
+          handleShift(-1);
+        } else if (gesture.dx < -20) {
+          handleShift(1);
+        }
+      },
+    });
+  }, [handleShift]);
 
   const sheetPanResponder = useMemo(
     () =>
@@ -315,7 +333,7 @@ const CalendarScreen = () => {
             onPress={() => {
               const today = new Date();
               animateToMonth(today);
-              actions.setSelectedDate(today);
+              actions.setSelectedDate(new Date(today));
             }}
             style={todayButton}
           >
@@ -329,123 +347,145 @@ const CalendarScreen = () => {
         </View>
       </View>
 
-      <Card style={summaryCard}>
-        <View style={summaryHeader}>
-          <Text style={summaryTitle}>Monthly summary</Text>
-          <Text style={summarySubtitle}>
-            {monthStats.sessions} sessions • {monthStats.attendance}% attendance
-          </Text>
-        </View>
-        <View style={summaryBody}>
-          <View style={{ flex: 1 }}>
-            <Text style={summaryLabel}>Top muscle groups</Text>
-            {monthStats.topMuscles.length === 0 ? (
-              <Text style={summaryValue}>No sessions yet</Text>
-            ) : (
-              monthStats.topMuscles.map(item => (
-                <View key={item.group} style={summaryRow}>
-                  <View style={[dot, { backgroundColor: item.color }]} />
-                  <Text style={summaryValue}>
-                    {formatLabel(item.group)} · {item.count}
-                  </Text>
-                </View>
-              ))
-            )}
-          </View>
-          <View style={summaryChart}>
-            <MusclePie data={monthStats.pieData} radius={38} />
-          </View>
-        </View>
-      </Card>
-
-      <View style={weekdayRow}>
-        {DAY_NAMES.map(label => (
-          <Text
-            key={label}
-            style={{
-              color:
-                label === 'SUN' || label === 'SAT'
-                  ? palette.danger
-                  : palette.mutedText,
-              fontSize: 12,
-              flex: 1,
-              textAlign: 'center',
-            }}
-          >
-            {label}
-          </Text>
-        ))}
-      </View>
-
-      <Animated.View
-        style={{ opacity: monthAnim }}
-        {...panResponder.panHandlers}
+      <ScrollView
+        contentContainerStyle={{
+          paddingBottom: spacing(6),
+        }}
       >
-        <View style={grid}>
-          {days.map((day, index) => {
-            const dateKey = roundToLocalDay(day.getTime());
-            const colors = dayColorMap.get(dateKey) ?? [];
-            const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
-            const isSelected =
-              roundToLocalDay(selectedDate.getTime()) === dateKey;
-            const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-            const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
-            const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
-            return (
-              <TouchableOpacity
-                key={day.toISOString()}
-                style={[
-                  cell,
-                  {
-                    borderRightWidth: isLastColumn ? 0 : 1,
-                    borderBottomWidth: isLastRow ? 0 : 1,
-                  },
-                  !isCurrentMonth && { opacity: 0.3 },
-                  isSelected && {
-                    borderColor: palette.primary,
-                    borderWidth: 2,
-                  },
-                  isWeekend && {
-                    backgroundColor: addAlpha(palette.surface, 0.35),
-                  },
-                ]}
-                onPress={() => {
-                  actions.setSelectedDate(day);
-                  actions.navigate(asScreenKey('home'));
-                }}
-              >
-                <Text
-                  style={{
-                    color: isWeekend ? palette.warning : palette.text,
-                    fontWeight: '600',
-                  }}
-                >
-                  {day.getDate()}
-                </Text>
-                <View style={dotRow}>
-                  {colors.slice(0, 3).map(color => (
-                    <View
-                      key={`${dateKey}-${color}`}
-                      style={[dot, { backgroundColor: color }]}
-                    />
-                  ))}
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-      </Animated.View>
-
-      {legendEntries.length > 0 ? (
-        <View style={legendContainer}>
-          {legendEntries.map(entry => (
-            <View key={entry.key} style={legendItem}>
-              <View style={[dot, { backgroundColor: entry.color }]} />
-              <Text style={{ color: palette.text }}>{entry.label}</Text>
+        <Card style={summaryCard}>
+          <View style={summaryHeader}>
+            <Text style={summaryTitle}>Monthly summary</Text>
+            <Text style={summarySubtitle}>
+              {monthStats.sessions} sessions • {monthStats.attendance}%
+              attendance
+            </Text>
+          </View>
+          <View style={summaryBody}>
+            <View style={{ flex: 1 }}>
+              <View style={summaryRow}>
+                <Text style={summaryLabel}>Top muscle groups</Text>
+                {monthStats.allMuscles.length > 3 ? (
+                  <TouchableOpacity
+                    onPress={() => setShowAllMuscles(current => !current)}
+                  >
+                    <Text style={summaryLink}>
+                      {showAllMuscles ? 'Show less' : 'Show all'}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+              {(showAllMuscles ? monthStats.allMuscles : monthStats.topMuscles)
+                .length === 0 ? (
+                <Text style={summaryValue}>No sessions yet</Text>
+              ) : (
+                (showAllMuscles
+                  ? monthStats.allMuscles
+                  : monthStats.topMuscles
+                ).map(item => (
+                  <View key={item.group} style={summaryRow}>
+                    <View style={[dot, { backgroundColor: item.color }]} />
+                    <Text style={summaryValue}>
+                      {formatLabel(item.group)} · {item.count}
+                    </Text>
+                  </View>
+                ))
+              )}
             </View>
+            <View style={summaryChart}>
+              <MusclePie data={monthStats.pieData} radius={38} />
+            </View>
+          </View>
+        </Card>
+
+        <View style={weekdayRow}>
+          {DAY_NAMES.map(label => (
+            <Text
+              key={label}
+              style={{
+                color:
+                  label === 'SUN' || label === 'SAT'
+                    ? palette.danger
+                    : palette.mutedText,
+                fontSize: 12,
+                flex: 1,
+                textAlign: 'center',
+              }}
+            >
+              {label}
+            </Text>
           ))}
         </View>
-      ) : null}
+
+        <Animated.View
+          style={{ opacity: monthAnim }}
+          {...panResponder.panHandlers}
+        >
+          <View style={grid}>
+            {days.map((day, index) => {
+              const dateKey = roundToLocalDay(day.getTime());
+              const colors = dayColorMap.get(dateKey) ?? [];
+              const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
+              const isSelected =
+                roundToLocalDay(selectedDate.getTime()) === dateKey;
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+              const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
+              const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
+              return (
+                <TouchableOpacity
+                  key={day.toISOString()}
+                  style={[
+                    cell,
+                    {
+                      borderRightWidth: isLastColumn ? 0 : 1,
+                      borderBottomWidth: isLastRow ? 0 : 1,
+                    },
+                    !isCurrentMonth && { opacity: 0.3 },
+                    isSelected && {
+                      borderColor: palette.primary,
+                      borderWidth: 2,
+                    },
+                    isWeekend && {
+                      backgroundColor: addAlpha(palette.surface, 0.35),
+                    },
+                  ]}
+                  onPress={() => {
+                    actions.setSelectedDate(new Date(day));
+                    actions.navigate(asScreenKey('home'));
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: isWeekend ? palette.warning : palette.text,
+                      fontWeight: '600',
+                    }}
+                  >
+                    {day.getDate()}
+                  </Text>
+                  <View style={dotRow}>
+                    {colors.slice(0, 3).map(color => (
+                      <View
+                        key={`${dateKey}-${color}`}
+                        style={[dot, { backgroundColor: color }]}
+                      />
+                    ))}
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Animated.View>
+
+        {legendEntries.length > 0 ? (
+          <View style={legendContainer}>
+            {legendEntries.map(entry => (
+              <View key={entry.key} style={legendItem}>
+                <View style={[dot, { backgroundColor: entry.color }]} />
+                <Text style={{ color: palette.text }}>{entry.label}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
+      </ScrollView>
 
       {yearSheetOpen ? (
         <TouchableWithoutFeedback
@@ -677,6 +717,12 @@ const summaryLabel = {
   color: palette.mutedText,
   fontSize: 12,
   marginBottom: spacing(0.5),
+};
+
+const summaryLink = {
+  color: palette.primary,
+  fontSize: 12,
+  fontWeight: '600' as const,
 };
 
 const summaryValue = {

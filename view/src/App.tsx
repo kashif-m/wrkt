@@ -1,10 +1,27 @@
-import React, { useCallback, useEffect, useMemo, useReducer } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from 'react';
 import { BackHandler, Text, TouchableOpacity, View } from 'react-native';
+import {
+  NavigationContainer,
+  StackActions,
+  TabActions,
+  useNavigation,
+  useNavigationContainerRef,
+} from '@react-navigation/native';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   SafeAreaProvider,
   SafeAreaView,
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
+import { enableScreens } from 'react-native-screens';
+import { roundToLocalDay } from './timePolicy';
 import ExerciseBrowser from './screens/ExerciseBrowser';
 import LoggingScreen from './screens/LoggingScreen';
 import HistoryScreen from './screens/HistoryScreen';
@@ -32,7 +49,12 @@ import { palette } from './ui/theme';
 import { getMuscleColor } from './ui/muscleColors';
 import BottomNav from './navigation/BottomNav';
 import ScreenHeader from './ui/ScreenHeader';
-import { AppProvider } from './state/appContext';
+import {
+  AppProvider,
+  useAppActions,
+  useAppDispatch,
+  useAppState,
+} from './state/appContext';
 import { createInitialState, initialFields, reducer } from './state/appState';
 import {
   applyFitnotesImport,
@@ -45,7 +67,7 @@ import {
   listCustomExercises,
   loadFavoriteExercises,
   deleteCustomExercise,
-  saveCustomExercise,
+  saveCustomExercise as persistCustomExercise,
   setCustomExerciseArchived,
   setExerciseHidden,
   setExerciseFavorite,
@@ -54,11 +76,16 @@ import {
   ExerciseName,
   ExerciseSlug,
   LoggingMode,
+  ScreenKey,
+  ScreenKeyValue,
   asLoggingMode,
   asExerciseName,
+  asExerciseSlug,
+  asExerciseSource,
+  asModality,
+  asMuscleGroup,
   asNumericInput,
   asLabelText,
-  asExerciseSource,
   asSearchQuery,
   unwrapLoggingMode,
   LabelText,
@@ -66,13 +93,298 @@ import {
   asTrackerId,
   EventId,
   NavKey,
-  asScreenKey,
+  NavKeyValue,
   asNavKey,
+  asScreenKey,
+  unwrapScreenKey,
 } from './domain/types';
+
+type RootStackParamList = {
+  mainTabs: undefined;
+  browser: undefined;
+  log: undefined;
+  history: undefined;
+  importSummary: undefined;
+};
+
+type TabParamList = {
+  home: undefined;
+  calendar: undefined;
+  analytics: undefined;
+  more: undefined;
+};
+
+const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<TabParamList>();
+
+enableScreens();
+
+const ScreenShell = ({
+  children,
+  topInsetColor,
+}: {
+  children: React.ReactNode;
+  topInsetColor?: string;
+}) => {
+  const insets = useSafeAreaInsets();
+  const insetColor = topInsetColor ?? palette.background;
+
+  return (
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
+      <View style={{ height: insets.top, backgroundColor: insetColor }} />
+      <View style={{ flex: 1, backgroundColor: palette.background }}>
+        {children}
+      </View>
+    </View>
+  );
+};
+
+const getActiveRouteName = (state: unknown): ScreenKeyValue => {
+  const navState = state as {
+    index?: number;
+    routes?: Array<{ name: string; state?: unknown }>;
+  };
+  if (!navState?.routes?.length) return 'home';
+  const index = navState.index ?? 0;
+  const route = navState.routes[index];
+  if (route?.name === 'browser') return 'browser';
+  if (route?.state) return getActiveRouteName(route.state);
+  return route?.name as ScreenKeyValue;
+};
+
+const getMainTabsKey = (state: unknown): string | null => {
+  const navState = state as {
+    routes?: Array<{ name: string; key?: string; state?: { key?: string } }>;
+  };
+  if (!navState?.routes?.length) return null;
+  const route = navState.routes.find(item => item.name === 'mainTabs');
+  return route?.state?.key ?? route?.key ?? null;
+};
+
+const HomeRoute = () => (
+  <ScreenShell>
+    <HomeScreen />
+  </ScreenShell>
+);
+
+const CalendarRoute = () => (
+  <ScreenShell>
+    <CalendarScreen />
+  </ScreenShell>
+);
+
+const AnalyticsRoute = () => (
+  <ScreenShell>
+    <View style={{ flex: 1 }}>
+      <ScreenHeader
+        title={asLabelText('Trends')}
+        subtitle={asLabelText('Charts & records')}
+      />
+      <AnalyticsScreen />
+    </View>
+  </ScreenShell>
+);
+
+const MoreRoute = () => (
+  <ScreenShell>
+    <MoreScreen />
+  </ScreenShell>
+);
+
+const BrowserRoute = () => (
+  <ScreenShell>
+    <ExerciseBrowser />
+  </ScreenShell>
+);
+
+const HistoryRoute = () => (
+  <ScreenShell>
+    <HistoryScreen />
+  </ScreenShell>
+);
+
+const ImportSummaryRoute = () => (
+  <ScreenShell>
+    <ImportSummaryScreen />
+  </ScreenShell>
+);
+
+const MainTabs = () => {
+  const state = useAppState();
+  const actions = useAppActions();
+  const dispatch = useAppDispatch();
+
+  const resetBrowserState = () => {
+    dispatch({ type: 'browser/mode', mode: 'groups' });
+    dispatch({ type: 'browser/returnMode', mode: 'groups' });
+    dispatch({ type: 'browser/group', group: null });
+    dispatch({ type: 'browser/query', query: asSearchQuery('') });
+    dispatch({ type: 'browser/search', expanded: false });
+    dispatch({ type: 'browser/menu', open: false });
+    dispatch({ type: 'browser/context', context: null });
+    dispatch({ type: 'browser/tab', tab: 'all' });
+    dispatch({ type: 'browser/form', entry: null });
+    dispatch({
+      type: 'browser/formDraft',
+      draft: {
+        displayName: asExerciseName(''),
+        slug: asExerciseSlug(''),
+        primary: asMuscleGroup('chest'),
+        secondary: [],
+        modality: asModality('strength'),
+        loggingMode: asLoggingMode('reps_weight'),
+        minLoad: asNumericInput(''),
+        maxLoad: asNumericInput(''),
+        tags: [],
+        saving: false,
+        error: null,
+      },
+    });
+  };
+
+  return (
+    <Tab.Navigator
+      screenOptions={{ headerShown: false }}
+      tabBar={({ state: tabState, navigation }) => {
+        const routeName =
+          tabState.routes[tabState.index]?.name ?? ('home' as string);
+        const currentKey = asNavKey(routeName as NavKeyValue);
+        const isToday =
+          roundToLocalDay(state.selectedDate.getTime()) ===
+          roundToLocalDay(Date.now());
+        return (
+          <BottomNav
+            current={currentKey}
+            onSelect={key => {
+              if (key === asNavKey('browser')) {
+                resetBrowserState();
+                actions.navigate(asScreenKey('browser'));
+                return;
+              }
+              if (key === asNavKey('home')) {
+                if (!isToday) {
+                  actions.setSelectedDate(new Date());
+                }
+                if (currentKey !== asNavKey('home')) {
+                  navigation.navigate('home');
+                }
+                return;
+              }
+              if (key === currentKey) return;
+              navigation.navigate(key as unknown as keyof TabParamList);
+            }}
+          />
+        );
+      }}
+    >
+      <Tab.Screen name="home" component={HomeRoute} />
+      <Tab.Screen name="calendar" component={CalendarRoute} />
+      <Tab.Screen name="analytics" component={AnalyticsRoute} />
+      <Tab.Screen name="more" component={MoreRoute} />
+    </Tab.Navigator>
+  );
+};
+
+const LogRoute = () => {
+  const state = useAppState();
+  const actions = useAppActions();
+  const navigation = useNavigation();
+
+  const logHeaderBackground = useMemo(() => {
+    const selected =
+      state.catalog.entries.find(
+        entry => entry.display_name === state.logging.exerciseName,
+      ) ?? null;
+    return selected
+      ? addAlpha(getMuscleColor(selected.primary_muscle_group), 0.9)
+      : palette.background;
+  }, [state.catalog.entries, state.logging.exerciseName]);
+
+  const logStatusBarStyle =
+    contrastColor(logHeaderBackground) === '#0f172a'
+      ? 'dark-content'
+      : 'light-content';
+
+  useEffect(() => {
+    navigation.setOptions({
+      statusBarStyle: logStatusBarStyle,
+      statusBarColor: logHeaderBackground,
+    });
+  }, [logHeaderBackground, logStatusBarStyle, navigation]);
+
+  const selectedExercise =
+    state.catalog.entries.find(
+      entry => entry.display_name === state.logging.exerciseName,
+    ) ?? null;
+  const headerSubtitle = selectedExercise
+    ? asLabelText(
+        `${formatLabel(selectedExercise.primary_muscle_group)} · ${formatLabel(
+          selectedExercise.modality,
+        )}`,
+      )
+    : undefined;
+  const isFavorite = selectedExercise
+    ? state.catalog.favorites.includes(selectedExercise.slug)
+    : false;
+  const headerTone = selectedExercise
+    ? contrastColor(getMuscleColor(selectedExercise.primary_muscle_group))
+    : palette.text;
+  const subtitleTone = toRgba(headerTone, 0.7);
+
+  return (
+    <ScreenShell topInsetColor={logHeaderBackground}>
+      <View style={{ flex: 1 }}>
+        <ScreenHeader
+          title={
+            (state.logging.exerciseName as unknown as LabelText) ??
+            asLabelText('Log workout')
+          }
+          subtitle={headerSubtitle}
+          onBack={actions.handleBack}
+          tintColor={headerTone}
+          subtitleColor={subtitleTone}
+          rightSlot={
+            selectedExercise ? (
+              <TouchableOpacity
+                onPress={() =>
+                  actions.toggleFavorite(selectedExercise.slug, !isFavorite)
+                }
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 18,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: 'transparent',
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 18,
+                    color: headerTone,
+                  }}
+                >
+                  {isFavorite ? '★' : '☆'}
+                </Text>
+              </TouchableOpacity>
+            ) : null
+          }
+          containerStyle={{
+            backgroundColor: logHeaderBackground,
+            borderColor: addAlpha(logHeaderBackground, 0.7),
+          }}
+        />
+        <LoggingScreen />
+      </View>
+    </ScreenShell>
+  );
+};
 
 const AppInner = () => {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
-  const insets = useSafeAreaInsets();
+  const navigationRef = useNavigationContainerRef<RootStackParamList>();
+  const [currentRouteName, setCurrentRouteName] =
+    useState<ScreenKeyValue>('home');
 
   const estimateOneRm = (weight: number, reps: number) =>
     weight * (1 + reps / 30);
@@ -223,15 +535,55 @@ const AppInner = () => {
     return () => clearTimeout(timer);
   }, [state.logging.status]);
 
-  const replaceScreen = useCallback(
-    (screen: typeof state.nav.screen) =>
-      dispatch({ type: 'nav/replace', screen }),
-    [dispatch],
-  );
+  const beginImport = useCallback(async () => {
+    const file = await pickFitnotesFile();
+    if (!file?.uri) return;
+    dispatch({ type: 'log/status', status: null });
+    const bundle = await importFitnotesBundle(file.uri);
+    if (!bundle) return;
+    const result = await applyFitnotesImport(bundle);
+    dispatch({
+      type: 'import/summary',
+      summary: {
+        source: 'fitnotes',
+        summary: result.summary,
+        warnings: result.warnings,
+      },
+    });
+    pushScreen(asScreenKey('importSummary'));
+    await refreshFromStorage();
+    await refreshCatalog();
+  }, [pushScreen, refreshCatalog, refreshFromStorage]);
 
   const pushScreen = useCallback(
-    (screen: typeof state.nav.screen) => dispatch({ type: 'nav/push', screen }),
-    [dispatch],
+    (screen: ScreenKey) => {
+      if (!navigationRef.isReady()) return;
+      navigationRef.dispatch(
+        StackActions.push(unwrapScreenKey(screen) as ScreenKeyValue),
+      );
+    },
+    [navigationRef],
+  );
+
+  const jumpToMainTab = useCallback(
+    (
+      target: TabParamList extends infer T
+        ? keyof T & ScreenKeyValue
+        : ScreenKeyValue,
+    ) => {
+      if (!navigationRef.isReady()) return;
+      const rootState = navigationRef.getRootState();
+      const mainTabsKey = getMainTabsKey(rootState);
+      if (!mainTabsKey) {
+        navigationRef.navigate('mainTabs', { screen: target });
+        return;
+      }
+      navigationRef.dispatch({
+        ...TabActions.jumpTo(target),
+        target: mainTabsKey,
+      });
+    },
+    [navigationRef],
   );
 
   const handleBack = useCallback(() => {
@@ -244,43 +596,46 @@ const AppInner = () => {
       dispatch({ type: 'browser/query', query: asSearchQuery('') });
       return true;
     }
-    if (state.nav.screen === asScreenKey('browser')) {
-      if (state.browser.mode === 'form') {
-        dispatch({
-          type: 'browser/mode',
-          mode: state.browser.returnMode,
-        });
-        return true;
-      }
-      if (state.browser.mode === 'manage') {
-        dispatch({ type: 'browser/mode', mode: 'groups' });
-        return true;
-      }
-      if (state.browser.mode === 'exercises') {
-        dispatch({ type: 'browser/mode', mode: 'groups' });
-        dispatch({ type: 'browser/query', query: asSearchQuery('') });
-        return true;
-      }
-      if (state.browser.mode === 'groups' && state.browser.selectedGroup) {
+    if (state.browser.contextEntry) {
+      dispatch({ type: 'browser/context', context: null });
+      return true;
+    }
+
+    const activeRouteName =
+      navigationRef.isReady() && navigationRef.getRootState()
+        ? getActiveRouteName(navigationRef.getRootState())
+        : currentRouteName;
+    const currentScreen = asScreenKey(activeRouteName);
+
+    if (currentScreen === asScreenKey('browser')) {
+      if (state.browser.selectedGroup) {
         dispatch({ type: 'browser/group', group: null });
         dispatch({ type: 'browser/query', query: asSearchQuery('') });
         return true;
       }
     }
-    if (state.nav.screen === asScreenKey('importSummary')) {
-      replaceScreen(asScreenKey('more'));
+
+    if (currentScreen === asScreenKey('importSummary')) {
+      if (navigationRef.isReady()) {
+        navigationRef.goBack();
+      }
       return true;
     }
-    if (state.nav.stack.length > 1) {
-      dispatch({ type: 'nav/pop' });
+
+    if (navigationRef.isReady() && navigationRef.canGoBack()) {
+      navigationRef.goBack();
       return true;
     }
-    if (state.nav.screen !== asScreenKey('home')) {
-      replaceScreen(asScreenKey('home'));
+
+    if (currentScreen !== asScreenKey('home')) {
+      if (navigationRef.isReady()) {
+        jumpToMainTab('home');
+      }
       return true;
     }
+
     return false;
-  }, [dispatch, replaceScreen, state]);
+  }, [currentRouteName, jumpToMainTab, navigationRef, state.browser]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -292,7 +647,21 @@ const AppInner = () => {
 
   const actions = useMemo(
     () => ({
-      navigate: (screen: typeof state.nav.screen) => replaceScreen(screen),
+      navigate: (screen: ScreenKey) => {
+        if (!navigationRef.isReady()) return;
+        const target = unwrapScreenKey(screen);
+        if (currentRouteName === target) return;
+        if (
+          target === 'home' ||
+          target === 'calendar' ||
+          target === 'analytics' ||
+          target === 'more'
+        ) {
+          jumpToMainTab(target);
+          return;
+        }
+        navigationRef.dispatch(StackActions.push(target as ScreenKeyValue));
+      },
       handleBack,
       setSelectedDate: (date: Date) => dispatch({ type: 'date/set', date }),
       shiftDate: (deltaDays: number) =>
@@ -313,7 +682,7 @@ const AppInner = () => {
         dispatch({ type: 'browser/menu', open: false });
         dispatch({ type: 'browser/context', context: null });
         dispatch({ type: 'browser/tab', tab: 'all' });
-        replaceScreen(asScreenKey('browser'));
+        pushScreen(asScreenKey('browser'));
       },
       openLogForExercise: (
         exerciseName: ExerciseName | undefined,
@@ -378,25 +747,33 @@ const AppInner = () => {
           `evt-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
         );
         if (__DEV__) {
-          console.log('[logSet] date', state.logging.logDate.toISOString());
-          console.log('[logSet] timestamp', eventTs);
-          console.log('[logSet] event_id', eventId);
-          console.log('[logSet] payload', payload);
+          console.log('Logging set', payload, eventTs);
         }
-        const enrichedPayload = buildPrPayload(payload, eventTs);
-        const event = await logSet({ events: state.events } as WorkoutState, {
+        const base = {
+          tracker_id: asTrackerId('workout_v1'),
           event_id: eventId,
-          tracker_id: asTrackerId('workout'),
           ts: eventTs,
-          payload: enrichedPayload,
-          meta: {},
+          payload,
+          meta: { source: 'manual' as const },
+        };
+        const event = logSet(base, state.events);
+        if (!event) {
+          dispatch({
+            type: 'log/status',
+            status: { text: asLabelText('Set incomplete'), tone: 'warning' },
+          });
+          return;
+        }
+        const eventWithPr = {
+          ...event,
+          payload: buildPrPayload(payload, event.ts),
+        };
+        await insertEvent(eventWithPr);
+        dispatch({
+          type: 'events/set',
+          events: [...state.events, eventWithPr],
         });
-        const nextEvents = (event as WorkoutState).events;
-        dispatch({ type: 'events/set', events: nextEvents });
-        const createdEvent =
-          nextEvents.find(item => item.event_id === eventId) ??
-          nextEvents[nextEvents.length - 1];
-        await insertEvent(createdEvent);
+        dispatch({ type: 'log/status', status: null });
       },
       updateSet: async (
         eventId: EventId,
@@ -406,41 +783,51 @@ const AppInner = () => {
           weight?: number;
           duration?: number;
           distance?: number;
-          pr?: boolean;
-          pr_ts?: number;
         },
       ) => {
-        const existingEvent = state.events.find(
-          event => event.event_id === eventId,
-        );
-        const eventTs = existingEvent?.ts ?? state.logging.logDate.getTime();
-        const enrichedPayload = buildPrPayload(payload, eventTs, existingEvent);
-        const nextState = await updateLoggedSet(
-          { events: state.events } as WorkoutState,
-          eventId,
-          enrichedPayload,
-        );
-        dispatch({ type: 'events/set', events: nextState.events });
-        const updated = nextState.events.find(
-          event => event.event_id === eventId,
-        );
-        if (updated) {
-          await persistUpdatedEvent(updated);
-        }
+        const existing = state.events.find(event => event.event_id === eventId);
+        if (!existing) return;
+        const eventWithPr = {
+          ...existing,
+          payload: buildPrPayload(payload, existing.ts, existing),
+        };
+        await persistUpdatedEvent(eventWithPr);
+        dispatch({
+          type: 'events/set',
+          events: updateLoggedSet(state.events, eventWithPr),
+        });
+        dispatch({ type: 'log/editing', eventId: null });
+        dispatch({
+          type: 'log/status',
+          status: { text: asLabelText('Saved changes'), tone: 'success' },
+        });
       },
       deleteSet: async (eventId: EventId) => {
-        const nextState = deleteLoggedSet(
-          { events: state.events } as WorkoutState,
-          eventId,
-        );
-        dispatch({ type: 'events/set', events: nextState.events });
         await removeEvent(eventId);
+        dispatch({
+          type: 'events/set',
+          events: deleteLoggedSet(state.events, eventId),
+        });
+        dispatch({
+          type: 'log/status',
+          status: { text: asLabelText('Set deleted'), tone: 'neutral' },
+        });
+      },
+      toggleFavorite: async (slug: ExerciseSlug, isFavorite: boolean) => {
+        await setExerciseFavorite(slug, isFavorite);
+        const next = isFavorite
+          ? [...state.catalog.favorites, slug]
+          : state.catalog.favorites.filter(item => item !== slug);
+        dispatch({ type: 'catalog/favorites', favorites: next });
       },
       saveCustomExercise: async (
         values: ExerciseCatalogEntry,
         originalSlug?: ExerciseSlug,
       ) => {
-        await saveCustomExercise(values, { originalSlug });
+        await persistCustomExercise(
+          values,
+          originalSlug ? { originalSlug } : undefined,
+        );
         await refreshCatalog();
       },
       archiveCustomExercise: async (slug: ExerciseSlug, archived: boolean) => {
@@ -464,153 +851,47 @@ const AppInner = () => {
         }
         await refreshCatalog();
       },
-      toggleFavorite: async (slug: ExerciseSlug, next: boolean) => {
-        const favorites = await setExerciseFavorite(slug, next);
-        dispatch({ type: 'catalog/favorites', favorites });
-      },
-      importFitnotes: async () => {
-        const filePath = await pickFitnotesFile();
-        if (!filePath) return;
-        const bundle = await importFitnotesBundle(filePath);
-        const result = await applyFitnotesImport(bundle);
-        if (result.warnings.length > 0) {
-          console.warn('FitNotes import warnings', result.warnings);
-        }
-        dispatch({
-          type: 'import/summary',
-          summary: {
-            source: 'fitnotes',
-            summary: result.summary,
-            warnings: result.warnings,
-          },
-        });
-        pushScreen(asScreenKey('importSummary'));
-        await refreshFromStorage();
-        await refreshCatalog();
+      beginImport,
+      importFitnotes: beginImport,
+      resetImportSummary: () => {
+        dispatch({ type: 'import/summary', summary: null });
       },
     }),
     [
+      beginImport,
+      currentRouteName,
       handleBack,
+      jumpToMainTab,
       pushScreen,
       refreshCatalog,
       refreshFromStorage,
-      replaceScreen,
       state.catalog.entries,
+      state.catalog.favorites,
       state.events,
       state.logging.logDate,
+      state.logging.tab,
       state.suggestions.planner,
+      navigationRef,
     ],
   );
 
-  const logHeaderBackground =
-    state.nav.screen === asScreenKey('log')
-      ? (() => {
-          const selected =
-            state.catalog.entries.find(
-              entry => entry.display_name === state.logging.exerciseName,
-            ) ?? null;
-          return selected
-            ? addAlpha(getMuscleColor(selected.primary_muscle_group), 0.9)
-            : palette.background;
-        })()
-      : palette.background;
+  const baseStatusBarStyle =
+    contrastColor(palette.background) === '#0f172a'
+      ? 'dark-content'
+      : 'light-content';
 
-  const renderScreen = () => {
-    switch (state.nav.screen) {
-      case asScreenKey('home'):
-        return <HomeScreen />;
-      case asScreenKey('browser'):
-        return <ExerciseBrowser />;
-      case asScreenKey('log'): {
-        const selectedExercise =
-          state.catalog.entries.find(
-            entry => entry.display_name === state.logging.exerciseName,
-          ) ?? null;
-        const headerSubtitle = selectedExercise
-          ? asLabelText(
-              `${formatLabel(
-                selectedExercise.primary_muscle_group,
-              )} · ${formatLabel(selectedExercise.modality)}`,
-            )
-          : undefined;
-        const isFavorite = selectedExercise
-          ? state.catalog.favorites.includes(selectedExercise.slug)
-          : false;
-        const headerTone = selectedExercise
-          ? contrastColor(getMuscleColor(selectedExercise.primary_muscle_group))
-          : palette.text;
-        const subtitleTone = toRgba(headerTone, 0.7);
-        return (
-          <View style={{ flex: 1 }}>
-            <ScreenHeader
-              title={
-                (state.logging.exerciseName as unknown as LabelText) ??
-                asLabelText('Log workout')
-              }
-              subtitle={headerSubtitle}
-              onBack={actions.handleBack}
-              tintColor={headerTone}
-              subtitleColor={subtitleTone}
-              rightSlot={
-                selectedExercise ? (
-                  <TouchableOpacity
-                    onPress={() =>
-                      actions.toggleFavorite(selectedExercise.slug, !isFavorite)
-                    }
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      backgroundColor: 'transparent',
-                    }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 18,
-                        color: headerTone,
-                      }}
-                    >
-                      {isFavorite ? '★' : '☆'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null
-              }
-              containerStyle={{
-                backgroundColor: logHeaderBackground,
-                borderColor: addAlpha(logHeaderBackground, 0.7),
-              }}
-            />
-            <LoggingScreen />
-          </View>
-        );
-      }
-      case asScreenKey('history'):
-        return <HistoryScreen />;
-      case asScreenKey('analytics'):
-        return (
-          <View style={{ flex: 1 }}>
-            <ScreenHeader
-              title={asLabelText('Trends')}
-              subtitle={asLabelText('Charts & records')}
-            />
-            <AnalyticsScreen />
-          </View>
-        );
-      case asScreenKey('more'):
-        return <MoreScreen />;
-      case asScreenKey('importSummary'):
-        return <ImportSummaryScreen />;
-      case asScreenKey('calendar'):
-        return <CalendarScreen />;
-    }
-  };
+  const handleNavStateChange = useCallback(() => {
+    const rootState = navigationRef.getRootState();
+    const activeRoute = getActiveRouteName(rootState);
+    setCurrentRouteName(activeRoute);
+  }, [navigationRef]);
 
-  const topInsetColor =
-    state.nav.screen === asScreenKey('log')
-      ? logHeaderBackground
-      : palette.background;
+  const browserGestureEnabled =
+    state.browser.mode === 'groups' &&
+    !state.browser.selectedGroup &&
+    !state.browser.searchExpanded &&
+    !state.browser.menuOpen &&
+    !state.browser.contextEntry;
 
   return (
     <AppProvider state={state} dispatch={dispatch} actions={actions}>
@@ -618,35 +899,40 @@ const AppInner = () => {
         style={{ flex: 1, backgroundColor: palette.background }}
         edges={['left', 'right', 'bottom']}
       >
-        <View style={{ height: insets.top, backgroundColor: topInsetColor }} />
         <View style={{ flex: 1, backgroundColor: palette.background }}>
-          {renderScreen()}
+          <NavigationContainer
+            ref={navigationRef}
+            onReady={handleNavStateChange}
+            onStateChange={handleNavStateChange}
+          >
+            <Stack.Navigator
+              screenOptions={{
+                headerShown: false,
+                gestureEnabled: true,
+                gestureResponseDistance: { horizontal: 24 },
+                fullScreenGestureEnabled: false,
+                statusBarStyle: baseStatusBarStyle,
+                statusBarColor: palette.background,
+              }}
+            >
+              <Stack.Screen name="mainTabs" component={MainTabs} />
+              <Stack.Screen
+                name="browser"
+                component={BrowserRoute}
+                options={{
+                  gestureEnabled: browserGestureEnabled,
+                  headerBackButtonMenuEnabled: false,
+                }}
+              />
+              <Stack.Screen name="log" component={LogRoute} />
+              <Stack.Screen name="history" component={HistoryRoute} />
+              <Stack.Screen
+                name="importSummary"
+                component={ImportSummaryRoute}
+              />
+            </Stack.Navigator>
+          </NavigationContainer>
         </View>
-        <BottomNav
-          current={
-            state.nav.screen === asScreenKey('importSummary')
-              ? asNavKey('more')
-              : state.nav.screen === asScreenKey('calendar') ||
-                state.nav.screen === asScreenKey('browser') ||
-                state.nav.screen === asScreenKey('analytics') ||
-                state.nav.screen === asScreenKey('more')
-              ? (state.nav.screen as unknown as NavKey)
-              : asNavKey('home')
-          }
-          onSelect={key => {
-            if (key === asNavKey('home')) {
-              replaceScreen(asScreenKey('home'));
-            } else if (key === asNavKey('calendar')) {
-              replaceScreen(asScreenKey('calendar'));
-            } else if (key === asNavKey('browser')) {
-              replaceScreen(asScreenKey('browser'));
-            } else if (key === asNavKey('analytics')) {
-              replaceScreen(asScreenKey('analytics'));
-            } else if (key === asNavKey('more')) {
-              replaceScreen(asScreenKey('more'));
-            }
-          }}
-        />
       </SafeAreaView>
     </AppProvider>
   );

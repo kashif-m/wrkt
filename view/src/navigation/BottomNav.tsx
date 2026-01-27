@@ -42,7 +42,14 @@ const BottomNav = ({ current, onSelect }: Props) => {
   ];
 
   return (
-    <View style={navShell}>
+    <View
+      style={[
+        navShell,
+        {
+          paddingTop: spacing(1),
+        },
+      ]}
+    >
       <View style={navBar}>
         <View style={navRow}>
           {items.map(item => {
@@ -82,6 +89,7 @@ const BottomNav = ({ current, onSelect }: Props) => {
 
 const navShell = {
   paddingHorizontal: spacing(2),
+  backgroundColor: palette.background,
 };
 
 const navBar = {
@@ -89,6 +97,7 @@ const navBar = {
   justifyContent: 'space-between' as const,
   alignItems: 'center' as const,
   paddingHorizontal: spacing(1.5),
+  backgroundColor: palette.background,
 };
 
 const navRow = {

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { roundToLocalDay } from '../timePolicy';
@@ -8,7 +8,6 @@ import { getMuscleColor } from '../ui/muscleColors';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
 import PlusIcon from '../assets/plus.svg';
-import TodayIcon from '../assets/today-target.svg';
 import { useAppActions, useAppState } from '../state/appContext';
 import { WorkoutEvent } from '../workoutFlows';
 import {
@@ -28,6 +27,9 @@ import {
 const HomeScreen = () => {
   const state = useAppState();
   const actions = useAppActions();
+  const [expandedExercises, setExpandedExercises] = useState<
+    Record<string, boolean>
+  >({});
   const { events } = state;
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
@@ -194,13 +196,6 @@ const HomeScreen = () => {
           >
             <ChevronRightIcon width={20} height={20} color={palette.text} />
           </TouchableOpacity>
-          <TouchableOpacity
-            onPress={() => actions.setSelectedDate(new Date())}
-            style={[arrowButton, isToday && { opacity: 0.4 }]}
-            disabled={isToday}
-          >
-            <TodayIcon width={18} height={18} color={palette.text} />
-          </TouchableOpacity>
         </View>
       </View>
 
@@ -266,7 +261,7 @@ const HomeScreen = () => {
                   <Text style={sectionLabel}>{section.label}</Text>
                   {section.exercises.map((exercise, index) => (
                     <TouchableOpacity
-                      key={`${exercise.name}-${index}`}
+                      key={`${section.key}-${exercise.name}-${index}`}
                       onPress={() =>
                         actions.openLogForExercise(
                           exercise.name,
@@ -280,26 +275,69 @@ const HomeScreen = () => {
                           listRowDivider,
                       ]}
                     >
-                      <View style={{ flex: 1, gap: spacing(0.5) }}>
-                        <Text style={exerciseTitle}>{exercise.name}</Text>
-                        <View style={{ gap: spacing(0.25) }}>
-                          {exercise.sets
-                            .slice(0, 4)
-                            .map((setItem, chunkIndex) => (
-                              <Text
-                                key={`${exercise.name}-${chunkIndex}`}
-                                style={exerciseMeta}
-                              >
-                                {formatSetLabel(setItem)}
-                              </Text>
-                            ))}
-                          {exercise.sets.length > 4 ? (
-                            <Text style={exerciseMeta}>
-                              + {countHiddenSets(exercise.sets)} more sets
-                            </Text>
-                          ) : null}
-                        </View>
-                      </View>
+                      {(() => {
+                        const exerciseKey = `${section.key}-${exercise.name}`;
+                        const isExpanded = Boolean(
+                          expandedExercises[exerciseKey],
+                        );
+                        const hasOverflow =
+                          exercise.sets.length > MAX_SET_PREVIEW;
+                        const visibleSets = isExpanded
+                          ? exercise.sets
+                          : exercise.sets.slice(0, MAX_SET_PREVIEW);
+                        return (
+                          <View style={{ flex: 1, gap: spacing(0.5) }}>
+                            <Text style={exerciseTitle}>{exercise.name}</Text>
+                            <View style={{ gap: spacing(0.25) }}>
+                              {visibleSets.map((setItem, chunkIndex) => (
+                                <Text
+                                  key={`${exercise.name}-${chunkIndex}`}
+                                  style={exerciseMeta}
+                                >
+                                  {formatSetLabel(setItem)}
+                                </Text>
+                              ))}
+                              {hasOverflow && !isExpanded ? (
+                                <View style={moreSetsRow}>
+                                  <Text style={exerciseMeta}>
+                                    {(() => {
+                                      const hiddenCount = countHiddenSets(
+                                        exercise.sets,
+                                        MAX_SET_PREVIEW,
+                                      );
+                                      return `+ ${hiddenCount} more ${
+                                        hiddenCount === 1 ? 'set' : 'sets'
+                                      }`;
+                                    })()}
+                                  </Text>
+                                  <TouchableOpacity
+                                    onPress={() =>
+                                      setExpandedExercises(previous => ({
+                                        ...previous,
+                                        [exerciseKey]: true,
+                                      }))
+                                    }
+                                  >
+                                    <Text style={showMoreLink}>Show all</Text>
+                                  </TouchableOpacity>
+                                </View>
+                              ) : null}
+                              {hasOverflow && isExpanded ? (
+                                <TouchableOpacity
+                                  onPress={() =>
+                                    setExpandedExercises(previous => ({
+                                      ...previous,
+                                      [exerciseKey]: false,
+                                    }))
+                                  }
+                                >
+                                  <Text style={showMoreLink}>Show fewer</Text>
+                                </TouchableOpacity>
+                              ) : null}
+                            </View>
+                          </View>
+                        );
+                      })()}
                       <View style={setCountPill}>
                         <Text style={setCountText}>{`${exercise.totalSets} ${
                           exercise.totalSets === 1 ? 'set' : 'sets'
@@ -355,6 +393,7 @@ const PrimaryAction = ({
 );
 
 type SetChunk = { description: DisplayLabel; count: number };
+const MAX_SET_PREVIEW = 4;
 
 const formatMuscleLabel = (label: MuscleGroup): DisplayLabel =>
   asDisplayLabel(
@@ -570,6 +609,18 @@ const setCountText = {
   fontWeight: '600' as const,
 };
 
+const moreSetsRow = {
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: spacing(0.5),
+};
+
+const showMoreLink = {
+  color: palette.primary,
+  fontSize: 12,
+  fontWeight: '600' as const,
+};
+
 const MusclePie = ({
   data,
   radius = 36,
@@ -638,7 +689,7 @@ const describeArc = (
   ].join(' ');
 };
 
-const countHiddenSets = (chunks: SetChunk[]) =>
-  chunks.slice(5).reduce((total, chunk) => total + chunk.count, 0);
+const countHiddenSets = (chunks: SetChunk[], maxShown: number) =>
+  chunks.slice(maxShown).reduce((total, chunk) => total + chunk.count, 0);
 
 export default HomeScreen;

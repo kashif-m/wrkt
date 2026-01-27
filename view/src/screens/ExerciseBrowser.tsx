@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,11 @@ import {
   ScrollView,
   TouchableWithoutFeedback,
 } from 'react-native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  createNativeStackNavigator,
+  NativeStackNavigationProp,
+} from '@react-navigation/native-stack';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
 import {
   ExerciseName,
@@ -47,24 +52,30 @@ import {
 } from '../state/appContext';
 import { RootState } from '../state/appState';
 
-const ExerciseBrowser = () => {
+type BrowserStackParamList = {
+  list: undefined;
+  manage: undefined;
+  form: undefined;
+};
+
+const BrowserStack = createNativeStackNavigator<BrowserStackParamList>();
+
+const ExerciseBrowserListScreen = () => {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const actions = useAppActions();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
   const catalog = state.catalog.entries;
-  const customExercises = state.catalog.custom;
   const favoriteSlugs = state.catalog.favorites;
-  const {
-    mode,
-    selectedGroup,
-    query,
-    formEditing,
-    searchExpanded,
-    menuOpen,
-    contextEntry,
-    activeTab,
-    formDraft,
-  } = state.browser;
+  const { selectedGroup, query, searchExpanded, menuOpen, activeTab } =
+    state.browser;
+
+  useFocusEffect(
+    useCallback(() => {
+      dispatch({ type: 'browser/mode', mode: 'groups' });
+    }, [dispatch]),
+  );
 
   const muscleGroups = useMemo(() => {
     const groups = Array.from(
@@ -112,6 +123,8 @@ const ExerciseBrowser = () => {
     [catalog],
   );
 
+  const isGroupView = !selectedGroup;
+
   const visibleExercises = useMemo(() => {
     if (activeTab === 'favorites') return favoriteExercises;
     if (selectedGroup) return filteredExercises;
@@ -125,32 +138,13 @@ const ExerciseBrowser = () => {
   ]);
 
   const headerTitle = useMemo((): LabelText => {
-    if (mode === 'manage') return asLabelText('Manage Exercises');
-    if (mode === 'form')
-      return asLabelText(formEditing ? 'Edit Exercise' : 'Add Exercise');
-    if (mode === 'exercises')
-      return asLabelText(selectedGroup?.replace(/_/g, ' ') ?? 'Exercises');
+    if (selectedGroup) return asLabelText(formatLabel(selectedGroup));
     return asLabelText('Exercises');
-  }, [mode, selectedGroup, formEditing]);
-
-  const updateFormDraft = useCallback(
-    (partial: Partial<typeof formDraft>) => {
-      dispatch({
-        type: 'browser/formDraft',
-        draft: { ...formDraft, ...partial },
-      });
-    },
-    [dispatch, formDraft],
-  );
+  }, [selectedGroup]);
 
   const collapseSearch = () => {
     dispatch({ type: 'browser/search', expanded: false });
     dispatch({ type: 'browser/query', query: asSearchQuery('') });
-  };
-
-  const handleFavoriteToggle = async (slug: ExerciseSlug) => {
-    const isFavorite = favoriteSlugs.includes(slug);
-    await actions.toggleFavorite(slug, !isFavorite);
   };
 
   const renderGroupTag = (group: MuscleGroup) => {
@@ -231,14 +225,14 @@ const ExerciseBrowser = () => {
     </TouchableOpacity>
   );
 
-  const showSearch = mode !== 'manage';
+  const showSearch = true;
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
       <ScreenHeader
         title={headerTitle}
         subtitle={
-          mode === 'groups'
+          isGroupView
             ? activeTab === 'favorites'
               ? asLabelText('Favorites')
               : asLabelText('All exercises')
@@ -274,7 +268,7 @@ const ExerciseBrowser = () => {
                 />
               </TouchableOpacity>
             ) : null}
-            {mode === 'groups' ? (
+            {isGroupView ? (
               <TouchableOpacity
                 onPress={() => dispatch({ type: 'browser/menu', open: true })}
                 style={iconButton}
@@ -286,7 +280,7 @@ const ExerciseBrowser = () => {
         }
       />
 
-      {menuOpen && mode === 'groups' && !searchExpanded && (
+      {menuOpen && isGroupView && !searchExpanded && (
         <TouchableWithoutFeedback
           onPress={() => dispatch({ type: 'browser/menu', open: false })}
         >
@@ -311,7 +305,7 @@ const ExerciseBrowser = () => {
               <TouchableOpacity
                 onPress={() => {
                   dispatch({ type: 'browser/menu', open: false });
-                  dispatch({ type: 'browser/mode', mode: 'manage' });
+                  navigation.navigate('manage');
                 }}
                 style={menuItem}
               >
@@ -326,472 +320,176 @@ const ExerciseBrowser = () => {
         </TouchableWithoutFeedback>
       )}
 
-      {contextEntry ? (
-        <TouchableWithoutFeedback
-          onPress={() => dispatch({ type: 'browser/context', context: null })}
-        >
-          <View style={sheetOverlay}>
-            <TouchableWithoutFeedback>
-              <View style={sheetCard}>
-                <View
+      <ExerciseContextSheet
+        onManageNavigate={() => navigation.navigate('manage')}
+        onFormNavigate={() => navigation.navigate('form')}
+      />
+
+      <>
+        {searchExpanded && (
+          <View style={searchContainer}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: spacing(1),
+              }}
+            >
+              <TextInput
+                placeholder="Search"
+                placeholderTextColor={palette.mutedText}
+                value={query}
+                onChangeText={value =>
+                  dispatch({
+                    type: 'browser/query',
+                    query: asSearchQuery(value),
+                  })
+                }
+                style={[searchInput, { flex: 1 }]}
+                autoFocus
+              />
+              <TouchableOpacity onPress={collapseSearch}>
+                <Text
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
+                    color: palette.primary,
+                    fontWeight: '700' as const,
                   }}
                 >
-                  <Text
-                    style={{
-                      color: palette.text,
-                      fontWeight: '700' as const,
-                      fontSize: 16,
-                    }}
-                  >
-                    {contextEntry.entry.display_name}
-                  </Text>
-                  {!contextEntry.custom ? (
-                    <TouchableOpacity
-                      onPress={() =>
-                        handleFavoriteToggle(contextEntry.entry.slug)
-                      }
-                    >
-                      <Text
-                        style={{
-                          color: favoriteSlugs.includes(contextEntry.entry.slug)
-                            ? palette.primary
-                            : palette.mutedText,
-                          fontSize: 18,
-                        }}
-                      >
-                        {favoriteSlugs.includes(contextEntry.entry.slug)
-                          ? '★'
-                          : '☆'}
-                      </Text>
-                    </TouchableOpacity>
-                  ) : null}
-                </View>
-
-                {!contextEntry.custom ? (
-                  <>
-                    <TouchableOpacity
-                      onPress={() => {
-                        actions.openLogForExercise(
-                          contextEntry.entry.display_name,
-                          state.selectedDate,
-                          'Track',
-                        );
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text style={sheetActionLabel}>Select exercise</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        dispatch({ type: 'browser/mode', mode: 'manage' });
-                        dispatch({ type: 'browser/menu', open: false });
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text style={sheetActionLabel}>Manage custom</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        handleFavoriteToggle(contextEntry.entry.slug);
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text style={sheetActionLabel}>
-                        {favoriteSlugs.includes(contextEntry.entry.slug)
-                          ? 'Remove favorite'
-                          : 'Add to favorites'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        await actions.deleteExercise(contextEntry.entry);
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text
-                        style={[sheetActionLabel, { color: palette.danger }]}
-                      >
-                        Hide exercise
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                ) : (
-                  <>
-                    <TouchableOpacity
-                      onPress={() => {
-                        dispatch({
-                          type: 'browser/form',
-                          entry: contextEntry.entry,
-                        });
-                        dispatch({
-                          type: 'browser/returnMode',
-                          mode: 'manage',
-                        });
-                        dispatch({
-                          type: 'browser/formDraft',
-                          draft: draftFromEntry(contextEntry.entry),
-                        });
-                        dispatch({ type: 'browser/mode', mode: 'form' });
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text style={sheetActionLabel}>Edit exercise</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        await actions.archiveCustomExercise(
-                          contextEntry.entry.slug,
-                          !contextEntry.archived,
-                        );
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text style={sheetActionLabel}>
-                        {contextEntry.archived ? 'Restore' : 'Archive'}
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={async () => {
-                        await actions.deleteExercise(contextEntry.entry);
-                        dispatch({ type: 'browser/context', context: null });
-                      }}
-                      style={sheetAction}
-                    >
-                      <Text
-                        style={[sheetActionLabel, { color: palette.danger }]}
-                      >
-                        Delete exercise
-                      </Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                <TouchableOpacity
-                  onPress={() =>
-                    dispatch({ type: 'browser/context', context: null })
-                  }
-                  style={[sheetAction, { marginTop: spacing(0.5) }]}
-                >
-                  <Text
-                    style={{
-                      color: palette.mutedText,
-                      fontWeight: '600' as const,
-                      textAlign: 'center',
-                    }}
-                  >
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </TouchableWithoutFeedback>
-          </View>
-        </TouchableWithoutFeedback>
-      ) : null}
-
-      {mode === 'manage' ? (
-        <ManageCustomExercises
-          active={customExercises
-            .filter(entry => !entry.archived)
-            .sort((a, b) => a.display_name.localeCompare(b.display_name))}
-          archived={customExercises
-            .filter(entry => entry.archived)
-            .sort((a, b) => a.display_name.localeCompare(b.display_name))}
-          searchQuery={query}
-          onSearch={value =>
-            dispatch({ type: 'browser/query', query: asSearchQuery(value) })
-          }
-          onAdd={() => {
-            dispatch({ type: 'browser/form', entry: null });
-            dispatch({ type: 'browser/returnMode', mode: 'manage' });
-            dispatch({ type: 'browser/search', expanded: false });
-            dispatch({ type: 'browser/menu', open: false });
-            dispatch({
-              type: 'browser/formDraft',
-              draft: {
-                displayName: asExerciseName(''),
-                slug: asExerciseSlug(''),
-                primary: asMuscleGroup('chest'),
-                secondary: [],
-                modality: asModality('strength'),
-                loggingMode: asLoggingMode('reps_weight'),
-                minLoad: asNumericInput(''),
-                maxLoad: asNumericInput(''),
-                tags: [],
-                saving: false,
-                error: null,
-              },
-            });
-            dispatch({ type: 'browser/mode', mode: 'form' });
-          }}
-          onLongPress={(entry, archived) => {
-            dispatch({ type: 'browser/menu', open: false });
-            dispatch({ type: 'browser/search', expanded: false });
-            dispatch({
-              type: 'browser/context',
-              context: { entry, archived, custom: true },
-            });
-          }}
-        />
-      ) : mode === 'form' ? (
-        <ExerciseForm
-          draft={formDraft}
-          updateDraft={updateFormDraft}
-          customPrimaryGroups={collectCustomGroups(catalog)}
-          onCancel={() =>
-            dispatch({
-              type: 'browser/mode',
-              mode: state.browser.returnMode,
-            })
-          }
-          onSubmit={async values => {
-            updateFormDraft({ saving: true, error: null });
-            try {
-              await actions.saveCustomExercise(
-                {
-                  ...values,
-                  source: asExerciseSource('custom'),
-                  archived: formEditing?.archived,
-                },
-                formEditing?.slug,
-              );
-              dispatch({ type: 'browser/form', entry: null });
-              dispatch({
-                type: 'browser/mode',
-                mode: state.browser.returnMode,
-              });
-              updateFormDraft({
-                displayName: asExerciseName(''),
-                slug: asExerciseSlug(''),
-                primary: asMuscleGroup('chest'),
-                secondary: [],
-                modality: asModality('strength'),
-                loggingMode: asLoggingMode('reps_weight'),
-                minLoad: asNumericInput(''),
-                maxLoad: asNumericInput(''),
-                tags: [],
-                saving: false,
-                error: null,
-              });
-            } catch (error) {
-              updateFormDraft({
-                saving: false,
-                error: asErrorMessage(
-                  error instanceof Error
-                    ? error.message
-                    : 'Failed to save exercise.',
-                ),
-              });
-            }
-          }}
-        />
-      ) : (
-        <>
-          {searchExpanded && (
-            <View style={searchContainer}>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: spacing(1),
-                }}
-              >
-                <TextInput
-                  placeholder="Search"
-                  placeholderTextColor={palette.mutedText}
-                  value={query}
-                  onChangeText={value =>
-                    dispatch({
-                      type: 'browser/query',
-                      query: asSearchQuery(value),
-                    })
-                  }
-                  style={[searchInput, { flex: 1 }]}
-                  autoFocus
-                />
-                <TouchableOpacity onPress={collapseSearch}>
-                  <Text
-                    style={{
-                      color: palette.primary,
-                      fontWeight: '700' as const,
-                    }}
-                  >
-                    Cancel
-                  </Text>
-                </TouchableOpacity>
-              </View>
-              <ScrollView
-                contentContainerStyle={{
-                  paddingTop: spacing(1.5),
-                  paddingBottom: spacing(8),
-                  gap: spacing(1.5),
-                }}
-                keyboardShouldPersistTaps="handled"
-              >
-                {query.trim().length === 0 ? (
-                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                    Search muscle groups or exercises.
-                  </Text>
-                ) : (
-                  <>
-                    <View style={{ gap: spacing(1) }}>
-                      {filteredGroups.length === 0 ? (
-                        <Text
-                          style={{ color: palette.mutedText, fontSize: 12 }}
-                        >
-                          No muscle groups found.
-                        </Text>
-                      ) : (
-                        <View style={groupTagWrap}>
-                          {filteredGroups.map(group => renderGroupTag(group))}
-                        </View>
-                      )}
-                    </View>
-                    <View style={{ gap: spacing(1) }}>
-                      <SectionHeading label={asLabelText('Exercises')} />
-                      {searchExercises.length === 0 ? (
-                        <Text
-                          style={{ color: palette.mutedText, fontSize: 12 }}
-                        >
-                          No exercises found.
-                        </Text>
-                      ) : (
-                        searchExercises.map(item => (
-                          <View
-                            key={item.slug}
-                            style={{ marginBottom: spacing(0.5) }}
-                          >
-                            {renderExerciseRow({
-                              item,
-                            } as ListRenderItemInfo<ExerciseCatalogEntry>)}
-                          </View>
-                        ))
-                      )}
-                    </View>
-                  </>
-                )}
-              </ScrollView>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
             </View>
-          )}
-          {mode === 'groups' && !searchExpanded && (
-            <View style={tabRow}>
-              {(['all', 'favorites'] as const).map(tab => (
-                <TouchableOpacity
-                  key={tab}
-                  onPress={() => dispatch({ type: 'browser/tab', tab })}
-                  style={[tabButton, activeTab === tab && tabButtonActive]}
-                >
-                  <Text
-                    style={{
-                      color: activeTab === tab ? '#0f172a' : palette.text,
-                      fontWeight: '600' as const,
-                    }}
-                  >
-                    {tab === 'all' ? 'All' : 'Favorites'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-          {!searchExpanded && mode === 'groups' ? (
-            <FlatList<ExerciseCatalogEntry>
-              data={visibleExercises}
-              keyExtractor={item => item.slug}
-              renderItem={renderExerciseRow}
+            <ScrollView
               contentContainerStyle={{
-                paddingHorizontal: spacing(2),
+                paddingTop: spacing(1.5),
                 paddingBottom: spacing(8),
                 gap: spacing(1.5),
               }}
-              ListHeaderComponent={
+              keyboardShouldPersistTaps="handled"
+            >
+              {query.trim().length === 0 ? (
+                <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                  Search muscle groups or exercises.
+                </Text>
+              ) : (
                 <>
-                  {activeTab === 'all' ? (
-                    <View style={{ gap: spacing(1) }}>
-                      {filteredGroups.length === 0 ? (
-                        <Text
-                          style={{ color: palette.mutedText, fontSize: 12 }}
-                        >
-                          No muscle groups available.
-                        </Text>
-                      ) : (
-                        <View style={groupTagWrap}>
-                          {filteredGroups.map(group => renderGroupTag(group))}
-                        </View>
-                      )}
-                    </View>
-                  ) : null}
                   <View style={{ gap: spacing(1) }}>
-                    <SectionHeading
-                      label={asLabelText(
-                        selectedGroup
-                          ? `${formatLabel(selectedGroup)} exercises`
-                          : 'Exercises',
-                      )}
-                    />
+                    {filteredGroups.length === 0 ? (
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        No muscle groups found.
+                      </Text>
+                    ) : (
+                      <View style={groupTagWrap}>
+                        {filteredGroups.map(group => renderGroupTag(group))}
+                      </View>
+                    )}
+                  </View>
+                  <View style={{ gap: spacing(1) }}>
+                    <SectionHeading label={asLabelText('Exercises')} />
+                    {searchExercises.length === 0 ? (
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        No exercises found.
+                      </Text>
+                    ) : (
+                      searchExercises.map(item => (
+                        <View
+                          key={item.slug}
+                          style={{ marginBottom: spacing(0.5) }}
+                        >
+                          {renderExerciseRow({
+                            item,
+                          } as ListRenderItemInfo<ExerciseCatalogEntry>)}
+                        </View>
+                      ))
+                    )}
                   </View>
                 </>
-              }
-              ListEmptyComponent={
-                <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                  No exercises available.
+              )}
+            </ScrollView>
+          </View>
+        )}
+        {isGroupView && !searchExpanded && (
+          <View style={tabRow}>
+            {(['all', 'favorites'] as const).map(tab => (
+              <TouchableOpacity
+                key={tab}
+                onPress={() => dispatch({ type: 'browser/tab', tab })}
+                style={[tabButton, activeTab === tab && tabButtonActive]}
+              >
+                <Text
+                  style={{
+                    color: activeTab === tab ? '#0f172a' : palette.text,
+                    fontWeight: '600' as const,
+                  }}
+                >
+                  {tab === 'all' ? 'All' : 'Favorites'}
                 </Text>
-              }
-              initialNumToRender={20}
-              maxToRenderPerBatch={20}
-              windowSize={7}
-              removeClippedSubviews
-            />
-          ) : mode === 'exercises' ? (
-            <FlatList<ExerciseCatalogEntry>
-              data={filteredExercises}
-              keyExtractor={item => item.slug}
-              renderItem={renderExerciseRow}
-              contentContainerStyle={{ paddingBottom: spacing(8) }}
-              ListEmptyComponent={
-                <View style={{ padding: spacing(2) }}>
-                  <Text style={{ color: palette.mutedText }}>
-                    No exercises found for this group.
-                  </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        )}
+        {!searchExpanded ? (
+          <FlatList<ExerciseCatalogEntry>
+            data={selectedGroup ? filteredExercises : visibleExercises}
+            keyExtractor={item => item.slug}
+            renderItem={renderExerciseRow}
+            contentContainerStyle={{
+              paddingHorizontal: spacing(2),
+              paddingBottom: spacing(8),
+              gap: spacing(1.5),
+            }}
+            ListHeaderComponent={
+              <>
+                {activeTab === 'all' && isGroupView ? (
+                  <View style={{ gap: spacing(1) }}>
+                    {filteredGroups.length === 0 ? (
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        No muscle groups available.
+                      </Text>
+                    ) : (
+                      <View style={groupTagWrap}>
+                        {filteredGroups.map(group => renderGroupTag(group))}
+                      </View>
+                    )}
+                  </View>
+                ) : null}
+                <View style={{ gap: spacing(1) }}>
+                  <SectionHeading
+                    label={asLabelText(
+                      selectedGroup
+                        ? `${formatLabel(selectedGroup)} exercises`
+                        : 'Exercises',
+                    )}
+                  />
                 </View>
-              }
-            />
-          ) : null}
-        </>
-      )}
-      {mode === 'groups' && !searchExpanded && (
+              </>
+            }
+            ListEmptyComponent={
+              <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                {selectedGroup
+                  ? 'No exercises found for this group.'
+                  : 'No exercises available.'}
+              </Text>
+            }
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={7}
+            removeClippedSubviews
+          />
+        ) : null}
+      </>
+      {isGroupView && !searchExpanded && (
         <View style={{ padding: spacing(2) }}>
           <TouchableOpacity
             onPress={() => {
               dispatch({ type: 'browser/form', entry: null });
-              dispatch({ type: 'browser/returnMode', mode: 'groups' });
               dispatch({ type: 'browser/search', expanded: false });
               dispatch({ type: 'browser/menu', open: false });
               dispatch({
                 type: 'browser/formDraft',
-                draft: {
-                  displayName: asExerciseName(''),
-                  slug: asExerciseSlug(''),
-                  primary: asMuscleGroup('chest'),
-                  secondary: [],
-                  modality: asModality('strength'),
-                  loggingMode: asLoggingMode('reps_weight'),
-                  minLoad: asNumericInput(''),
-                  maxLoad: asNumericInput(''),
-                  tags: [],
-                  saving: false,
-                  error: null,
-                },
+                draft: emptyFormDraft(),
               });
-              dispatch({ type: 'browser/mode', mode: 'form' });
+              navigation.navigate('form');
             }}
             style={primaryButton}
           >
@@ -804,6 +502,329 @@ const ExerciseBrowser = () => {
     </View>
   );
 };
+
+const ExerciseContextSheet = ({
+  onManageNavigate,
+  onFormNavigate,
+}: {
+  onManageNavigate: () => void;
+  onFormNavigate: () => void;
+}) => {
+  const state = useAppState();
+  const dispatch = useAppDispatch();
+  const actions = useAppActions();
+  const favoriteSlugs = state.catalog.favorites;
+  const contextEntry = state.browser.contextEntry;
+  if (!contextEntry) return null;
+
+  const handleFavoriteToggle = async (slug: ExerciseSlug) => {
+    const isFavorite = favoriteSlugs.includes(slug);
+    await actions.toggleFavorite(slug, !isFavorite);
+  };
+
+  return (
+    <TouchableWithoutFeedback
+      onPress={() => dispatch({ type: 'browser/context', context: null })}
+    >
+      <View style={sheetOverlay}>
+        <TouchableWithoutFeedback>
+          <View style={sheetCard}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <Text
+                style={{
+                  color: palette.text,
+                  fontWeight: '700' as const,
+                  fontSize: 16,
+                }}
+              >
+                {contextEntry.entry.display_name}
+              </Text>
+              {!contextEntry.custom ? (
+                <TouchableOpacity
+                  onPress={() => handleFavoriteToggle(contextEntry.entry.slug)}
+                >
+                  <Text
+                    style={{
+                      color: favoriteSlugs.includes(contextEntry.entry.slug)
+                        ? palette.primary
+                        : palette.mutedText,
+                      fontSize: 18,
+                    }}
+                  >
+                    {favoriteSlugs.includes(contextEntry.entry.slug)
+                      ? '★'
+                      : '☆'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+
+            {!contextEntry.custom ? (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    actions.openLogForExercise(
+                      contextEntry.entry.display_name,
+                      state.selectedDate,
+                      'Track',
+                    );
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={sheetActionLabel}>Select exercise</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    onManageNavigate();
+                    dispatch({ type: 'browser/menu', open: false });
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={sheetActionLabel}>Manage custom</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    handleFavoriteToggle(contextEntry.entry.slug);
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={sheetActionLabel}>
+                    {favoriteSlugs.includes(contextEntry.entry.slug)
+                      ? 'Remove favorite'
+                      : 'Add to favorites'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    await actions.deleteExercise(contextEntry.entry);
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={[sheetActionLabel, { color: palette.danger }]}>
+                    Hide exercise
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  onPress={() => {
+                    dispatch({
+                      type: 'browser/form',
+                      entry: contextEntry.entry,
+                    });
+                    dispatch({
+                      type: 'browser/formDraft',
+                      draft: draftFromEntry(contextEntry.entry),
+                    });
+                    onFormNavigate();
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={sheetActionLabel}>Edit exercise</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    await actions.archiveCustomExercise(
+                      contextEntry.entry.slug,
+                      !contextEntry.archived,
+                    );
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={sheetActionLabel}>
+                    {contextEntry.archived ? 'Restore' : 'Archive'}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={async () => {
+                    await actions.deleteExercise(contextEntry.entry);
+                    dispatch({ type: 'browser/context', context: null });
+                  }}
+                  style={sheetAction}
+                >
+                  <Text style={[sheetActionLabel, { color: palette.danger }]}>
+                    Delete exercise
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+
+            <TouchableOpacity
+              onPress={() =>
+                dispatch({ type: 'browser/context', context: null })
+              }
+              style={[sheetAction, { marginTop: spacing(0.5) }]}
+            >
+              <Text
+                style={{
+                  color: palette.mutedText,
+                  fontWeight: '600' as const,
+                  textAlign: 'center',
+                }}
+              >
+                Cancel
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableWithoutFeedback>
+      </View>
+    </TouchableWithoutFeedback>
+  );
+};
+
+const ExerciseBrowserManageScreen = () => {
+  const state = useAppState();
+  const dispatch = useAppDispatch();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
+  const customExercises = state.catalog.custom;
+
+  useFocusEffect(
+    useCallback(() => {
+      dispatch({ type: 'browser/mode', mode: 'manage' });
+    }, [dispatch]),
+  );
+
+  const handleAdd = () => {
+    dispatch({ type: 'browser/form', entry: null });
+    dispatch({ type: 'browser/search', expanded: false });
+    dispatch({ type: 'browser/menu', open: false });
+    dispatch({
+      type: 'browser/formDraft',
+      draft: emptyFormDraft(),
+    });
+    navigation.navigate('form');
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
+      <ScreenHeader
+        title={asLabelText('Manage Exercises')}
+        onBack={() => navigation.goBack()}
+      />
+      <ExerciseContextSheet
+        onManageNavigate={() => navigation.navigate('manage')}
+        onFormNavigate={() => navigation.navigate('form')}
+      />
+      <ManageCustomExercises
+        active={customExercises
+          .filter(entry => !entry.archived)
+          .sort((a, b) => a.display_name.localeCompare(b.display_name))}
+        archived={customExercises
+          .filter(entry => entry.archived)
+          .sort((a, b) => a.display_name.localeCompare(b.display_name))}
+        searchQuery={state.browser.query}
+        onSearch={value =>
+          dispatch({ type: 'browser/query', query: asSearchQuery(value) })
+        }
+        onAdd={handleAdd}
+        onLongPress={(entry, archived) => {
+          dispatch({ type: 'browser/menu', open: false });
+          dispatch({ type: 'browser/search', expanded: false });
+          dispatch({
+            type: 'browser/context',
+            context: { entry, archived, custom: true },
+          });
+        }}
+      />
+    </View>
+  );
+};
+
+const ExerciseBrowserFormScreen = () => {
+  const state = useAppState();
+  const dispatch = useAppDispatch();
+  const actions = useAppActions();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
+  const formDraft = state.browser.formDraft;
+  const formEditing = state.browser.formEditing;
+
+  useFocusEffect(
+    useCallback(() => {
+      dispatch({ type: 'browser/mode', mode: 'form' });
+    }, [dispatch]),
+  );
+
+  const updateFormDraft = useCallback(
+    (partial: Partial<typeof formDraft>) => {
+      dispatch({
+        type: 'browser/formDraft',
+        draft: { ...formDraft, ...partial },
+      });
+    },
+    [dispatch, formDraft],
+  );
+
+  const handleCancel = () => {
+    dispatch({ type: 'browser/form', entry: null });
+    navigation.goBack();
+  };
+
+  return (
+    <View style={{ flex: 1, backgroundColor: palette.background }}>
+      <ScreenHeader
+        title={asLabelText(formEditing ? 'Edit Exercise' : 'Add Exercise')}
+        onBack={handleCancel}
+      />
+      <ExerciseForm
+        draft={formDraft}
+        updateDraft={updateFormDraft}
+        customPrimaryGroups={collectCustomGroups(state.catalog.entries)}
+        onCancel={handleCancel}
+        onSubmit={async values => {
+          updateFormDraft({ saving: true, error: null });
+          try {
+            await actions.saveCustomExercise(
+              {
+                ...values,
+                source: asExerciseSource('custom'),
+                archived: formEditing?.archived,
+              },
+              formEditing?.slug,
+            );
+            dispatch({ type: 'browser/form', entry: null });
+            updateFormDraft(emptyFormDraft());
+            navigation.goBack();
+          } catch (error) {
+            updateFormDraft({
+              saving: false,
+              error: asErrorMessage(
+                error instanceof Error
+                  ? error.message
+                  : 'Failed to save exercise.',
+              ),
+            });
+          }
+        }}
+      />
+    </View>
+  );
+};
+
+const ExerciseBrowserStack = () => (
+  <BrowserStack.Navigator screenOptions={{ headerShown: false }}>
+    <BrowserStack.Screen name="list" component={ExerciseBrowserListScreen} />
+    <BrowserStack.Screen
+      name="manage"
+      component={ExerciseBrowserManageScreen}
+    />
+    <BrowserStack.Screen name="form" component={ExerciseBrowserFormScreen} />
+  </BrowserStack.Navigator>
+);
 
 const formatLabel = (
   label: ExerciseName | MuscleGroup | SearchQuery | Modality | LoggingMode,
@@ -854,6 +875,20 @@ const ensureCustomPrimaryTag = (primary: MuscleGroup, tags: Tag[]) => {
   if (primary in muscleColorMap) return tags;
   return upsertTag(tags, asTag(formatLabel(primary)));
 };
+
+const emptyFormDraft = (): BrowserFormDraft => ({
+  displayName: asExerciseName(''),
+  slug: asExerciseSlug(''),
+  primary: asMuscleGroup('chest'),
+  secondary: [],
+  modality: asModality('strength'),
+  loggingMode: asLoggingMode('reps_weight'),
+  minLoad: asNumericInput(''),
+  maxLoad: asNumericInput(''),
+  tags: [],
+  saving: false,
+  error: null,
+});
 
 const draftFromEntry = (entry: ExerciseCatalogEntry): BrowserFormDraft => ({
   displayName: entry.display_name ?? asExerciseName(''),
@@ -993,8 +1028,15 @@ const ExerciseForm = ({
     saving,
     error,
   } = draft;
+  const [displayNameInput, setDisplayNameInput] = useState(
+    displayName as string,
+  );
   const [customGroupInput, setCustomGroupInput] = useState('');
   const [localCustomGroups, setLocalCustomGroups] = useState<MuscleGroup[]>([]);
+
+  useEffect(() => {
+    setDisplayNameInput(displayName as string);
+  }, [displayName]);
 
   const muscleOptions = useMemo(() => {
     const baseGroups = Object.keys(muscleColorMap);
@@ -1022,6 +1064,14 @@ const ExerciseForm = ({
     'distance_weight',
   ];
 
+  const commitDisplayName = (value: string) => {
+    const formatted = formatExerciseNameInput(value);
+    updateDraft({
+      displayName: asExerciseName(formatted),
+      slug: asExerciseSlug(slugify(formatted)),
+    });
+  };
+
   const handleAddCustomGroup = () => {
     const raw = customGroupInput.trim();
     if (!raw) return;
@@ -1038,7 +1088,7 @@ const ExerciseForm = ({
 
   const handleSave = async () => {
     updateDraft({ error: null });
-    const normalizedName = formatExerciseNameInput(displayName.trim());
+    const normalizedName = formatExerciseNameInput(displayNameInput.trim());
     if (!normalizedName) {
       updateDraft({ error: asErrorMessage('Exercise name is required.') });
       return;
@@ -1050,6 +1100,10 @@ const ExerciseForm = ({
       return;
     }
     const generatedSlug = slugify(normalizedName);
+    updateDraft({
+      displayName: asExerciseName(normalizedName),
+      slug: asExerciseSlug(generatedSlug || slugify(String(slug))),
+    });
     const nextTags = ensureCustomPrimaryTag(primary, tags);
     await onSubmit({
       display_name: asExerciseName(normalizedName),
@@ -1073,14 +1127,9 @@ const ExerciseForm = ({
       >
         <Text style={formLabel}>Exercise name</Text>
         <TextInput
-          value={displayName}
-          onChangeText={value => {
-            const formatted = formatExerciseNameInput(value);
-            updateDraft({
-              displayName: asExerciseName(formatted),
-              slug: asExerciseSlug(slugify(formatted)),
-            });
-          }}
+          value={displayNameInput}
+          onChangeText={setDisplayNameInput}
+          onEndEditing={() => commitDisplayName(displayNameInput)}
           autoCapitalize="words"
           style={formInput}
           placeholder="Back Squat"
@@ -1438,4 +1487,4 @@ const sheetActionLabel = {
 const countExercises = (group: MuscleGroup, catalog: ExerciseCatalogEntry[]) =>
   catalog.filter(entry => entry.primary_muscle_group === group).length;
 
-export default ExerciseBrowser;
+export default ExerciseBrowserStack;
