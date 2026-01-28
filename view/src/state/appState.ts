@@ -51,10 +51,103 @@ export type LoggingFields = {
   distance: NumericInput;
 };
 
+// O(1) Indexes
+export type EventIndexes = {
+  byId: Record<EventId, WorkoutEvent>;
+  byExercise: Record<ExerciseName, EventId[]>;
+};
+
+const buildIndexes = (events: WorkoutEvent[]): EventIndexes => {
+  const byId: Record<EventId, WorkoutEvent> = {};
+  const byExercise: Record<ExerciseName, EventId[]> = {};
+
+  for (const event of events) {
+    byId[event.event_id] = event;
+    const exercise = asExerciseName(String(event.payload['exercise'] ?? ''));
+    if (!byExercise[exercise]) {
+      byExercise[exercise] = [];
+    }
+    byExercise[exercise].push(event.event_id);
+  }
+
+  return { byId, byExercise };
+};
+
+// Helper: Add event to index O(1)
+const addToIndex = (
+  indexes: EventIndexes,
+  event: WorkoutEvent,
+): EventIndexes => {
+  const exercise = asExerciseName(String(event.payload['exercise'] ?? ''));
+  const list = indexes.byExercise[exercise] || [];
+  return {
+    byId: { ...indexes.byId, [event.event_id]: event },
+    byExercise: {
+      ...indexes.byExercise,
+      [exercise]: [...list, event.event_id],
+    },
+  };
+};
+
+// Helper: Update event in index O(1)
+const updateInIndex = (
+  indexes: EventIndexes,
+  event: WorkoutEvent,
+  oldEvent: WorkoutEvent | undefined,
+): EventIndexes => {
+  const newExercise = asExerciseName(String(event.payload['exercise'] ?? ''));
+  const oldExercise = oldEvent
+    ? asExerciseName(String(oldEvent.payload['exercise'] ?? ''))
+    : undefined;
+
+  let byExercise = { ...indexes.byExercise };
+
+  // If exercise name changed, remove from old list
+  if (oldExercise && oldExercise !== newExercise && byExercise[oldExercise]) {
+    byExercise[oldExercise] = byExercise[oldExercise].filter(
+      id => id !== event.event_id,
+    );
+  }
+
+  // Add/Update in new list
+  const list = byExercise[newExercise] || [];
+  if (!list.includes(event.event_id)) {
+    byExercise[newExercise] = [...list, event.event_id];
+  }
+
+  return {
+    byId: { ...indexes.byId, [event.event_id]: event },
+    byExercise,
+  };
+};
+
+// Helper: Remove from index O(1)
+const removeFromIndex = (
+  indexes: EventIndexes,
+  eventId: EventId,
+): EventIndexes => {
+  const event = indexes.byId[eventId];
+  if (!event) return indexes;
+
+  const exercise = asExerciseName(String(event.payload['exercise'] ?? ''));
+  const nextById = { ...indexes.byId };
+  delete nextById[eventId];
+
+  const nextByExercise = { ...indexes.byExercise };
+  if (nextByExercise[exercise]) {
+    nextByExercise[exercise] = nextByExercise[exercise].filter(
+      id => id !== eventId,
+    );
+  }
+
+  return { byId: nextById, byExercise: nextByExercise };
+};
+
 export type RootState = {
   nav: { screen: ScreenKey; stack: ScreenKey[] };
   selectedDate: Date;
   events: WorkoutEvent[];
+  indexes: EventIndexes;
   catalog: {
     entries: ExerciseCatalogEntry[];
     favorites: ExerciseSlug[];
@@ -161,7 +254,10 @@ export type Action =
   | {
       type: 'import/summary';
       summary: RootState['importSummary'];
-    };
+    }
+  | { type: 'events/add'; event: WorkoutEvent }
+  | { type: 'events/update'; event: WorkoutEvent }
+  | { type: 'events/delete'; eventId: EventId };
 
 export const initialFields: LoggingFields = {
   reps: asNumericInput(''),
@@ -176,6 +272,7 @@ export const createInitialState = (): RootState => {
     nav: { screen: asScreenKey('home'), stack: [asScreenKey('home')] },
     selectedDate: today,
     events: [],
+    indexes: { byId: {}, byExercise: {} },
     catalog: { entries: [], favorites: [], custom: [] },
     browser: {
       mode: 'groups',
@@ -272,7 +369,40 @@ export const reducer = (state: RootState, action: Action): RootState => {
       };
     }
     case 'events/set':
-      return { ...state, events: action.events };
+      return {
+        ...state,
+        events: action.events,
+        indexes: buildIndexes(action.events),
+      };
+
+    // O(1) Granular Updates
+    case 'events/add':
+      if (state.indexes.byId[action.event.event_id]) return state; // Idempotent
+      return {
+        ...state,
+        events: [...state.events, action.event],
+        indexes: addToIndex(state.indexes, action.event),
+      };
+
+    case 'events/update': {
+      const oldEvent = state.indexes.byId[action.event.event_id];
+      if (!oldEvent) return state;
+      return {
+        ...state,
+        events: state.events.map(e =>
+          e.event_id === action.event.event_id ? action.event : e,
+        ),
+        indexes: updateInIndex(state.indexes, action.event, oldEvent),
+      };
+    }
+
+    case 'events/delete':
+      return {
+        ...state,
+        events: state.events.filter(e => e.event_id !== action.eventId),
+        indexes: removeFromIndex(state.indexes, action.eventId),
+      };
+
     case 'catalog/set':
       return {
         ...state,

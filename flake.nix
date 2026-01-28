@@ -47,6 +47,10 @@
             zoxide
             zsh-syntax-highlighting
             zsh-autosuggestions
+            # Formatting tools
+            clang-tools       # clang-format for C++/Obj-C
+            ktlint            # Kotlin formatter
+            just              # Command runner
           ];
 
           shellHook = ''

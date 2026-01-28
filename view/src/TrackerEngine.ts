@@ -27,6 +27,31 @@ interface TrackerEngineBinding {
   getExerciseCatalog: () => JsonText;
   validateExercise: (entry: JsonText) => JsonText;
   importFitnotes: (path: string) => JsonText;
+  // Time policy functions
+  roundToLocalDay: (tsMs: number, offsetMinutes: number) => number;
+  roundToLocalWeek: (tsMs: number, offsetMinutes: number) => number;
+  // Metrics functions
+  estimateOneRm: (weight: number, reps: number) => number;
+  detectPr: (
+    exercise: string,
+    eventsJson: JsonText,
+    weight: number,
+    reps: number,
+  ) => JsonText;
+  scoreSet: (
+    weight: number,
+    reps: number,
+    duration: number,
+    distance: number,
+    loggingMode: string,
+  ) => number;
+  buildPrPayload: (
+    payload: JsonText,
+    eventTs: number,
+    events: JsonText,
+    existingEvent: JsonText | null,
+    loggingMode: string,
+  ) => JsonText;
 }
 
 declare global {
@@ -136,4 +161,88 @@ export const validateExercise = async (entry: JsonObject) => {
 
 export const importFitnotes = async (path: string) => {
   return callRaw<JsonObject>('importFitnotes', path);
+};
+
+// --- Time policy functions ---
+
+export const roundToLocalDay = (
+  tsMs: number,
+  offsetMinutes: number,
+): number => {
+  const engine = ensureBinding();
+  return engine.roundToLocalDay(tsMs, offsetMinutes);
+};
+
+export const roundToLocalWeek = (
+  tsMs: number,
+  offsetMinutes: number,
+): number => {
+  const engine = ensureBinding();
+  return engine.roundToLocalWeek(tsMs, offsetMinutes);
+};
+
+// --- Metrics functions ---
+
+export const estimateOneRm = (weight: number, reps: number): number => {
+  const engine = ensureBinding();
+  return engine.estimateOneRm(weight, reps);
+};
+
+export type PrResult = {
+  is_pr: boolean;
+  pr_type?:
+    | 'weight'
+    | 'reps'
+    | 'estimated_one_rm'
+    | 'volume'
+    | 'duration'
+    | 'distance';
+  previous_best?: number;
+  new_value: number;
+  improvement?: number;
+};
+
+export const detectPr = (
+  exercise: string,
+  events: JsonObject[],
+  weight: number,
+  reps: number,
+): PrResult => {
+  const engine = ensureBinding();
+  const result = engine.detectPr(
+    exercise,
+    JSON.stringify(events) as JsonText,
+    weight,
+    reps,
+  );
+  return JSON.parse(result) as PrResult;
+};
+
+export const scoreSet = (
+  weight: number,
+  reps: number,
+  duration: number,
+  distance: number,
+  loggingMode: string,
+): number => {
+  const engine = ensureBinding();
+  return engine.scoreSet(weight, reps, duration, distance, loggingMode);
+};
+
+export const buildPrPayload = (
+  payload: JsonObject,
+  eventTs: number,
+  events: JsonObject[],
+  existingEvent: JsonObject | null,
+  loggingMode: string,
+): JsonObject => {
+  const engine = ensureBinding();
+  const result = engine.buildPrPayload(
+    JSON.stringify(payload) as JsonText,
+    eventTs,
+    JSON.stringify(events) as JsonText,
+    existingEvent ? (JSON.stringify(existingEvent) as JsonText) : null,
+    loggingMode,
+  );
+  return JSON.parse(result) as JsonObject;
 };

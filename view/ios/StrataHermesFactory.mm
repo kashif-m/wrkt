@@ -10,8 +10,7 @@ class StrataHermesInstance final : public facebook::react::RCTHermesInstance {
   using facebook::react::RCTHermesInstance::RCTHermesInstance;
 
   std::unique_ptr<facebook::react::JSRuntime> createJSRuntime(
-      std::shared_ptr<facebook::react::MessageQueueThread> msgQueueThread) noexcept override
-  {
+      std::shared_ptr<facebook::react::MessageQueueThread> msgQueueThread) noexcept override {
     auto runtime = facebook::react::RCTHermesInstance::createJSRuntime(std::move(msgQueueThread));
     if (runtime != nullptr) {
       auto &jsRuntime = runtime->getRuntime();
@@ -23,8 +22,7 @@ class StrataHermesInstance final : public facebook::react::RCTHermesInstance {
 
 }  // namespace
 
-extern "C" JSRuntimeFactoryRef StrataCreateHermesFactory(void)
-{
+extern "C" JSRuntimeFactoryRef StrataCreateHermesFactory(void) {
   auto *factory = new StrataHermesInstance();
   return reinterpret_cast<JSRuntimeFactoryRef>(factory);
 }

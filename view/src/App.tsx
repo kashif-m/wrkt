@@ -40,13 +40,12 @@ import {
   suggestNext,
   updateLoggedSet,
 } from './workoutFlows';
+import { init } from './storage';
+import { loadAllEvents, scheduleSave } from './state/persistence';
 import {
-  init,
-  fetchEvents,
-  insertEvent,
-  updateEvent as persistUpdatedEvent,
-  removeEvent,
-} from './storage';
+  estimateOneRm as rustEstimateOneRm,
+  scoreSet as rustScoreSet,
+} from './TrackerEngine';
 import { palette } from './ui/theme';
 import { getMuscleColor } from './ui/muscleColors';
 import BottomNav from './navigation/BottomNav';
@@ -103,6 +102,12 @@ import {
   asScreenKey,
   unwrapScreenKey,
 } from './domain/types';
+import {
+  estimateOneRm,
+  resolveLoggingMode,
+  scoreFromPayload,
+  buildPrPayload,
+} from './hooks/useMetrics';
 
 type TabParamList = {
   home: undefined;
@@ -388,97 +393,10 @@ const AppInner = () => {
   const [currentRouteName, setCurrentRouteName] =
     useState<ScreenKeyValue>('home');
 
-  const estimateOneRm = (weight: number, reps: number) =>
-    weight * (1 + reps / 30);
-
-  const readNumber = (value: unknown) =>
-    typeof value === 'number' && Number.isFinite(value) ? value : null;
-
-  const resolveLoggingMode = (exerciseName: ExerciseName | undefined) => {
-    if (!exerciseName) return asLoggingMode('reps_weight');
-    const match = state.catalog.entries.find(
-      entry => entry.display_name === exerciseName,
-    );
-    return match?.logging_mode ?? asLoggingMode('reps_weight');
-  };
-
-  const scoreFromPayload = (
-    payload: {
-      reps?: number;
-      weight?: number;
-      duration?: number;
-      distance?: number;
-    },
-    mode: LoggingMode,
-  ) => {
-    const reps = readNumber(payload.reps);
-    const weight = readNumber(payload.weight);
-    const duration = readNumber(payload.duration);
-    const distance = readNumber(payload.distance);
-    switch (unwrapLoggingMode(mode)) {
-      case 'reps_weight':
-        if (weight && reps) return estimateOneRm(weight, reps);
-        return null;
-      case 'reps':
-        return reps ?? null;
-      case 'time':
-        return duration ?? null;
-      case 'distance':
-        return distance ?? null;
-      case 'time_distance':
-        return duration ?? distance ?? null;
-      case 'distance_weight':
-        return distance ?? weight ?? null;
-      default:
-        return null;
-    }
-  };
-
-  const buildPrPayload = (
-    payload: {
-      exercise: ExerciseName;
-      reps?: number;
-      weight?: number;
-      duration?: number;
-      distance?: number;
-    },
-    eventTs: number,
-    existingEvent?: (typeof state.events)[number],
-  ) => {
-    const mode = resolveLoggingMode(payload.exercise);
-    const currentScore = scoreFromPayload(payload, mode);
-    const existingPr = existingEvent?.payload?.pr === true;
-    const existingPrTs =
-      typeof existingEvent?.payload?.pr_ts === 'number'
-        ? existingEvent?.payload?.pr_ts
-        : existingEvent?.ts;
-    const bestScore = state.events.reduce<number | null>((best, event) => {
-      if (existingEvent && event.event_id === existingEvent.event_id) {
-        return best;
-      }
-      const exerciseName = asExerciseName(
-        String(event.payload?.exercise ?? ''),
-      );
-      if (exerciseName !== payload.exercise) return best;
-      const score = scoreFromPayload(event.payload ?? {}, mode);
-      if (typeof score !== 'number') return best;
-      if (best === null || score > best) return score;
-      return best;
-    }, null);
-    const isPr =
-      existingPr ||
-      (typeof currentScore === 'number' &&
-        (bestScore === null || currentScore > bestScore));
-    if (!isPr) return payload;
-    return {
-      ...payload,
-      pr: true,
-      pr_ts: existingPrTs ?? eventTs,
-    };
-  };
+  // scoreFromPayload and buildPrPayload replaced by hooks
 
   const refreshFromStorage = useCallback(async () => {
-    const events = await fetchEvents();
+    const events = await loadAllEvents();
     dispatch({ type: 'events/set', events });
   }, []);
 
@@ -762,12 +680,27 @@ const AppInner = () => {
         const createdEvent =
           nextState.events.find(item => item.event_id === eventId) ??
           nextState.events[nextState.events.length - 1];
+
+        // OPTIMIZATION: Filter events to only relevant exercise to reduce JSON serialization overhead
+        const relevantEvents = state.events.filter(
+          e =>
+            asExerciseName(String(e.payload?.exercise ?? '')) ===
+            payload.exercise,
+        );
+
         const eventWithPr = createdEvent
           ? {
               ...createdEvent,
-              payload: buildPrPayload(payload, createdEvent.ts),
+              payload: buildPrPayload(
+                payload,
+                createdEvent.ts,
+                relevantEvents,
+                state.catalog.entries,
+                undefined, // existingEvent is undefined for new logs
+              ),
             }
           : null;
+
         if (!eventWithPr) {
           dispatch({
             type: 'log/status',
@@ -778,14 +711,14 @@ const AppInner = () => {
           });
           return;
         }
-        await insertEvent(eventWithPr);
-        dispatch({
-          type: 'events/set',
-          events: nextState.events.map(event =>
-            event.event_id === eventId ? eventWithPr : event,
-          ),
-        });
+        const finalEvents = [...state.events, eventWithPr];
+
+        // OPTIMIZATION: Optimistic update with O(1) Reducer Action
+        dispatch({ type: 'events/add', event: eventWithPr });
         dispatch({ type: 'log/status', status: null });
+
+        // Persist in background (debounced)
+        scheduleSave(finalEvents);
       },
       updateSet: async (
         eventId: EventId,
@@ -799,18 +732,43 @@ const AppInner = () => {
       ) => {
         const existing = state.events.find(event => event.event_id === eventId);
         if (!existing) return;
+        // OPTIMIZATION: Filter events to only relevant exercise
+        const relevantEvents = state.events.filter(
+          e =>
+            asExerciseName(String(e.payload?.exercise ?? '')) ===
+            payload.exercise,
+        );
+
         const nextState = await updateLoggedSet(
           { events: state.events },
           eventId,
-          buildPrPayload(payload, existing.ts, existing),
+          buildPrPayload(
+            payload,
+            existing.ts,
+            relevantEvents,
+            state.catalog.entries,
+            existing,
+          ),
         );
         const updated =
           nextState.events.find(event => event.event_id === eventId) ?? null;
+
+        // OPTIMIZATION: Granular update
         if (updated) {
-          await persistUpdatedEvent(updated);
+          dispatch({ type: 'events/update', event: updated });
         }
-        dispatch({ type: 'events/set', events: nextState.events });
         dispatch({ type: 'log/editing', eventId: null });
+        dispatch({
+          type: 'log/status',
+          status: {
+            text: asToastText('Saved changes'),
+            tone: asToastTone('success'),
+          },
+        });
+
+        // Background persist (debounced)
+        scheduleSave(nextState.events);
+
         dispatch({
           type: 'log/status',
           status: {
@@ -820,12 +778,11 @@ const AppInner = () => {
         });
       },
       deleteSet: async (eventId: EventId) => {
-        await removeEvent(eventId);
+        // Reducer is synchronous
         const nextState = deleteLoggedSet({ events: state.events }, eventId);
-        dispatch({
-          type: 'events/set',
-          events: nextState.events,
-        });
+
+        // OPTIMIZATION: Granular delete
+        dispatch({ type: 'events/delete', eventId });
         dispatch({
           type: 'log/status',
           status: {
@@ -833,7 +790,11 @@ const AppInner = () => {
             tone: asToastTone('info'),
           },
         });
+
+        // Background persist (debounced)
+        scheduleSave(nextState.events);
       },
+
       toggleFavorite: async (slug: ExerciseSlug, isFavorite: boolean) => {
         await setExerciseFavorite(slug, isFavorite);
         const next = isFavorite

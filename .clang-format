@@ -1,0 +1,11 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 100
+AllowShortFunctionsOnASingleLine: Inline
+---
+Language: ObjC
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 100

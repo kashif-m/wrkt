@@ -1,31 +1,43 @@
 import { EventId, unwrapEventId } from './domain/types';
+import {
+  roundToLocalDay as rustRoundToLocalDay,
+  roundToLocalWeek as rustRoundToLocalWeek,
+} from './TrackerEngine';
 
 export type TimeGrain = 'day' | 'week';
-
-const MINUTE = 60 * 1000;
-const DAY = 24 * 60 * 60 * 1000;
 
 export const getLocalOffsetMinutes = () => -new Date().getTimezoneOffset();
 
 export const roundToLocalDay = (
   timestampMs: number,
   offsetMinutes = getLocalOffsetMinutes(),
-) => {
-  const offset = offsetMinutes * MINUTE;
-  const local = timestampMs + offset;
-  const roundedLocal = Math.floor(local / DAY) * DAY;
-  return roundedLocal - offset;
+): number => {
+  const result = rustRoundToLocalDay(timestampMs, offsetMinutes);
+  if (!Number.isFinite(result)) {
+    console.error('roundToLocalDay returned invalid result', {
+      timestampMs,
+      offsetMinutes,
+      result,
+    });
+    throw new Error('roundToLocalDay: invalid result from native module');
+  }
+  return result;
 };
 
 export const roundToLocalWeek = (
   timestampMs: number,
   offsetMinutes = getLocalOffsetMinutes(),
-) => {
-  const startOfDay = roundToLocalDay(timestampMs, offsetMinutes);
-  const localDate = new Date(startOfDay + offsetMinutes * MINUTE);
-  const dayOfWeek = localDate.getUTCDay(); // Sunday = 0
-  const mondayBasedOffset = (dayOfWeek + 6) % 7; // convert to Monday = 0
-  return startOfDay - mondayBasedOffset * DAY;
+): number => {
+  const result = rustRoundToLocalWeek(timestampMs, offsetMinutes);
+  if (!Number.isFinite(result)) {
+    console.error('roundToLocalWeek returned invalid result', {
+      timestampMs,
+      offsetMinutes,
+      result,
+    });
+    throw new Error('roundToLocalWeek: invalid result from native module');
+  }
+  return result;
 };
 
 export const sortEventsByDeterministicOrder = <

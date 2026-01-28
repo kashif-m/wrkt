@@ -156,6 +156,116 @@ pub extern "C" fn strata_validate_exercise(entry_json_ptr: *const c_char) -> Ffi
     })
 }
 
+// --- Time Policy FFI ---
+
+#[no_mangle]
+pub extern "C" fn strata_round_to_local_day(ts_ms: i64, offset_minutes: i32) -> i64 {
+    workout_pack::round_to_local_day(ts_ms, offset_minutes)
+}
+
+#[no_mangle]
+pub extern "C" fn strata_round_to_local_week(ts_ms: i64, offset_minutes: i32) -> i64 {
+    workout_pack::round_to_local_week(ts_ms, offset_minutes)
+}
+
+// --- Metrics FFI ---
+
+#[no_mangle]
+pub extern "C" fn strata_estimate_one_rm(weight: f64, reps: i32) -> f64 {
+    workout_pack::estimate_one_rm(weight, reps)
+}
+
+#[no_mangle]
+pub extern "C" fn strata_detect_pr(
+    exercise_ptr: *const c_char,
+    events_json_ptr: *const c_char,
+    new_weight: f64,
+    new_reps: i32,
+) -> FfiResult {
+    handle(|| {
+        let exercise = cstr_to_str(exercise_ptr)?;
+        let events_json = cstr_to_str(events_json_ptr)?;
+        let events: Vec<serde_json::Value> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        let weight = if new_weight > 0.0 {
+            Some(new_weight)
+        } else {
+            None
+        };
+        let reps = if new_reps > 0 { Some(new_reps) } else { None };
+
+        let result = workout_pack::detect_pr(exercise, &events, weight, reps);
+        Ok(result)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn strata_score_set(
+    weight: f64,
+    reps: i32,
+    duration: f64,
+    distance: f64,
+    logging_mode_ptr: *const c_char,
+) -> f64 {
+    let mode_str = match cstr_to_str(logging_mode_ptr) {
+        Ok(s) => s,
+        Err(_) => "reps_weight",
+    };
+    let mode = workout_pack::LoggingMode::from_str(mode_str);
+
+    let weight_opt = if weight > 0.0 { Some(weight) } else { None };
+    let reps_opt = if reps > 0 { Some(reps) } else { None };
+    let duration_opt = if duration > 0.0 { Some(duration) } else { None };
+    let distance_opt = if distance > 0.0 { Some(distance) } else { None };
+
+    workout_pack::score_set(weight_opt, reps_opt, duration_opt, distance_opt, mode)
+}
+
+/// Build PR payload - single FFI call to process all events and return payload with PR flags
+#[no_mangle]
+pub extern "C" fn strata_build_pr_payload(
+    payload_json_ptr: *const c_char,
+    event_ts: i64,
+    events_json_ptr: *const c_char,
+    existing_event_json_ptr: *const c_char, // Can be null or empty for new events
+    logging_mode_ptr: *const c_char,
+) -> FfiResult {
+    handle(|| {
+        let payload_json = cstr_to_str(payload_json_ptr)?;
+        let events_json = cstr_to_str(events_json_ptr)?;
+        let logging_mode = cstr_to_str(logging_mode_ptr)?;
+
+        let payload: workout_pack::SetPayload =
+            serde_json::from_str(payload_json).map_err(|e| e.to_string())?;
+        let events: Vec<serde_json::Value> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        // Parse existing event if provided (for updates)
+        let existing_event: Option<workout_pack::ExistingEventInfo> =
+            if existing_event_json_ptr.is_null() {
+                None
+            } else {
+                let existing_json = cstr_to_str(existing_event_json_ptr)?;
+                if existing_json.is_empty() || existing_json == "null" {
+                    None
+                } else {
+                    Some(serde_json::from_str(existing_json).map_err(|e| e.to_string())?)
+                }
+            };
+
+        let result = workout_pack::build_pr_payload(
+            payload,
+            event_ts,
+            &events,
+            existing_event.as_ref(),
+            logging_mode,
+        );
+
+        Ok(result)
+    })
+}
+
 fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {
     if ptr.is_null() {
         return Err("null pointer".into());

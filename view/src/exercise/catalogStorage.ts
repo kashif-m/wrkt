@@ -174,7 +174,7 @@ export const fetchMergedCatalog = async (): Promise<ExerciseCatalogEntry[]> => {
     console.warn('Failed to load catalog from Rust', error);
     return undefined;
   });
-  console.debug('Fetched catalog from Rust', baseData);
+  // console.debug('Fetched catalog from Rust', baseData); // REMOVED: heavy logging
   const base = parseCatalog(baseData);
   const custom = await readCustomExercises();
   const hidden = await readHiddenSlugs();
