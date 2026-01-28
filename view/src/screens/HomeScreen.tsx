@@ -1,4 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 import { roundToLocalDay } from '../timePolicy';
@@ -23,6 +29,45 @@ import {
   asScreenKey,
   unwrapLabelText,
 } from '../domain/types';
+import HorizontalSwipePager, {
+  SwipeDirection,
+} from '../ui/HorizontalSwipePager';
+
+type HomeDayModel = {
+  date: Date;
+  dayBucket: number;
+  primaryLabel: string;
+  secondaryLabel: string;
+  sections: Array<{
+    key: MuscleGroup;
+    label: DisplayLabel;
+    firstTs: number;
+    exerciseOrder: ExerciseName[];
+    exerciseSets: Map<ExerciseName, WorkoutEvent[]>;
+    exercises: {
+      name: ExerciseName;
+      sets: { description: DisplayLabel; count: number }[];
+      color: ColorHex;
+      totalSets: number;
+    }[];
+  }>;
+  emptyState: boolean;
+  muscleChips: Array<{
+    key: DisplayLabel;
+    label: DisplayLabel;
+    color?: ColorHex;
+    percent: number;
+  }>;
+  musclePieData: Array<{
+    key: DisplayLabel;
+    label: DisplayLabel;
+    color?: ColorHex;
+    percent: number;
+  }>;
+  totalSets: number;
+  totalExercises: number;
+  averageSets: number;
+};
 
 const HomeScreen = () => {
   const state = useAppState();
@@ -33,17 +78,19 @@ const HomeScreen = () => {
   const { events } = state;
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
-  const dayBucket = roundToLocalDay(selectedDate.getTime());
-  const todayBucket = roundToLocalDay(Date.now());
-  const isToday = dayBucket === todayBucket;
-  const primaryLabel = isToday
-    ? 'Today'
-    : selectedDate.toLocaleDateString(undefined, { weekday: 'long' });
-  const secondaryLabel = selectedDate.toLocaleDateString(undefined, {
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
+  const pageDatesRef = useRef<[Date, Date, Date]>([
+    new Date(selectedDate.getTime() - 24 * 60 * 60 * 1000),
+    selectedDate,
+    new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000),
+  ]);
+  const [pageDates, setPageDates] = useState<[Date, Date, Date]>(
+    pageDatesRef.current,
+  );
+  const [resetKey, setResetKey] = useState(0);
+  const [overrideCenterDate, setOverrideCenterDate] = useState<Date | null>(
+    null,
+  );
+  const pendingCommitRef = useRef<SwipeDirection | null>(null);
 
   const catalogMap = useMemo(() => {
     const map = new Map<ExerciseName, (typeof catalog)[number]>();
@@ -51,121 +98,238 @@ const HomeScreen = () => {
     return map;
   }, [catalog]);
 
-  const dayEvents = useMemo(
-    () =>
-      events
+  useEffect(() => {
+    setExpandedExercises({});
+  }, [selectedDate]);
+
+  useEffect(() => {
+    pageDatesRef.current = pageDates;
+  }, [pageDates]);
+
+  const buildDayModel = useCallback(
+    (date: Date): HomeDayModel => {
+      const dayBucket = roundToLocalDay(date.getTime());
+      const todayBucket = roundToLocalDay(Date.now());
+      const isToday = dayBucket === todayBucket;
+      const primaryLabel = isToday
+        ? 'Today'
+        : date.toLocaleDateString(undefined, { weekday: 'long' });
+      const secondaryLabel = date.toLocaleDateString(undefined, {
+        month: 'long',
+        day: 'numeric',
+        year: 'numeric',
+      });
+
+      const dayEvents = events
         .filter(event => roundToLocalDay(event.ts) === dayBucket)
-        .sort((a, b) => a.ts - b.ts),
-    [events, dayBucket],
-  );
+        .sort((a, b) => a.ts - b.ts);
+      const groupMap = new Map<
+        MuscleGroup,
+        {
+          label: DisplayLabel;
+          firstTs: number;
+          exerciseOrder: ExerciseName[];
+          exerciseSets: Map<ExerciseName, WorkoutEvent[]>;
+          exercises: {
+            name: ExerciseName;
+            sets: { description: DisplayLabel; count: number }[];
+            color: ColorHex;
+            totalSets: number;
+          }[];
+        }
+      >();
+      dayEvents.forEach(event => {
+        const exercise = asExerciseName(
+          typeof event.payload?.exercise === 'string'
+            ? event.payload.exercise
+            : 'Exercise',
+        );
+        const meta = catalogMap.get(exercise);
+        const groupKey =
+          meta?.primary_muscle_group ?? asMuscleGroup('untracked');
+        const label = asDisplayLabel(
+          groupKey.replace(/_/g, ' ').toUpperCase() || 'UNTRACKED',
+        );
+        const bucket = groupMap.get(groupKey) ?? {
+          label,
+          firstTs: event.ts,
+          exerciseOrder: [] as ExerciseName[],
+          exerciseSets: new Map<ExerciseName, WorkoutEvent[]>(),
+          exercises: [],
+        };
+        if (!bucket.exerciseSets.has(exercise)) {
+          bucket.exerciseSets.set(exercise, []);
+          bucket.exerciseOrder.push(exercise);
+        }
+        bucket.exerciseSets.get(exercise)?.push(event);
+        groupMap.set(groupKey, bucket);
+      });
+      const sections = Array.from(groupMap.entries())
+        .map(([key, section]) => {
+          const exercises = section.exerciseOrder.map(name => {
+            const sets = section.exerciseSets.get(name) ?? [];
+            const setChunks = summarizeSets(sets);
+            const meta = catalogMap.get(name);
+            return {
+              name,
+              sets: setChunks,
+              color: getMuscleColor(meta?.primary_muscle_group),
+              totalSets: setChunks.reduce(
+                (total, chunk) => total + chunk.count,
+                0,
+              ),
+            };
+          });
+          return { key, ...section, exercises };
+        })
+        .sort((a, b) => a.firstTs - b.firstTs);
 
-  const sections = useMemo(() => {
-    const groupMap = new Map<
-      MuscleGroup,
-      {
-        label: DisplayLabel;
-        firstTs: number;
-        exerciseOrder: ExerciseName[];
-        exerciseSets: Map<ExerciseName, WorkoutEvent[]>;
-        exercises: {
-          name: ExerciseName;
-          sets: { description: DisplayLabel; count: number }[];
-          color: ColorHex;
-          totalSets: number;
-        }[];
-      }
-    >();
-    dayEvents.forEach(event => {
-      const exercise = asExerciseName(
-        typeof event.payload?.exercise === 'string'
-          ? event.payload.exercise
-          : 'Exercise',
+      const emptyState = sections.length === 0;
+      const muscleChips = (() => {
+        const total = sections.reduce(
+          (sum, section) => sum + section.exercises.length,
+          0,
+        );
+        if (!total) return [];
+        return sections
+          .map(section => ({
+            key: formatMuscleLabel(section.key),
+            label: formatMuscleLabel(section.key),
+            color: section.exercises[0]?.color,
+            percent: Math.round((section.exercises.length / total) * 100),
+          }))
+          .sort((a, b) => b.percent - a.percent);
+      })();
+      const musclePieData =
+        muscleChips.length <= 4
+          ? muscleChips
+          : [
+              ...muscleChips.slice(0, 3),
+              {
+                key: asDisplayLabel('Other'),
+                label: asDisplayLabel('Other'),
+                color: palette.mutedSurface,
+                percent: muscleChips
+                  .slice(3)
+                  .reduce((sum, item) => sum + item.percent, 0),
+              },
+            ];
+      const totalSets = dayEvents.length;
+      const totalExercises = sections.reduce(
+        (sum, section) => sum + section.exercises.length,
+        0,
       );
-      const meta = catalogMap.get(exercise);
-      const groupKey = meta?.primary_muscle_group ?? asMuscleGroup('untracked');
-      const label = asDisplayLabel(
-        groupKey.replace(/_/g, ' ').toUpperCase() || 'UNTRACKED',
-      );
-      const color = getMuscleColor(meta?.primary_muscle_group);
-      const bucket = groupMap.get(groupKey) ?? {
-        label,
-        firstTs: event.ts,
-        exerciseOrder: [] as ExerciseName[],
-        exerciseSets: new Map<ExerciseName, WorkoutEvent[]>(),
-        exercises: [],
+      const averageSets = totalExercises
+        ? Math.round(totalSets / totalExercises)
+        : 0;
+
+      return {
+        date,
+        dayBucket,
+        primaryLabel,
+        secondaryLabel,
+        sections,
+        emptyState,
+        muscleChips,
+        musclePieData,
+        totalSets,
+        totalExercises,
+        averageSets,
       };
-      if (!bucket.exerciseSets.has(exercise)) {
-        bucket.exerciseSets.set(exercise, []);
-        bucket.exerciseOrder.push(exercise);
-      }
-      bucket.exerciseSets.get(exercise)?.push(event);
-      groupMap.set(groupKey, bucket);
-    });
-    return Array.from(groupMap.entries())
-      .map(([key, section]) => {
-        const exercises = section.exerciseOrder.map(name => {
-          const sets = section.exerciseSets.get(name) ?? [];
-          const setChunks = summarizeSets(sets);
-          const meta = catalogMap.get(name);
-          return {
-            name,
-            sets: setChunks,
-            color: getMuscleColor(meta?.primary_muscle_group),
-            totalSets: setChunks.reduce(
-              (total, chunk) => total + chunk.count,
-              0,
-            ),
-          };
-        });
-        return { key, ...section, exercises };
-      })
-      .sort((a, b) => a.firstTs - b.firstTs);
-  }, [dayEvents, catalogMap]);
-
-  const emptyState = sections.length === 0;
-  const muscleChips = useMemo(() => {
-    const total = sections.reduce(
-      (sum, section) => sum + section.exercises.length,
-      0,
-    );
-    if (!total) return [];
-    return sections
-      .map(section => ({
-        key: formatMuscleLabel(section.key),
-        label: formatMuscleLabel(section.key),
-        color: section.exercises[0]?.color,
-        percent: Math.round((section.exercises.length / total) * 100),
-      }))
-      .sort((a, b) => b.percent - a.percent);
-  }, [sections]);
-
-  const musclePieData = useMemo(() => {
-    if (muscleChips.length <= 4) return muscleChips;
-    const top = muscleChips.slice(0, 3);
-    const remainder = muscleChips.slice(3);
-    const remainderPercent = remainder.reduce(
-      (sum, item) => sum + item.percent,
-      0,
-    );
-    return [
-      ...top,
-      {
-        key: asDisplayLabel('Other'),
-        label: asDisplayLabel('Other'),
-        color: palette.mutedSurface,
-        percent: remainderPercent,
-      },
-    ];
-  }, [muscleChips]);
-
-  const totalSets = dayEvents.length;
-  const totalExercises = sections.reduce(
-    (sum, section) => sum + section.exercises.length,
-    0,
+    },
+    [catalogMap, events],
   );
-  const averageSets = totalExercises
-    ? Math.round(totalSets / totalExercises)
-    : 0;
+
+  const shiftDate = useCallback((date: Date, delta: number) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + delta);
+    return next;
+  }, []);
+
+  const buildPageDates = useCallback(
+    (center: Date): [Date, Date, Date] => [
+      shiftDate(center, -1),
+      center,
+      shiftDate(center, 1),
+    ],
+    [shiftDate],
+  );
+
+  useEffect(() => {
+    const selectedBucket = roundToLocalDay(selectedDate.getTime());
+    if (overrideCenterDate) {
+      const centerBucket = roundToLocalDay(pageDatesRef.current[1].getTime());
+      if (!pendingCommitRef.current || selectedBucket !== centerBucket) {
+        pendingCommitRef.current = null;
+        setOverrideCenterDate(null);
+        const nextDates = buildPageDates(selectedDate);
+        pageDatesRef.current = nextDates;
+        setPageDates(nextDates);
+        setResetKey(value => value + 1);
+      }
+      return;
+    }
+    const centerBucket = roundToLocalDay(pageDatesRef.current[1].getTime());
+    if (selectedBucket !== centerBucket) {
+      const nextDates = buildPageDates(selectedDate);
+      pageDatesRef.current = nextDates;
+      setPageDates(nextDates);
+    }
+  }, [buildPageDates, overrideCenterDate, selectedDate]);
+
+  const prevDate = pageDates[0];
+  const nextDate = pageDates[2];
+  const currentDate = overrideCenterDate ?? pageDates[1];
+  const currentModel = useMemo(
+    () => buildDayModel(currentDate),
+    [buildDayModel, currentDate],
+  );
+  const prevModel = useMemo(
+    () => buildDayModel(prevDate),
+    [buildDayModel, prevDate],
+  );
+  const nextModel = useMemo(
+    () => buildDayModel(nextDate),
+    [buildDayModel, nextDate],
+  );
+
+  const rotateDates = useCallback(
+    (
+      dates: [Date, Date, Date],
+      direction: SwipeDirection,
+    ): [Date, Date, Date] => {
+      if (direction === 1) {
+        const nextCenter = dates[2];
+        return [dates[1], nextCenter, shiftDate(nextCenter, 1)];
+      }
+      const prevCenter = dates[0];
+      return [shiftDate(prevCenter, -1), prevCenter, dates[1]];
+    },
+    [shiftDate],
+  );
+
+  const handleCommit = useCallback((direction: SwipeDirection) => {
+    if (pendingCommitRef.current) return;
+    const targetDate =
+      direction === 1 ? pageDatesRef.current[2] : pageDatesRef.current[0];
+    pendingCommitRef.current = direction;
+    setOverrideCenterDate(targetDate);
+    setResetKey(value => value + 1);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    const direction = pendingCommitRef.current;
+    if (!direction) {
+      setOverrideCenterDate(null);
+      return;
+    }
+    const nextDates = rotateDates(pageDatesRef.current, direction);
+    pageDatesRef.current = nextDates;
+    setPageDates(nextDates);
+    actions.setSelectedDate(nextDates[1]);
+    pendingCommitRef.current = null;
+    setOverrideCenterDate(null);
+  }, [actions, rotateDates]);
 
   return (
     <View style={{ flex: 1 }}>
@@ -183,10 +347,10 @@ const HomeScreen = () => {
           <Text
             style={{ color: palette.text, fontSize: 24, fontWeight: '600' }}
           >
-            {primaryLabel}
+            {currentModel.primaryLabel}
           </Text>
           <Text style={{ color: palette.mutedText, fontSize: 14 }}>
-            {secondaryLabel}
+            {currentModel.secondaryLabel}
           </Text>
         </TouchableOpacity>
         <View style={{ flexDirection: 'row', gap: spacing(0.75) }}>
@@ -199,161 +363,204 @@ const HomeScreen = () => {
         </View>
       </View>
 
-      <View style={{ flex: 1 }}>
-        <ScrollView
-          contentContainerStyle={{
-            padding: spacing(2),
-            paddingBottom: spacing(6),
-            gap: spacing(2),
-          }}
-        >
-          <Card style={heroCard}>
-            <View style={{ flexDirection: 'row', gap: spacing(2) }}>
-              {muscleChips.length > 0 ? (
-                <View style={donutWrap}>
-                  <MusclePie data={musclePieData} radius={44} />
+      <HorizontalSwipePager
+        currentKey={pageDates[1].getTime()}
+        onCommit={handleCommit}
+        onReset={handleReset}
+        resetKey={resetKey}
+        edgeThreshold={24}
+        commitThreshold={0.25}
+        renderPage={offset => {
+          const model =
+            offset === -1 ? prevModel : offset === 1 ? nextModel : currentModel;
+          const date =
+            offset === -1 ? prevDate : offset === 1 ? nextDate : currentDate;
+          return (
+            <HomeDayContent
+              key={date.getTime()}
+              model={model}
+              date={date}
+              expandedExercises={expandedExercises}
+              setExpandedExercises={setExpandedExercises}
+              onOpenLog={actions.openLogForExercise}
+              onStartWorkout={actions.startWorkoutForDate}
+            />
+          );
+        }}
+      />
+    </View>
+  );
+};
+
+const HomeDayContent = ({
+  model,
+  date,
+  expandedExercises,
+  setExpandedExercises,
+  onOpenLog,
+  onStartWorkout,
+}: {
+  model: HomeDayModel;
+  date: Date;
+  expandedExercises: Record<string, boolean>;
+  setExpandedExercises: React.Dispatch<
+    React.SetStateAction<Record<string, boolean>>
+  >;
+  onOpenLog: (
+    exerciseName: ExerciseName | undefined,
+    date: Date,
+    tab: 'Track' | 'History' | 'Trends',
+  ) => void;
+  onStartWorkout: (date: Date) => void;
+}) => {
+  return (
+    <View style={{ flex: 1 }}>
+      <ScrollView
+        contentContainerStyle={{
+          padding: spacing(2),
+          paddingBottom: spacing(6),
+          gap: spacing(2),
+        }}
+      >
+        <Card style={heroCard}>
+          <View style={{ flexDirection: 'row', gap: spacing(2) }}>
+            {model.muscleChips.length > 0 ? (
+              <View style={donutWrap}>
+                <MusclePie data={model.musclePieData} radius={44} />
+              </View>
+            ) : null}
+            <View style={{ flex: 1, gap: spacing(1) }}>
+              <View style={{ alignItems: 'flex-end' }}>
+                <PrimaryAction
+                  label={asLabelText('Start workout')}
+                  onPress={() => onStartWorkout(date)}
+                />
+              </View>
+              {model.muscleChips.length > 0 ? (
+                <View style={{ gap: spacing(0.5) }}>
+                  {model.musclePieData.map(chip => (
+                    <View key={chip.key} style={legendRow}>
+                      <View style={legendLabel}>
+                        <View
+                          style={[
+                            legendDot,
+                            {
+                              backgroundColor: chip.color ?? palette.primary,
+                            },
+                          ]}
+                        />
+                        <Text style={legendText}>{chip.label}</Text>
+                      </View>
+                      <Text style={legendValue}>{chip.percent}%</Text>
+                    </View>
+                  ))}
                 </View>
               ) : null}
-              <View style={{ flex: 1, gap: spacing(1) }}>
-                <View style={{ alignItems: 'flex-end' }}>
-                  <PrimaryAction
-                    label={asLabelText('Start workout')}
-                    onPress={() => actions.startWorkoutForDate(selectedDate)}
-                  />
-                </View>
-                {muscleChips.length > 0 ? (
-                  <View style={{ gap: spacing(0.5) }}>
-                    {musclePieData.map(chip => (
-                      <View key={chip.key} style={legendRow}>
-                        <View style={legendLabel}>
-                          <View
-                            style={[
-                              legendDot,
-                              {
-                                backgroundColor: chip.color ?? palette.primary,
-                              },
-                            ]}
-                          />
-                          <Text style={legendText}>{chip.label}</Text>
-                        </View>
-                        <Text style={legendValue}>{chip.percent}%</Text>
-                      </View>
-                    ))}
-                  </View>
-                ) : null}
+            </View>
+          </View>
+          <View style={statsRow}>
+            <View style={statCard}>
+              <Text style={statTitle}>Sets logged</Text>
+              <View>
+                <Text style={statValue}>{model.totalSets} sets</Text>
+                <Text style={statMuted}>{model.averageSets} avg</Text>
               </View>
             </View>
-            <View style={statsRow}>
-              <View style={statCard}>
-                <Text style={statTitle}>Sets logged</Text>
-                <View>
-                  <Text style={statValue}>{totalSets} sets</Text>
-                  <Text style={statMuted}>{averageSets} avg</Text>
-                </View>
-              </View>
-            </View>
-          </Card>
+          </View>
+        </Card>
 
-          {emptyState ? null : (
-            <Card style={listContainer}>
-              {sections.map((section, sectionIndex) => (
-                <View key={section.key} style={sectionBlock}>
-                  <Text style={sectionLabel}>{section.label}</Text>
-                  {section.exercises.map((exercise, index) => (
-                    <TouchableOpacity
-                      key={`${section.key}-${exercise.name}-${index}`}
-                      onPress={() =>
-                        actions.openLogForExercise(
-                          exercise.name,
-                          selectedDate,
-                          'Track',
-                        )
-                      }
-                      style={[
-                        listRow,
-                        index !== section.exercises.length - 1 &&
-                          listRowDivider,
-                      ]}
-                    >
-                      {(() => {
-                        const exerciseKey = `${section.key}-${exercise.name}`;
-                        const isExpanded = Boolean(
-                          expandedExercises[exerciseKey],
-                        );
-                        const hasOverflow =
-                          exercise.sets.length > MAX_SET_PREVIEW;
-                        const visibleSets = isExpanded
-                          ? exercise.sets
-                          : exercise.sets.slice(0, MAX_SET_PREVIEW);
-                        return (
-                          <View style={{ flex: 1, gap: spacing(0.5) }}>
-                            <Text style={exerciseTitle}>{exercise.name}</Text>
-                            <View style={{ gap: spacing(0.25) }}>
-                              {visibleSets.map((setItem, chunkIndex) => (
-                                <Text
-                                  key={`${exercise.name}-${chunkIndex}`}
-                                  style={exerciseMeta}
-                                >
-                                  {formatSetLabel(setItem)}
+        {model.emptyState ? null : (
+          <Card style={listContainer}>
+            {model.sections.map((section, sectionIndex) => (
+              <View key={section.key} style={sectionBlock}>
+                <Text style={sectionLabel}>{section.label}</Text>
+                {section.exercises.map((exercise, index) => (
+                  <TouchableOpacity
+                    key={`${section.key}-${exercise.name}-${index}`}
+                    onPress={() => onOpenLog(exercise.name, date, 'Track')}
+                    style={[
+                      listRow,
+                      index !== section.exercises.length - 1 && listRowDivider,
+                    ]}
+                  >
+                    {(() => {
+                      const exerciseKey = `${section.key}-${exercise.name}`;
+                      const isExpanded = Boolean(
+                        expandedExercises[exerciseKey],
+                      );
+                      const hasOverflow =
+                        exercise.sets.length > MAX_SET_PREVIEW;
+                      const visibleSets = isExpanded
+                        ? exercise.sets
+                        : exercise.sets.slice(0, MAX_SET_PREVIEW);
+                      return (
+                        <View style={{ flex: 1, gap: spacing(0.5) }}>
+                          <Text style={exerciseTitle}>{exercise.name}</Text>
+                          <View style={{ gap: spacing(0.25) }}>
+                            {visibleSets.map((setItem, chunkIndex) => (
+                              <Text
+                                key={`${exercise.name}-${chunkIndex}`}
+                                style={exerciseMeta}
+                              >
+                                {formatSetLabel(setItem)}
+                              </Text>
+                            ))}
+                            {hasOverflow && !isExpanded ? (
+                              <View style={moreSetsRow}>
+                                <Text style={exerciseMeta}>
+                                  {(() => {
+                                    const hiddenCount = countHiddenSets(
+                                      exercise.sets,
+                                      MAX_SET_PREVIEW,
+                                    );
+                                    return `+ ${hiddenCount} more ${
+                                      hiddenCount === 1 ? 'set' : 'sets'
+                                    }`;
+                                  })()}
                                 </Text>
-                              ))}
-                              {hasOverflow && !isExpanded ? (
-                                <View style={moreSetsRow}>
-                                  <Text style={exerciseMeta}>
-                                    {(() => {
-                                      const hiddenCount = countHiddenSets(
-                                        exercise.sets,
-                                        MAX_SET_PREVIEW,
-                                      );
-                                      return `+ ${hiddenCount} more ${
-                                        hiddenCount === 1 ? 'set' : 'sets'
-                                      }`;
-                                    })()}
-                                  </Text>
-                                  <TouchableOpacity
-                                    onPress={() =>
-                                      setExpandedExercises(previous => ({
-                                        ...previous,
-                                        [exerciseKey]: true,
-                                      }))
-                                    }
-                                  >
-                                    <Text style={showMoreLink}>Show all</Text>
-                                  </TouchableOpacity>
-                                </View>
-                              ) : null}
-                              {hasOverflow && isExpanded ? (
                                 <TouchableOpacity
                                   onPress={() =>
                                     setExpandedExercises(previous => ({
                                       ...previous,
-                                      [exerciseKey]: false,
+                                      [exerciseKey]: true,
                                     }))
                                   }
                                 >
-                                  <Text style={showMoreLink}>Show fewer</Text>
+                                  <Text style={showMoreLink}>Show all</Text>
                                 </TouchableOpacity>
-                              ) : null}
-                            </View>
+                              </View>
+                            ) : null}
+                            {hasOverflow && isExpanded ? (
+                              <TouchableOpacity
+                                onPress={() =>
+                                  setExpandedExercises(previous => ({
+                                    ...previous,
+                                    [exerciseKey]: false,
+                                  }))
+                                }
+                              >
+                                <Text style={showMoreLink}>Show fewer</Text>
+                              </TouchableOpacity>
+                            ) : null}
                           </View>
-                        );
-                      })()}
-                      <View style={setCountPill}>
-                        <Text style={setCountText}>{`${exercise.totalSets} ${
-                          exercise.totalSets === 1 ? 'set' : 'sets'
-                        }`}</Text>
-                      </View>
-                    </TouchableOpacity>
-                  ))}
-                  {sectionIndex !== sections.length - 1 ? (
-                    <View style={sectionDivider} />
-                  ) : null}
-                </View>
-              ))}
-            </Card>
-          )}
-        </ScrollView>
-      </View>
+                        </View>
+                      );
+                    })()}
+                    <View style={setCountPill}>
+                      <Text style={setCountText}>{`${exercise.totalSets} ${
+                        exercise.totalSets === 1 ? 'set' : 'sets'
+                      }`}</Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+                {sectionIndex !== model.sections.length - 1 ? (
+                  <View style={sectionDivider} />
+                ) : null}
+              </View>
+            ))}
+          </Card>
+        )}
+      </ScrollView>
     </View>
   );
 };

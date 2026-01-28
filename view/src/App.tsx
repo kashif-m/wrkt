@@ -6,6 +6,7 @@ import React, {
   useState,
 } from 'react';
 import { BackHandler, Text, TouchableOpacity, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   NavigationContainer,
   StackActions,
@@ -32,11 +33,12 @@ import HomeScreen from './screens/HomeScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import {
   PlanSuggestion,
-  suggestNext,
+  WorkoutEvent,
   WorkoutState,
-  logSet,
-  updateLoggedSet,
   deleteLoggedSet,
+  logSet,
+  suggestNext,
+  updateLoggedSet,
 } from './workoutFlows';
 import {
   init,
@@ -87,6 +89,9 @@ import {
   asNumericInput,
   asLabelText,
   asSearchQuery,
+  asToastText,
+  asToastTone,
+  asJsonString,
   unwrapLoggingMode,
   LabelText,
   asEventId,
@@ -99,19 +104,19 @@ import {
   unwrapScreenKey,
 } from './domain/types';
 
-type RootStackParamList = {
-  mainTabs: undefined;
-  browser: undefined;
-  log: undefined;
-  history: undefined;
-  importSummary: undefined;
-};
-
 type TabParamList = {
   home: undefined;
   calendar: undefined;
   analytics: undefined;
   more: undefined;
+};
+
+type RootStackParamList = {
+  mainTabs: { screen?: keyof TabParamList } | undefined;
+  browser: undefined;
+  log: undefined;
+  history: undefined;
+  importSummary: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -301,14 +306,11 @@ const LogRoute = () => {
   }, [state.catalog.entries, state.logging.exerciseName]);
 
   const logStatusBarStyle =
-    contrastColor(logHeaderBackground) === '#0f172a'
-      ? 'dark-content'
-      : 'light-content';
+    contrastColor(logHeaderBackground) === '#0f172a' ? 'dark' : 'light';
 
   useEffect(() => {
     navigation.setOptions({
       statusBarStyle: logStatusBarStyle,
-      statusBarColor: logHeaderBackground,
     });
   }, [logHeaderBackground, logStatusBarStyle, navigation]);
 
@@ -535,11 +537,21 @@ const AppInner = () => {
     return () => clearTimeout(timer);
   }, [state.logging.status]);
 
+  const pushScreen = useCallback(
+    (screen: ScreenKey) => {
+      if (!navigationRef.isReady()) return;
+      navigationRef.dispatch(
+        StackActions.push(unwrapScreenKey(screen) as ScreenKeyValue),
+      );
+    },
+    [navigationRef],
+  );
+
   const beginImport = useCallback(async () => {
-    const file = await pickFitnotesFile();
-    if (!file?.uri) return;
+    const filePath = await pickFitnotesFile();
+    if (!filePath) return;
     dispatch({ type: 'log/status', status: null });
-    const bundle = await importFitnotesBundle(file.uri);
+    const bundle = await importFitnotesBundle(filePath);
     if (!bundle) return;
     const result = await applyFitnotesImport(bundle);
     dispatch({
@@ -554,16 +566,6 @@ const AppInner = () => {
     await refreshFromStorage();
     await refreshCatalog();
   }, [pushScreen, refreshCatalog, refreshFromStorage]);
-
-  const pushScreen = useCallback(
-    (screen: ScreenKey) => {
-      if (!navigationRef.isReady()) return;
-      navigationRef.dispatch(
-        StackActions.push(unwrapScreenKey(screen) as ScreenKeyValue),
-      );
-    },
-    [navigationRef],
-  );
 
   const jumpToMainTab = useCallback(
     (
@@ -749,29 +751,39 @@ const AppInner = () => {
         if (__DEV__) {
           console.log('Logging set', payload, eventTs);
         }
-        const base = {
+        const baseEvent: WorkoutEvent = {
           tracker_id: asTrackerId('workout_v1'),
           event_id: eventId,
           ts: eventTs,
           payload,
-          meta: { source: 'manual' as const },
+          meta: { source: asJsonString('manual') },
         };
-        const event = logSet(base, state.events);
-        if (!event) {
+        const nextState = await logSet({ events: state.events }, baseEvent);
+        const createdEvent =
+          nextState.events.find(item => item.event_id === eventId) ??
+          nextState.events[nextState.events.length - 1];
+        const eventWithPr = createdEvent
+          ? {
+              ...createdEvent,
+              payload: buildPrPayload(payload, createdEvent.ts),
+            }
+          : null;
+        if (!eventWithPr) {
           dispatch({
             type: 'log/status',
-            status: { text: asLabelText('Set incomplete'), tone: 'warning' },
+            status: {
+              text: asToastText('Set incomplete'),
+              tone: asToastTone('info'),
+            },
           });
           return;
         }
-        const eventWithPr = {
-          ...event,
-          payload: buildPrPayload(payload, event.ts),
-        };
         await insertEvent(eventWithPr);
         dispatch({
           type: 'events/set',
-          events: [...state.events, eventWithPr],
+          events: nextState.events.map(event =>
+            event.event_id === eventId ? eventWithPr : event,
+          ),
         });
         dispatch({ type: 'log/status', status: null });
       },
@@ -787,30 +799,39 @@ const AppInner = () => {
       ) => {
         const existing = state.events.find(event => event.event_id === eventId);
         if (!existing) return;
-        const eventWithPr = {
-          ...existing,
-          payload: buildPrPayload(payload, existing.ts, existing),
-        };
-        await persistUpdatedEvent(eventWithPr);
-        dispatch({
-          type: 'events/set',
-          events: updateLoggedSet(state.events, eventWithPr),
-        });
+        const nextState = await updateLoggedSet(
+          { events: state.events },
+          eventId,
+          buildPrPayload(payload, existing.ts, existing),
+        );
+        const updated =
+          nextState.events.find(event => event.event_id === eventId) ?? null;
+        if (updated) {
+          await persistUpdatedEvent(updated);
+        }
+        dispatch({ type: 'events/set', events: nextState.events });
         dispatch({ type: 'log/editing', eventId: null });
         dispatch({
           type: 'log/status',
-          status: { text: asLabelText('Saved changes'), tone: 'success' },
+          status: {
+            text: asToastText('Saved changes'),
+            tone: asToastTone('success'),
+          },
         });
       },
       deleteSet: async (eventId: EventId) => {
         await removeEvent(eventId);
+        const nextState = deleteLoggedSet({ events: state.events }, eventId);
         dispatch({
           type: 'events/set',
-          events: deleteLoggedSet(state.events, eventId),
+          events: nextState.events,
         });
         dispatch({
           type: 'log/status',
-          status: { text: asLabelText('Set deleted'), tone: 'neutral' },
+          status: {
+            text: asToastText('Set deleted'),
+            tone: asToastTone('info'),
+          },
         });
       },
       toggleFavorite: async (slug: ExerciseSlug, isFavorite: boolean) => {
@@ -876,9 +897,7 @@ const AppInner = () => {
   );
 
   const baseStatusBarStyle =
-    contrastColor(palette.background) === '#0f172a'
-      ? 'dark-content'
-      : 'light-content';
+    contrastColor(palette.background) === '#0f172a' ? 'dark' : 'light';
 
   const handleNavStateChange = useCallback(() => {
     const rootState = navigationRef.getRootState();
@@ -909,10 +928,9 @@ const AppInner = () => {
               screenOptions={{
                 headerShown: false,
                 gestureEnabled: true,
-                gestureResponseDistance: { horizontal: 24 },
+                gestureResponseDistance: { start: 24 },
                 fullScreenGestureEnabled: false,
                 statusBarStyle: baseStatusBarStyle,
-                statusBarColor: palette.background,
               }}
             >
               <Stack.Screen name="mainTabs" component={MainTabs} />
@@ -939,9 +957,11 @@ const AppInner = () => {
 };
 
 const App = () => (
-  <SafeAreaProvider>
-    <AppInner />
-  </SafeAreaProvider>
+  <GestureHandlerRootView style={{ flex: 1 }}>
+    <SafeAreaProvider>
+      <AppInner />
+    </SafeAreaProvider>
+  </GestureHandlerRootView>
 );
 
 const formatLabel = (value: string) =>

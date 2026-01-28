@@ -94,3 +94,4 @@ view/coverage
 !.yarn/versions
 
 /llm
+/scripts

@@ -1,4 +1,10 @@
-# Implementation Tasks
+# Implementation Tasks (High-Level)
+
+## Scope Map
+- UI delivery is tracked in `llm/ui-tasks.md` (screen-by-screen + components).
+- This file stays at program/architecture level only.
+
+## Program Phases
 
 ## Phase 1 – Generic Rust Core (root `strata/`)
 
@@ -21,63 +27,23 @@
 - [x] Ensure offline logging and deterministic analytics with rounding/timezone policies, replaying event history per selected grains.
 - [x] Surface PRs, volume/1RM charts, and suggestion cards backed by the strategy module output.
 
-## Phase 4 – UI/UX System for Workout Tracker
+### Phase 4 – UI/UX System (High-Level Only)
+- [ ] Guided logging wizard (final polish + template parity).
+- [ ] Configurable workout templates.
+- [ ] UI infrastructure + reusable patterns.
 
-- ### FitNotes UI Blitz (current focus)
-- [x] **Home / Day view parity**
-    - Rebuild `App` shell around a FitNotes-style home screen with date header, prev/next arrows, calendar CTA, and “Workout log empty” copy.
-    - Surface `Start New Workout` / `Copy Previous Workout` CTAs plus a vertical list of completed exercises for the selected date.
-- [x] **Wizard entry point**
-    - Launch the existing `ExerciseBrowser` as a modal/stack from the home CTA and return an exercise selection that opens `LoggingScreen` in Track tab.
-    - Tapping a logged exercise should deep-link into the same `LoggingScreen` with History tab active.
-- [x] **Calendar loop**
-    - Implement a month grid with colored dots per muscle group; selecting a day updates `selectedDate` in the home shell and dismisses the calendar.
-  - [x] **Logging polish + defaults**
-    - Align steppers, segmented tabs, and set table spacing with the provided screenshots.
-    - Prefill weight/reps from the last logged set for that exercise.
-    - Show inline toast/status banners (Training saved, etc.).
-  - [x] **Graph / analytics parity**
-    - Expand the Trends tab into the FitNotes-style Graph view with quick filters (1m/3m/6m/1y/all) and a metric selector.
-    - Mirror the History tab layout (date headers, per-set rows) and prep for analytics cards once the home + calendar loops land.
+### Phase 5 – Root State Machine Refactor (Haskell-ish Flow)
+- [x] Inventory local states/effects and move to root context.
+- [x] Define RootState + Action types + pure reducer.
+- [x] Create effect runner for storage, catalog, suggestions.
+- [x] Migrate Home/Calendar/Browse/Logging to context/actions.
+- [x] Migrate Analytics/History/Suggestions; remove loose state.
+- [x] Verify logging for past dates + PR flags + nav consistency.
 
-- [ ] **Exercise Catalog & DSL Alignment**
-  - Model domain-specific exercises outside `strata/` (e.g., `workout-pack/config/exercise_catalog.json`) with fields: `slug`, `display_name`, `primary_muscle_group`, `secondary_groups`, `modality` (strength, hypertrophy, conditioning, bodyweight, mobility), `logging_mode` (reps/weight, time, distance, mixed), and metadata for suggested loading ranges.
-  - Provide a default bundle of exercises covering major muscle groups (push/pull/legs/core/cardio) so UI pickers feel complete on first launch.
-  - Keep this catalog versioned and ingestible by Rust (`workout-pack`) so planners can reason about modality and muscles; surface the same metadata to RN via JSON.
-
-- [x] **Exercise CRUD Flow**
-  - Build simple forms (React Native) for adding/editing exercises outside the default catalog. Persist user-defined entries in storage (AsyncStorage → eventually SQLite) with the same JSON schema.
-  - Expose a Rust helper (e.g., `tracker_catalog` API) for validating custom exercises—ensuring modality + logging fields make sense—so the UI only submits sanitized payloads.
-  - Support soft-delete or archive to keep history intact while hiding discontinued movements.
-
-- [ ] **Guided Logging Wizard**
-  - [x] Step 1: Choose muscle group via a color-coded card grid; each choice filters the catalog.
-  - [x] Step 2: Select exercise modality to refine the list.
-  - [x] Step 3: Present the filtered list with contextual tags (search/favorites still pending).
-  - [x] Step 4: Exercise logging screen enhancements
-    - Adapt inputs to `logging_mode` with weight/reps/time/distance steppers.
-    - Show contextual date header + Track/History/Trends tabs (Today list + grouped history + inline chart).
-    - Pre-fill default values from last session + add search/favorite affordances.
-  - All steps pull data from `workout-pack` catalogs to remain domain-agnostic.
-
-- [ ] **Chart + history polish**
-  - Add animated bar-style “volume vs week” charts and per-exercise history tables to the analytics tab (Phase 3 bonus) so we can mark the charts done.
-  - Display the live set list and history tabs per exercise on the logging screen per the Phase 4 guided wizard spec.
-
-- [ ] **Modern UI revamp**
-  - Refresh logging/analytics/calendar screens to match a clean, colorful FitNotes-inspired aesthetic (cards per workout, segmented controls, color-coded muscle groups).
-  - Add tabs per exercise (Track / History / Graph) with contextual widgets: numeric steppers for weight/reps, timeline table, and chart view.
-  - Introduce calendar overview with colored dots per muscle group to spot trends.
-
-- [ ] **Configurable Workout Templates**
-  - Allow users to save “routines” referencing exercise IDs and target set/rep schemes. Store these templates next to exercises (domain layer) and let Rust scoring/planning reference them when suggesting future sets.
-  - Templates should serialize into JSON that Strata can ingest for planning heuristics.
-
-- [ ] **UI Infrastructure**
-  - Build reusable wizard components (progress indicator, cards, pill selectors) using the shared theme from Phase 3.
-  - Ensure screens can be reused for future domains (e.g., nutrition) by keeping copy/layout generic where possible.
-
-- [ ] **Open Questions for Brainstorm**
-  - How do custom exercises sync with planning logic? (Potential answer: `workout-pack` reads a merged catalog file generated on-device and hashed for deterministic IDs.)
-  - Should the DSL expand with attachment metadata (video cues, equipment) loaded from the catalog?
-  - What minimal TypeScript glue is required vs Rust (ideally, Rust outputs next-step suggestions so TS just renders).
+### Phase 6 – Data Continuity (Backup / Restore / Import)
+- [ ] Define import data model in `workout-pack/src/import/` (events, exercises, favorites, warnings).
+- [ ] Implement FitNotes importer in Rust (read sqlite, map exercises/categories/training_log, preserve raw values).
+- [ ] Add FFI export to surface import bundle to RN (JSON payload).
+- [ ] Add RN import flow: file picker to select `.fitnotes`/sqlite file + progress + confirmation.
+- [ ] Apply import: merge custom exercises + favorites + events into local storage.
+- [ ] Add minimal validation + error reporting for corrupt/partial backups.

@@ -536,3 +536,49 @@ Before merging a change to core, answer:
   * planning rules
 
 React Native uses the pack configs and calls into the generic core.
+
+---
+
+# 10) wrkt minimalist UX canon
+
+Keep the UI “minimal but meaningful.” Every element must earn its place and support the core flows (log a set in <10 s, review progress quickly).
+
+## 10.1 North star + global rules
+
+* **One primary action per screen.** If two CTAs compete, the layout is wrong.
+* **Single header per screen.** Left = back, right = one contextual affordance (search, filter, overflow). Avoid duplicate month/date rows.
+* **Bottom navigation owns mode switching.** Tabs: Home, Calendar, Browse, Trends, More. Selecting a tab restores its previous scroll/search state.
+* **Tap-outside dismisses everything.** Sheets, search overlays, dialogs, and pickers must close on backdrop tap or swipe-down.
+* **Offline-first feedback.** Use concise toasts (`Saved`, `Added`, `Try again`) above the tab bar. Avoid spinners unless a network hop is truly pending.
+
+## 10.2 Visual hierarchy + tokens
+
+Define reusable tokens in the theme layer and apply them everywhere:
+
+* Font scale: Title (18 semibold), Section label (12 all-caps, letter spacing), Body (14 medium), Meta (12 muted), Micro (11 muted).
+* Spacing scale: multiples of `spacing(0.5)` up to `spacing(4)`; prefer generous padding around cards and set rows.
+* Color accents: dark background, primary accent for active tabs/icons/CTA, muscle group palette for dots + chips. Text defaults to high-contrast light gray.
+* Dividers: 1 px subtle line for separating list rows; no card borders unless grouping is essential.
+
+## 10.3 Component patterns
+
+* **List rows:** tap opens details; long-press shows bottom-sheet actions (Edit, Archive, Delete). Show trailing value only when it conveys core data (e.g., `100 kg × 5`). No per-row kebab buttons.
+* **Bottom sheets:** use for add/edit/filter flows. Primary action = single button; destructive actions require a secondary confirm sheet.
+* **Search:** default to an icon. On tap, expand into full-width search bar that auto focuses; collapse back to icon on dismiss and restore scroll position.
+* **Empty states:** text + CTA only (e.g., `No workout logged` + `Start workout`). No illustrations or filler copy.
+* **Toasts:** quiet, actionable, auto-dismiss (1.5–2.5 s) with swipe-to-dismiss support.
+
+## 10.4 Screen-specific notes
+
+* **Home/Daily log:** header shows `Today` (or weekday + date) only. Workout entries are lightweight timeline rows grouped by muscle chip. Inline `Start workout` CTA appears only for today/empty days; otherwise expose the action via overflow.
+* **Calendar:** single month header with chevrons. Jump-to-today = subtle target icon or double-tap gesture. Swipe horizontally to change month. Year picker lives in a bottom sheet that scrolls infinitely.
+* **Browse/Manage exercises:** header = title + search icon + overflow. Rows open on tap, long-press opens contextual sheet. `Add exercise` only appears as a bottom CTA on the root list/manage screen.
+* **Logging:** Track tab hosts inline set entry table (weight/reps/time/distance) with smart defaults and automatic focus progression. Show last-session peek inline; PR badge is a subtle star on the set row with tap-to-explain.
+* **Trends/Analytics:** limit on-screen metrics to ≤5 at a time. Use segmented toggles for metric/range selection. Charts emphasize clarity (single series per view) and consistent axes. Tooltips provide concise context (e.g., `Max reps • 2025-12-16 • 3 @ 150 kg`).
+
+## 10.5 Engagement + consistency
+
+* Calendar streak dots (color-coded by muscle group) highlight adherence without gamified noise.
+* Favor quiet motivational copy (“Keep the streak alive”, “New PR recorded”) over celebratory pop-ups.
+* Use consistent terminology (`set`, `session`, `weight`, `reps`), date formatting, and unit display throughout the app.
+* Reuse the same empty-state + toast patterns across Home, Calendar, Browse, Logging, Analytics, and Settings.

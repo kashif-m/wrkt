@@ -1,5 +1,5 @@
 import DocumentPicker from 'react-native-document-picker';
-import { importFitnotes } from '../TrackerEngine';
+import { JsonObject, importFitnotes } from '../TrackerEngine';
 import {
   BaseExerciseCatalogEntry,
   fetchMergedCatalog,
@@ -12,10 +12,11 @@ import {
   asEventId,
   asExerciseName,
   asExerciseSlug,
-  asMuscleGroup,
+  asJsonString,
   asLoggingMode,
   asModality,
-  JsonObject,
+  asMuscleGroup,
+  asTag,
 } from '../domain/types';
 import {
   getLocalOffsetMinutes,
@@ -83,7 +84,9 @@ export const pickFitnotesFile = async (): Promise<string | null> => {
 
 export const importFitnotesBundle = async (path: string) => {
   const normalizedPath = path.replace(/^file:\/\//, '');
-  const bundle = (await importFitnotes(normalizedPath)) as FitNotesImportBundle;
+  const bundle = (await importFitnotes(
+    normalizedPath,
+  )) as unknown as FitNotesImportBundle;
   return bundle;
 };
 
@@ -105,11 +108,13 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
       slug: asExerciseSlug(entry.slug),
       display_name: asExerciseName(entry.display_name),
       primary_muscle_group: asMuscleGroup(entry.primary_muscle_group),
-      secondary_groups: entry.secondary_groups ?? [],
+      secondary_groups: (entry.secondary_groups ?? []).map(group =>
+        asMuscleGroup(group),
+      ),
       modality: asModality(entry.modality as any),
       logging_mode: asLoggingMode(entry.logging_mode as any),
       suggested_load_range: entry.suggested_load_range ?? { min: 0, max: 0 },
-      tags: entry.tags ?? [],
+      tags: (entry.tags ?? []).map(tag => asTag(tag)),
     }),
   );
 
@@ -150,21 +155,23 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
       resolvedSlug && slugToName.has(resolvedSlug)
         ? slugToName.get(resolvedSlug)
         : event.exercise;
+    const payload: JsonObject = {
+      exercise: asExerciseName(String(resolvedName ?? event.exercise ?? '')),
+    };
+    if (typeof event.reps === 'number') payload.reps = event.reps;
+    if (typeof event.weight === 'number') payload.weight = event.weight;
+    if (typeof event.distance === 'number') payload.distance = event.distance;
+    if (typeof event.duration === 'number') payload.duration = event.duration;
+    if (typeof event.pr === 'boolean') payload.pr = event.pr;
+
     return {
       event_id: asEventId(`import-fitnotes-${logId}`),
       tracker_id: trackerId,
       ts,
-      payload: {
-        exercise: resolvedName,
-        reps: event.reps,
-        weight: event.weight,
-        distance: event.distance,
-        duration: event.duration,
-        pr: event.pr,
-      },
+      payload,
       meta: {
         ...meta,
-        source: 'fitnotes',
+        source: asJsonString('fitnotes'),
         timezone_offset_minutes: offsetMinutes,
         day_bucket: roundToLocalDay(ts, offsetMinutes),
         week_bucket: roundToLocalWeek(ts, offsetMinutes),

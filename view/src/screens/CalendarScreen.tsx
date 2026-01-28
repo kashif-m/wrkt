@@ -10,13 +10,12 @@ import {
   Text,
   TouchableOpacity,
   Animated,
-  PanResponder,
-  GestureResponderEvent,
-  PanResponderGestureState,
   ViewStyle,
   TouchableWithoutFeedback,
-  ScrollView,
 } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { ScrollView } from 'react-native-gesture-handler';
+import { runOnJS } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
 import { getMuscleColor } from '../ui/muscleColors';
 import { roundToLocalDay } from '../timePolicy';
@@ -55,6 +54,8 @@ const CalendarScreen = () => {
   const yearSheetOpen = state.calendar.yearSheetOpen;
   const monthAnim = useRef(new Animated.Value(1)).current;
   const sheetTranslate = useRef(new Animated.Value(0)).current;
+  const gridRef = useRef<View>(null);
+  const gridBounds = useRef<{ top: number; bottom: number } | null>(null);
   const [showAllMuscles, setShowAllMuscles] = useState(false);
 
   useEffect(() => {
@@ -62,6 +63,12 @@ const CalendarScreen = () => {
       sheetTranslate.setValue(0);
     }
   }, [yearSheetOpen, sheetTranslate]);
+
+  const updateGridBounds = useCallback(() => {
+    gridRef.current?.measureInWindow((_x, y, _width, height) => {
+      gridBounds.current = { top: y, bottom: y + height };
+    });
+  }, []);
 
   useEffect(() => {
     setShowAllMuscles(false);
@@ -234,70 +241,62 @@ const CalendarScreen = () => {
     [animateToMonth, visibleMonth],
   );
 
-  const panResponder = useMemo(() => {
-    const edgeWidth = 24;
-    const shouldHandle = (gesture: PanResponderGestureState) => {
-      const startX =
-        typeof gesture.x0 === 'number' ? gesture.x0 : edgeWidth + 1;
-      if (startX <= edgeWidth) return false;
-      return (
-        Math.abs(gesture.dx) > Math.abs(gesture.dy) && Math.abs(gesture.dx) > 20
-      );
-    };
-    return PanResponder.create({
-      onMoveShouldSetPanResponderCapture: (
-        _: GestureResponderEvent,
-        gesture: PanResponderGestureState,
-      ) => shouldHandle(gesture),
-      onMoveShouldSetPanResponder: (
-        _: GestureResponderEvent,
-        gesture: PanResponderGestureState,
-      ) => shouldHandle(gesture),
-      onPanResponderRelease: (
-        _: GestureResponderEvent,
-        gesture: PanResponderGestureState,
-      ) => {
-        if (gesture.dx > 20) {
-          handleShift(-1);
-        } else if (gesture.dx < -20) {
-          handleShift(1);
-        }
-      },
-    });
-  }, [handleShift]);
-
-  const sheetPanResponder = useMemo(
+  const panGesture = useMemo(
     () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (
-          _: GestureResponderEvent,
-          gesture: PanResponderGestureState,
-        ) => gesture.dy > 6 && Math.abs(gesture.dy) > Math.abs(gesture.dx),
-        onPanResponderMove: (
-          _: GestureResponderEvent,
-          gesture: PanResponderGestureState,
-        ) => {
-          if (gesture.dy > 0) {
-            sheetTranslate.setValue(gesture.dy);
+      Gesture.Pan()
+        .activeOffsetX([-20, 20])
+        .failOffsetY([-15, 15])
+        .onEnd(event => {
+          'worklet';
+          if (event.translationX > 20) {
+            runOnJS(handleShift)(-1);
+          } else if (event.translationX < -20) {
+            runOnJS(handleShift)(1);
           }
-        },
-        onPanResponderRelease: (
-          _: GestureResponderEvent,
-          gesture: PanResponderGestureState,
-        ) => {
-          if (gesture.dy > 80) {
-            dispatch({ type: 'calendar/yearSheet', open: false });
-            sheetTranslate.setValue(0);
+        }),
+    [handleShift],
+  );
+
+  const closeSheet = useCallback(() => {
+    dispatch({ type: 'calendar/yearSheet', open: false });
+    sheetTranslate.setValue(0);
+  }, [dispatch, sheetTranslate]);
+
+  const resetSheet = useCallback(() => {
+    Animated.timing(sheetTranslate, {
+      toValue: 0,
+      duration: 150,
+      useNativeDriver: true,
+    }).start();
+  }, [sheetTranslate]);
+
+  const updateSheetTranslate = useCallback(
+    (value: number) => {
+      sheetTranslate.setValue(value);
+    },
+    [sheetTranslate],
+  );
+
+  const sheetPanGesture = useMemo(
+    () =>
+      Gesture.Pan()
+        .activeOffsetY([6, 6])
+        .failOffsetX([-10, 10])
+        .onUpdate(event => {
+          'worklet';
+          if (event.translationY > 0) {
+            runOnJS(updateSheetTranslate)(event.translationY);
+          }
+        })
+        .onEnd(event => {
+          'worklet';
+          if (event.translationY > 80) {
+            runOnJS(closeSheet)();
             return;
           }
-          Animated.timing(sheetTranslate, {
-            toValue: 0,
-            duration: 150,
-            useNativeDriver: true,
-          }).start();
-        },
-      }),
-    [dispatch, sheetTranslate],
+          runOnJS(resetSheet)();
+        }),
+    [closeSheet, resetSheet, updateSheetTranslate],
   );
 
   return (
@@ -347,158 +346,148 @@ const CalendarScreen = () => {
         </View>
       </View>
 
-      <ScrollView
-        contentContainerStyle={{
-          paddingBottom: spacing(6),
-        }}
-      >
-        <Card style={summaryCard}>
-          <View style={summaryHeader}>
-            <Text style={summaryTitle}>Monthly summary</Text>
-            <Text style={summarySubtitle}>
-              {monthStats.sessions} sessions • {monthStats.attendance}%
-              attendance
-            </Text>
-          </View>
-          <View style={summaryBody}>
-            <View style={{ flex: 1 }}>
-              <View style={summaryRow}>
-                <Text style={summaryLabel}>Top muscle groups</Text>
-                {monthStats.allMuscles.length > 3 ? (
-                  <TouchableOpacity
-                    onPress={() => setShowAllMuscles(current => !current)}
-                  >
-                    <Text style={summaryLink}>
-                      {showAllMuscles ? 'Show less' : 'Show all'}
-                    </Text>
-                  </TouchableOpacity>
-                ) : null}
-              </View>
-              {(showAllMuscles ? monthStats.allMuscles : monthStats.topMuscles)
-                .length === 0 ? (
-                <Text style={summaryValue}>No sessions yet</Text>
-              ) : (
-                (showAllMuscles
+      <GestureDetector gesture={panGesture}>
+        <ScrollView
+          contentContainerStyle={{
+            paddingBottom: spacing(6),
+          }}
+        >
+          <Card style={summaryCard}>
+            <View style={summaryHeader}>
+              <Text style={summaryTitle}>Monthly summary</Text>
+              <Text style={summarySubtitle}>
+                {monthStats.sessions} sessions • {monthStats.attendance}%
+                attendance
+              </Text>
+            </View>
+            <View style={summaryBody}>
+              <View style={{ flex: 1 }}>
+                <View style={summaryRow}>
+                  <Text style={summaryLabel}>Top muscle groups</Text>
+                  {monthStats.allMuscles.length > 3 ? (
+                    <TouchableOpacity
+                      onPress={() => setShowAllMuscles(current => !current)}
+                    >
+                      <Text style={summaryLink}>
+                        {showAllMuscles ? 'Show less' : 'Show all'}
+                      </Text>
+                    </TouchableOpacity>
+                  ) : null}
+                </View>
+                {(showAllMuscles
                   ? monthStats.allMuscles
                   : monthStats.topMuscles
-                ).map(item => (
-                  <View key={item.group} style={summaryRow}>
-                    <View style={[dot, { backgroundColor: item.color }]} />
-                    <Text style={summaryValue}>
-                      {formatLabel(item.group)} · {item.count}
-                    </Text>
-                  </View>
-                ))
-              )}
-            </View>
-            <View style={summaryChart}>
-              <MusclePie data={monthStats.pieData} radius={38} />
-            </View>
-          </View>
-        </Card>
-
-        <View style={weekdayRow}>
-          {DAY_NAMES.map(label => (
-            <Text
-              key={label}
-              style={{
-                color:
-                  label === 'SUN' || label === 'SAT'
-                    ? palette.danger
-                    : palette.mutedText,
-                fontSize: 12,
-                flex: 1,
-                textAlign: 'center',
-              }}
-            >
-              {label}
-            </Text>
-          ))}
-        </View>
-
-        <Animated.View
-          style={{ opacity: monthAnim }}
-          {...panResponder.panHandlers}
-        >
-          <View style={grid}>
-            {days.map((day, index) => {
-              const dateKey = roundToLocalDay(day.getTime());
-              const colors = dayColorMap.get(dateKey) ?? [];
-              const isCurrentMonth = day.getMonth() === visibleMonth.getMonth();
-              const isSelected =
-                roundToLocalDay(selectedDate.getTime()) === dateKey;
-              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-              const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
-              const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
-              return (
-                <TouchableOpacity
-                  key={day.toISOString()}
-                  style={[
-                    cell,
-                    {
-                      borderRightWidth: isLastColumn ? 0 : 1,
-                      borderBottomWidth: isLastRow ? 0 : 1,
-                    },
-                    !isCurrentMonth && { opacity: 0.3 },
-                    isSelected && {
-                      borderColor: palette.primary,
-                      borderWidth: 2,
-                    },
-                    isWeekend && {
-                      backgroundColor: addAlpha(palette.surface, 0.35),
-                    },
-                  ]}
-                  onPress={() => {
-                    actions.setSelectedDate(new Date(day));
-                    actions.navigate(asScreenKey('home'));
-                  }}
-                >
-                  <Text
-                    style={{
-                      color: isWeekend ? palette.warning : palette.text,
-                      fontWeight: '600',
-                    }}
-                  >
-                    {day.getDate()}
-                  </Text>
-                  <View style={dotRow}>
-                    {colors.slice(0, 3).map(color => (
-                      <View
-                        key={`${dateKey}-${color}`}
-                        style={[dot, { backgroundColor: color }]}
-                      />
-                    ))}
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </Animated.View>
-
-        {legendEntries.length > 0 ? (
-          <View style={legendContainer}>
-            {legendEntries.map(entry => (
-              <View key={entry.key} style={legendItem}>
-                <View style={[dot, { backgroundColor: entry.color }]} />
-                <Text style={{ color: palette.text }}>{entry.label}</Text>
+                ).length === 0 ? (
+                  <Text style={summaryValue}>No sessions yet</Text>
+                ) : (
+                  (showAllMuscles
+                    ? monthStats.allMuscles
+                    : monthStats.topMuscles
+                  ).map(item => (
+                    <View key={item.group} style={summaryRow}>
+                      <View style={[dot, { backgroundColor: item.color }]} />
+                      <Text style={summaryValue}>
+                        {formatLabel(item.group)} · {item.count}
+                      </Text>
+                    </View>
+                  ))
+                )}
               </View>
+              <View style={summaryChart}>
+                <MusclePie data={monthStats.pieData} radius={38} />
+              </View>
+            </View>
+          </Card>
+
+          <View style={weekdayRow}>
+            {DAY_NAMES.map(label => (
+              <Text
+                key={label}
+                style={{
+                  color:
+                    label === 'SUN' || label === 'SAT'
+                      ? palette.danger
+                      : palette.mutedText,
+                  fontSize: 12,
+                  flex: 1,
+                  textAlign: 'center',
+                }}
+              >
+                {label}
+              </Text>
             ))}
           </View>
-        ) : null}
-      </ScrollView>
+
+          <Animated.View style={{ opacity: monthAnim }}>
+            <View ref={gridRef} onLayout={updateGridBounds} style={grid}>
+              {days.map((day, index) => {
+                const dateKey = roundToLocalDay(day.getTime());
+                const colors = dayColorMap.get(dateKey) ?? [];
+                const isCurrentMonth =
+                  day.getMonth() === visibleMonth.getMonth();
+                const isSelected =
+                  roundToLocalDay(selectedDate.getTime()) === dateKey;
+                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
+                const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
+                return (
+                  <TouchableOpacity
+                    key={day.toISOString()}
+                    style={[
+                      cell,
+                      {
+                        borderRightWidth: isLastColumn ? 0 : 1,
+                        borderBottomWidth: isLastRow ? 0 : 1,
+                      },
+                      !isCurrentMonth && { opacity: 0.3 },
+                      isSelected && {
+                        borderColor: palette.primary,
+                        borderWidth: 2,
+                      },
+                      isWeekend && {
+                        backgroundColor: addAlpha(palette.surface, 0.35),
+                      },
+                    ]}
+                    onPress={() => {
+                      actions.setSelectedDate(new Date(day));
+                      actions.navigate(asScreenKey('home'));
+                    }}
+                  >
+                    <Text
+                      style={{
+                        color: isWeekend ? palette.warning : palette.text,
+                        fontWeight: '600',
+                      }}
+                    >
+                      {day.getDate()}
+                    </Text>
+                    <View style={dotRow}>
+                      {colors.slice(0, 3).map(color => (
+                        <View
+                          key={`${dateKey}-${color}`}
+                          style={[dot, { backgroundColor: color }]}
+                        />
+                      ))}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </Animated.View>
+        </ScrollView>
+      </GestureDetector>
 
       {yearSheetOpen ? (
         <TouchableWithoutFeedback
           onPress={() => dispatch({ type: 'calendar/yearSheet', open: false })}
         >
           <View style={sheetOverlay}>
-            <TouchableWithoutFeedback>
+            <GestureDetector gesture={sheetPanGesture}>
               <Animated.View
                 style={[
                   sheetContainer,
                   { transform: [{ translateY: sheetTranslate }] },
                 ]}
-                {...sheetPanResponder.panHandlers}
               >
                 <Text
                   style={{ color: palette.mutedText, marginBottom: spacing(1) }}
@@ -545,7 +534,7 @@ const CalendarScreen = () => {
                   </Text>
                 </TouchableOpacity>
               </Animated.View>
-            </TouchableWithoutFeedback>
+            </GestureDetector>
           </View>
         </TouchableWithoutFeedback>
       ) : null}
