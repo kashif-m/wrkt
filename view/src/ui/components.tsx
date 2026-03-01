@@ -1,18 +1,40 @@
-import React from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
+  Modal,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  TouchableWithoutFeedback,
+  useWindowDimensions,
   ViewStyle,
   TextStyle,
+  Animated,
+  PanResponder,
 } from 'react-native';
-import { palette, radius, spacing, typography } from './theme';
+import {
+  analyticsUi,
+  getActiveThemeMode,
+  getContrastTextColor,
+  palette,
+  radius,
+  spacing,
+  typography,
+} from './theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ColorHex,
   ColorValue,
-  DisplayLabel,
   LabelText,
   NumericInput,
   PlaceholderText,
@@ -41,9 +63,11 @@ export const ScreenContainer = ({
 export const Card = ({
   children,
   style = {},
+  variant = 'default',
 }: {
   children: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
+  variant?: 'default' | 'analytics';
 }) => (
   <View
     style={[
@@ -51,8 +75,18 @@ export const Card = ({
         backgroundColor: palette.surface,
         padding: spacing(2),
         borderRadius: radius.card,
-        borderWidth: 1,
+        borderWidth: variant === 'analytics' ? 0 : 1,
         borderColor: palette.border,
+        shadowColor: '#000',
+        shadowOpacity:
+          variant === 'analytics' ? analyticsUi.cardShadowOpacity : 0,
+        shadowRadius:
+          variant === 'analytics' ? analyticsUi.cardShadowRadius : 0,
+        shadowOffset:
+          variant === 'analytics'
+            ? { width: 0, height: analyticsUi.cardShadowOffsetY }
+            : { width: 0, height: 0 },
+        elevation: variant === 'analytics' ? 2 : 0,
       },
       style,
     ]}
@@ -96,21 +130,31 @@ export const ListRow = ({
   value,
   onPress,
   showDivider = true,
+  minHeight,
+  accessibilityLabel,
+  accessibilityState,
 }: {
   title: LabelText;
   subtitle?: LabelText;
   value?: LabelText;
   onPress?: () => void;
   showDivider?: boolean;
+  minHeight?: number;
+  accessibilityLabel?: string;
+  accessibilityState?: { selected?: boolean };
 }) => (
   <TouchableOpacity
     onPress={onPress}
     activeOpacity={onPress ? 0.7 : 1}
+    accessibilityRole={onPress ? 'button' : undefined}
+    accessibilityLabel={accessibilityLabel}
+    accessibilityState={accessibilityState}
     style={{
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
       paddingVertical: spacing(1),
+      minHeight,
       borderBottomWidth: showDivider ? 1 : 0,
       borderColor: palette.border,
     }}
@@ -199,20 +243,216 @@ export const BottomSheet = ({
   visible,
   onClose,
   children,
+  maxHeightRatio = 0.72,
+  onCardLayout,
 }: {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
+  maxHeightRatio?: number;
+  onCardLayout?: (height: number) => void;
 }) => {
+  const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [sheetCardHeight, setSheetCardHeight] = useState(0);
+  const translateY = useRef(new Animated.Value(0)).current;
+  const closingRef = useRef(false);
+  const dismissDistance = useMemo(
+    () =>
+      Math.max(
+        260,
+        Math.min(height * 0.95, sheetCardHeight + insets.bottom + spacing(4)),
+      ),
+    [height, insets.bottom, sheetCardHeight],
+  );
+  const closeThreshold = useMemo(
+    () => Math.max(84, dismissDistance * 0.2),
+    [dismissDistance],
+  );
+  const backdropOpacity = translateY.interpolate({
+    inputRange: [0, dismissDistance],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const closeWithSlide = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    Keyboard.dismiss();
+    Animated.timing(translateY, {
+      toValue: dismissDistance,
+      duration: 220,
+      useNativeDriver: true,
+    }).start(() => {
+      closingRef.current = false;
+      onClose();
+    });
+  }, [dismissDistance, onClose, translateY]);
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: event =>
+          event.nativeEvent.locationY <= 44,
+        onMoveShouldSetPanResponder: (_event, gestureState) =>
+          gestureState.dy > 6 &&
+          Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        onPanResponderMove: (_event, gestureState) => {
+          if (gestureState.dy <= 0) return;
+          translateY.setValue(Math.min(dismissDistance, gestureState.dy));
+        },
+        onPanResponderRelease: (_event, gestureState) => {
+          if (gestureState.dy > closeThreshold || gestureState.vy > 1.2) {
+            closeWithSlide();
+            return;
+          }
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 20,
+          }).start();
+        },
+        onPanResponderTerminate: () => {
+          Animated.spring(translateY, {
+            toValue: 0,
+            useNativeDriver: true,
+            bounciness: 0,
+            speed: 20,
+          }).start();
+        },
+      }),
+    [closeThreshold, closeWithSlide, dismissDistance, translateY],
+  );
+
+  useEffect(() => {
+    if (!visible) {
+      setKeyboardHeight(0);
+      return;
+    }
+
+    const resolveHeight = (
+      endCoordinates: { height?: number; screenY?: number } | undefined,
+    ) => {
+      if (!endCoordinates) return 0;
+      if (typeof endCoordinates.screenY === 'number') {
+        return Math.max(0, height - endCoordinates.screenY);
+      }
+      return Math.max(0, endCoordinates.height ?? 0);
+    };
+
+    const onShowOrFrame = (event: {
+      endCoordinates?: { height?: number; screenY?: number };
+    }) => {
+      setKeyboardHeight(resolveHeight(event.endCoordinates));
+    };
+    const onHide = () => setKeyboardHeight(0);
+
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvent, onShowOrFrame);
+    const hideSub = Keyboard.addListener(hideEvent, onHide);
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [height, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    translateY.setValue(dismissDistance);
+    Animated.spring(translateY, {
+      toValue: 0,
+      useNativeDriver: true,
+      bounciness: 0,
+      speed: 22,
+    }).start();
+  }, [dismissDistance, translateY, visible]);
+
   if (!visible) return null;
+  const defaultMaxHeight = Math.max(
+    240,
+    (height - insets.top) * maxHeightRatio,
+  );
+  const keyboardSafeHeight = Math.max(
+    220,
+    height - insets.top - keyboardHeight - spacing(2),
+  );
+  const maxHeight =
+    keyboardHeight > 0
+      ? Math.min(defaultMaxHeight, keyboardSafeHeight)
+      : defaultMaxHeight;
+
   return (
-    <TouchableWithoutFeedback onPress={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="none"
+      onRequestClose={closeWithSlide}
+      statusBarTranslucent
+    >
       <View style={sheetOverlay}>
-        <TouchableWithoutFeedback>
-          <View style={sheetCard}>{children}</View>
-        </TouchableWithoutFeedback>
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            sheetBackdrop,
+            {
+              opacity: backdropOpacity,
+              backgroundColor:
+                getActiveThemeMode() === 'light'
+                  ? 'rgba(31, 41, 55, 0.2)'
+                  : 'rgba(10, 12, 18, 0.6)',
+            },
+          ]}
+        />
+        <Pressable style={StyleSheet.absoluteFill} onPress={closeWithSlide} />
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={insets.bottom}
+          style={sheetKeyboardWrap}
+        >
+          <Animated.View
+            style={{
+              transform: [{ translateY }],
+            }}
+            {...panResponder.panHandlers}
+          >
+            <Pressable
+              onPress={() => undefined}
+              onLayout={event => {
+                const measuredHeight = event.nativeEvent.layout.height;
+                setSheetCardHeight(measuredHeight);
+                onCardLayout?.(measuredHeight);
+              }}
+              style={[
+                {
+                  backgroundColor: palette.surface,
+                  borderTopLeftRadius: radius.card,
+                  borderTopRightRadius: radius.card,
+                  padding: spacing(2),
+                },
+                {
+                  maxHeight,
+                  paddingBottom: spacing(1.5) + insets.bottom,
+                },
+              ]}
+            >
+              <View style={sheetHandleWrap}>
+                <View
+                  style={[sheetHandle, { backgroundColor: palette.primary }]}
+                />
+              </View>
+              {children}
+            </Pressable>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </View>
-    </TouchableWithoutFeedback>
+    </Modal>
   );
 };
 
@@ -237,7 +477,10 @@ export const PillButton = ({
     }}
   >
     <Text
-      style={{ color: active ? '#0f172a' : palette.text, fontWeight: '600' }}
+      style={{
+        color: active ? getContrastTextColor(palette.primary) : palette.text,
+        fontWeight: '600',
+      }}
     >
       {unwrapLabelText(label)}
     </Text>
@@ -266,7 +509,9 @@ export const PrimaryButton = ({
   >
     <Text
       style={{
-        color: disabled ? palette.mutedText : '#0f172a',
+        color: disabled
+          ? palette.mutedText
+          : getContrastTextColor(palette.primary),
         fontWeight: '600',
       }}
     >
@@ -326,15 +571,28 @@ const sheetOverlay = {
   right: 0,
   left: 0,
   bottom: 0,
-  backgroundColor: 'rgba(10, 12, 18, 0.6)',
   justifyContent: 'flex-end' as const,
 };
 
-const sheetCard = {
-  backgroundColor: palette.surface,
-  borderTopLeftRadius: radius.card,
-  borderTopRightRadius: radius.card,
-  padding: spacing(2),
+const sheetBackdrop = {
+  ...StyleSheet.absoluteFillObject,
+};
+
+const sheetKeyboardWrap = {
+  flex: 1,
+  justifyContent: 'flex-end' as const,
+};
+
+const sheetHandleWrap = {
+  alignItems: 'center' as const,
+  marginTop: -spacing(0.5),
+  marginBottom: spacing(1),
+};
+
+const sheetHandle = {
+  width: 40,
+  height: 4,
+  borderRadius: 999,
 };
 
 const addAlpha = (hex: ColorHex, alpha: number): ColorValue => {

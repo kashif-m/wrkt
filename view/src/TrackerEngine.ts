@@ -52,6 +52,29 @@ interface TrackerEngineBinding {
     existingEvent: JsonText | null,
     loggingMode: string,
   ) => JsonText;
+  computeAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+  ) => JsonText;
+  computeWorkoutAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+    query: JsonText,
+  ) => JsonText;
+  computeBreakdownAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+    query: JsonText,
+  ) => JsonText;
+  computeExerciseAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+    query: JsonText,
+  ) => JsonText;
 }
 
 declare global {
@@ -245,4 +268,76 @@ export const buildPrPayload = (
     loggingMode,
   );
   return JSON.parse(result) as JsonObject;
+};
+
+import {
+  AnalyticsSummary,
+  BreakdownQuery,
+  BreakdownResponse,
+  ExerciseSeriesQuery,
+  ExerciseSeriesResponse,
+  WorkoutAnalyticsQuery,
+  WorkoutMetricsSeries,
+} from './domain/analytics';
+
+export const computeAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+): AnalyticsSummary => {
+  const engine = ensureBinding();
+  const result = engine.computeAnalytics(
+    JSON.stringify(events) as JsonText,
+    offset,
+    JSON.stringify(catalog) as JsonText,
+  );
+  return JSON.parse(result) as AnalyticsSummary;
+};
+
+export const computeWorkoutAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+  query: WorkoutAnalyticsQuery,
+): WorkoutMetricsSeries => {
+  const engine = ensureBinding();
+  const result = engine.computeWorkoutAnalytics(
+    JSON.stringify(events) as JsonText,
+    offset,
+    JSON.stringify(catalog) as JsonText,
+    JSON.stringify(query) as JsonText,
+  );
+  return JSON.parse(result) as WorkoutMetricsSeries;
+};
+
+export const computeBreakdownAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+  query: BreakdownQuery,
+): BreakdownResponse => {
+  const engine = ensureBinding();
+  const result = engine.computeBreakdownAnalytics(
+    JSON.stringify(events) as JsonText,
+    offset,
+    JSON.stringify(catalog) as JsonText,
+    JSON.stringify(query) as JsonText,
+  );
+  return JSON.parse(result) as BreakdownResponse;
+};
+
+export const computeExerciseAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+  query: ExerciseSeriesQuery,
+): ExerciseSeriesResponse => {
+  const engine = ensureBinding();
+  const result = engine.computeExerciseAnalytics(
+    JSON.stringify(events) as JsonText,
+    offset,
+    JSON.stringify(catalog) as JsonText,
+    JSON.stringify(query) as JsonText,
+  );
+  return JSON.parse(result) as ExerciseSeriesResponse;
 };

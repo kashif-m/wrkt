@@ -10,15 +10,17 @@ import {
   Text,
   TouchableOpacity,
   Animated,
+  StyleSheet,
   ViewStyle,
   TouchableWithoutFeedback,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
-import Svg, { Path } from 'react-native-svg';
+import { DonutChart } from '../components/analytics/DonutChart';
 import { getMuscleColor } from '../ui/muscleColors';
 import { roundToLocalDay } from '../timePolicy';
+import { formatPercent } from '../ui/formatters';
 import { palette, radius, spacing } from '../ui/theme';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
@@ -57,6 +59,14 @@ const CalendarScreen = () => {
   const gridRef = useRef<View>(null);
   const gridBounds = useRef<{ top: number; bottom: number } | null>(null);
   const [showAllMuscles, setShowAllMuscles] = useState(false);
+  const [scrollViewportHeight, setScrollViewportHeight] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const themeKey = `${state.preferences.themeMode}:${
+    state.preferences.themeAccent
+  }:${state.preferences.customAccentHex ?? ''}`;
+  const styles = useMemo(() => createStyles(), [themeKey]);
+  const canScroll =
+    scrollViewportHeight > 0 && scrollContentHeight > scrollViewportHeight + 8;
 
   useEffect(() => {
     if (yearSheetOpen) {
@@ -138,6 +148,12 @@ const CalendarScreen = () => {
       0,
     ).getDate();
     const today = new Date();
+    const currentMonthStart = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      1,
+    ).getTime();
+    const isFutureMonth = start.getTime() > currentMonthStart;
     const daysElapsed =
       today.getFullYear() === visibleMonth.getFullYear() &&
       today.getMonth() === visibleMonth.getMonth()
@@ -172,9 +188,7 @@ const CalendarScreen = () => {
       });
     });
     const sessions = sessionDays.size;
-    const attendance = daysElapsed
-      ? Math.round((sessions / daysElapsed) * 100)
-      : 0;
+    const attendance = daysElapsed ? (sessions / daysElapsed) * 100 : 0;
     const allMuscles = Array.from(muscleSessionCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .map(([group, count]) => ({
@@ -200,6 +214,7 @@ const CalendarScreen = () => {
       daysInMonth,
       sessions,
       attendance,
+      isFutureMonth,
       topMuscles,
       allMuscles,
       pieData,
@@ -301,16 +316,16 @@ const CalendarScreen = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={headerRow}>
+      <View style={styles.headerRow}>
         <TouchableOpacity
           onPress={() => actions.navigate(asScreenKey('home'))}
-          style={headerButton}
+          style={styles.headerButton}
         >
           <ArrowLeftIcon width={18} height={18} color={palette.text} />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={() => dispatch({ type: 'calendar/yearSheet', open: true })}
-          style={monthTitle}
+          style={styles.monthTitle}
         >
           <Text
             style={{ color: palette.text, fontSize: 18, fontWeight: '700' }}
@@ -321,11 +336,17 @@ const CalendarScreen = () => {
             {yearLabel}
           </Text>
         </TouchableOpacity>
-        <View style={headerActions}>
-          <TouchableOpacity onPress={() => handleShift(-1)} style={iconButton}>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            onPress={() => handleShift(-1)}
+            style={styles.iconButton}
+          >
             <ChevronLeftIcon width={18} height={18} color={palette.text} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => handleShift(1)} style={iconButton}>
+          <TouchableOpacity
+            onPress={() => handleShift(1)}
+            style={styles.iconButton}
+          >
             <ChevronRightIcon width={18} height={18} color={palette.text} />
           </TouchableOpacity>
           <TouchableOpacity
@@ -334,7 +355,7 @@ const CalendarScreen = () => {
               animateToMonth(today);
               actions.setSelectedDate(new Date(today));
             }}
-            style={todayButton}
+            style={styles.todayButton}
           >
             <TodayIcon width={16} height={16} color={palette.text} />
             <Text
@@ -346,29 +367,42 @@ const CalendarScreen = () => {
         </View>
       </View>
 
-      <GestureDetector gesture={panGesture}>
-        <ScrollView
-          contentContainerStyle={{
-            paddingBottom: spacing(6),
-          }}
-        >
-          <Card style={summaryCard}>
-            <View style={summaryHeader}>
-              <Text style={summaryTitle}>Monthly summary</Text>
-              <Text style={summarySubtitle}>
-                {monthStats.sessions} sessions • {monthStats.attendance}%
-                attendance
-              </Text>
-            </View>
-            <View style={summaryBody}>
+      <ScrollView
+        scrollEnabled={canScroll}
+        alwaysBounceVertical={canScroll}
+        onLayout={event =>
+          setScrollViewportHeight(event.nativeEvent.layout.height)
+        }
+        onContentSizeChange={(_, height) => setScrollContentHeight(height)}
+        contentContainerStyle={{
+          paddingTop: spacing(1.5),
+          paddingBottom: spacing(6),
+        }}
+      >
+        <Card variant="analytics" style={styles.summaryCard}>
+          <View style={styles.summaryHeader}>
+            <Text style={styles.summaryTitle}>Monthly summary</Text>
+            <Text style={styles.summarySubtitle}>
+              {monthStats.sessions} sessions •{' '}
+              {formatPercent(monthStats.attendance)} attendance
+            </Text>
+          </View>
+          {monthStats.sessions === 0 ? (
+            <Text style={styles.summaryValue}>
+              {monthStats.isFutureMonth
+                ? 'No sessions logged yet'
+                : 'No sessions logged'}
+            </Text>
+          ) : (
+            <View style={styles.summaryBody}>
               <View style={{ flex: 1 }}>
-                <View style={summaryRow}>
-                  <Text style={summaryLabel}>Top muscle groups</Text>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Top muscle groups</Text>
                   {monthStats.allMuscles.length > 3 ? (
                     <TouchableOpacity
                       onPress={() => setShowAllMuscles(current => !current)}
                     >
-                      <Text style={summaryLink}>
+                      <Text style={styles.summaryLink}>
                         {showAllMuscles ? 'Show less' : 'Show all'}
                       </Text>
                     </TouchableOpacity>
@@ -377,49 +411,44 @@ const CalendarScreen = () => {
                 {(showAllMuscles
                   ? monthStats.allMuscles
                   : monthStats.topMuscles
-                ).length === 0 ? (
-                  <Text style={summaryValue}>No sessions yet</Text>
-                ) : (
-                  (showAllMuscles
-                    ? monthStats.allMuscles
-                    : monthStats.topMuscles
-                  ).map(item => (
-                    <View key={item.group} style={summaryRow}>
-                      <View style={[dot, { backgroundColor: item.color }]} />
-                      <Text style={summaryValue}>
-                        {formatLabel(item.group)} · {item.count}
-                      </Text>
-                    </View>
-                  ))
-                )}
+                ).map(item => (
+                  <View key={item.group} style={styles.summaryRow}>
+                    <View
+                      style={[styles.dot, { backgroundColor: item.color }]}
+                    />
+                    <Text style={styles.summaryValue}>
+                      {formatLabel(item.group)} · {item.count}
+                    </Text>
+                  </View>
+                ))}
               </View>
-              <View style={summaryChart}>
-                <MusclePie data={monthStats.pieData} radius={38} />
+              <View style={styles.summaryChart}>
+                <DonutChart data={monthStats.pieData} radius={38} />
               </View>
             </View>
-          </Card>
-
-          <View style={weekdayRow}>
-            {DAY_NAMES.map(label => (
-              <Text
-                key={label}
-                style={{
-                  color:
-                    label === 'SUN' || label === 'SAT'
-                      ? palette.danger
-                      : palette.mutedText,
-                  fontSize: 12,
-                  flex: 1,
-                  textAlign: 'center',
-                }}
-              >
-                {label}
-              </Text>
-            ))}
-          </View>
-
+          )}
+        </Card>
+        <View style={styles.weekdayRow}>
+          {DAY_NAMES.map(label => (
+            <Text
+              key={label}
+              style={{
+                color:
+                  label === 'SUN' || label === 'SAT'
+                    ? palette.danger
+                    : palette.mutedText,
+                fontSize: 12,
+                flex: 1,
+                textAlign: 'center',
+              }}
+            >
+              {label}
+            </Text>
+          ))}
+        </View>
+        <GestureDetector gesture={panGesture}>
           <Animated.View style={{ opacity: monthAnim }}>
-            <View ref={gridRef} onLayout={updateGridBounds} style={grid}>
+            <View ref={gridRef} onLayout={updateGridBounds} style={styles.grid}>
               {days.map((day, index) => {
                 const dateKey = roundToLocalDay(day.getTime());
                 const colors = dayColorMap.get(dateKey) ?? [];
@@ -434,15 +463,15 @@ const CalendarScreen = () => {
                   <TouchableOpacity
                     key={day.toISOString()}
                     style={[
-                      cell,
+                      styles.cell,
                       {
                         borderRightWidth: isLastColumn ? 0 : 1,
                         borderBottomWidth: isLastRow ? 0 : 1,
                       },
                       !isCurrentMonth && { opacity: 0.3 },
                       isSelected && {
-                        borderColor: palette.primary,
-                        borderWidth: 2,
+                        zIndex: 2,
+                        elevation: 2,
                       },
                       isWeekend && {
                         backgroundColor: addAlpha(palette.surface, 0.35),
@@ -461,31 +490,40 @@ const CalendarScreen = () => {
                     >
                       {day.getDate()}
                     </Text>
-                    <View style={dotRow}>
+                    <View style={styles.dotRow}>
                       {colors.slice(0, 3).map(color => (
                         <View
                           key={`${dateKey}-${color}`}
-                          style={[dot, { backgroundColor: color }]}
+                          style={[styles.dot, { backgroundColor: color }]}
                         />
                       ))}
                     </View>
+                    {isSelected ? (
+                      <View
+                        pointerEvents="none"
+                        style={[
+                          styles.selectedOutline,
+                          { borderColor: palette.primary },
+                        ]}
+                      />
+                    ) : null}
                   </TouchableOpacity>
                 );
               })}
             </View>
           </Animated.View>
-        </ScrollView>
-      </GestureDetector>
+        </GestureDetector>
+      </ScrollView>
 
       {yearSheetOpen ? (
         <TouchableWithoutFeedback
           onPress={() => dispatch({ type: 'calendar/yearSheet', open: false })}
         >
-          <View style={sheetOverlay}>
+          <View style={styles.sheetOverlay}>
             <GestureDetector gesture={sheetPanGesture}>
               <Animated.View
                 style={[
-                  sheetContainer,
+                  styles.sheetContainer,
                   { transform: [{ translateY: sheetTranslate }] },
                 ]}
               >
@@ -505,7 +543,7 @@ const CalendarScreen = () => {
                         dispatch({ type: 'calendar/yearSheet', open: false });
                       }}
                       style={[
-                        sheetRow,
+                        styles.sheetRow,
                         visibleMonth.getFullYear() === year && {
                           backgroundColor: palette.mutedSurface,
                         },
@@ -566,171 +604,165 @@ const shiftMonth = (date: Date, delta: number) => {
   return next;
 };
 
-const headerRow = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  justifyContent: 'space-between' as const,
-  paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1.5),
-  borderBottomWidth: 1,
-  borderColor: palette.border,
-  gap: spacing(1),
-};
-
-const headerButton = {
-  width: 36,
-  height: 36,
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  backgroundColor: palette.surface,
-};
-
-const headerActions = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(0.75),
-};
-
-const monthTitle = {
-  flex: 1,
-  alignItems: 'center' as const,
-};
-
-const iconButton = {
-  width: 36,
-  height: 36,
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  backgroundColor: palette.mutedSurface,
-};
-
-const todayButton = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(0.5),
-  paddingHorizontal: spacing(1.5),
-  paddingVertical: spacing(0.5),
-  borderRadius: radius.pill,
-  borderWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.surface,
-};
-
-const weekdayRow = {
-  flexDirection: 'row' as const,
-  paddingHorizontal: spacing(2),
-  paddingBottom: spacing(1),
-};
-
-const grid = {
-  flexDirection: 'row' as const,
-  flexWrap: 'wrap' as const,
-  paddingHorizontal: spacing(1.5),
-  paddingBottom: spacing(1),
-  backgroundColor: palette.surface,
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  marginHorizontal: spacing(1.5),
-  overflow: 'hidden' as const,
-};
-
-const cell: ViewStyle = {
-  width: `${100 / DAYS_IN_WEEK}%`,
-  paddingVertical: spacing(1.75),
-  alignItems: 'center',
-  borderColor: palette.border,
-};
-
-const dotRow = {
-  flexDirection: 'row' as const,
-  gap: 4,
-  marginTop: spacing(1),
-};
-
-const dot = {
-  width: 8,
-  height: 8,
-  borderRadius: 999,
-};
-
-const legendContainer = {
-  flexDirection: 'row' as const,
-  flexWrap: 'wrap' as const,
-  gap: spacing(1.25),
-  paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1.5),
-  justifyContent: 'center' as const,
-};
-
-const legendItem = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(0.5),
-};
-
-const summaryCard = {
-  marginHorizontal: spacing(2),
-  marginBottom: spacing(1.5),
-  gap: spacing(1),
-};
-
-const summaryHeader = {
-  gap: spacing(0.25),
-};
-
-const summaryTitle = {
-  color: palette.text,
-  fontSize: 16,
-  fontWeight: '700' as const,
-};
-
-const summarySubtitle = {
-  color: palette.mutedText,
-  fontSize: 12,
-};
-
-const summaryBody = {
-  flexDirection: 'row' as const,
-  gap: spacing(2),
-  alignItems: 'center' as const,
-};
-
-const summaryLabel = {
-  color: palette.mutedText,
-  fontSize: 12,
-  marginBottom: spacing(0.5),
-};
-
-const summaryLink = {
-  color: palette.primary,
-  fontSize: 12,
-  fontWeight: '600' as const,
-};
-
-const summaryValue = {
-  color: palette.text,
-  fontSize: 12,
-};
-
-const summaryRow = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(0.5),
-  marginBottom: spacing(0.25),
-};
-
-const summaryChart = {
-  width: 80,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-};
+const createStyles = () => ({
+  headerRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: spacing(2),
+    paddingVertical: spacing(1.5),
+    borderBottomWidth: 1,
+    borderColor: palette.border,
+    gap: spacing(1),
+  },
+  headerButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: palette.surface,
+  },
+  headerActions: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(0.75),
+  },
+  monthTitle: {
+    flex: 1,
+    alignItems: 'center' as const,
+  },
+  iconButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.card,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: palette.mutedSurface,
+  },
+  todayButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(0.5),
+    paddingHorizontal: spacing(1.5),
+    paddingVertical: spacing(0.5),
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.surface,
+  },
+  weekdayRow: {
+    flexDirection: 'row' as const,
+    paddingHorizontal: spacing(2),
+    paddingBottom: spacing(1),
+  },
+  grid: {
+    flexDirection: 'row' as const,
+    flexWrap: 'wrap' as const,
+    paddingHorizontal: spacing(1.5),
+    paddingBottom: spacing(1),
+    backgroundColor: palette.surface,
+    borderRadius: radius.card,
+    borderWidth: 0,
+    marginHorizontal: spacing(1.5),
+    overflow: 'hidden' as const,
+  },
+  cell: {
+    width: `${100 / DAYS_IN_WEEK}%`,
+    paddingVertical: spacing(1.75),
+    alignItems: 'center' as const,
+    borderColor: addAlpha(palette.border, 0.7),
+    position: 'relative' as const,
+  } as ViewStyle,
+  selectedOutline: {
+    ...StyleSheet.absoluteFillObject,
+    borderWidth: 2,
+  } as ViewStyle,
+  dotRow: {
+    flexDirection: 'row' as const,
+    gap: 4,
+    marginTop: spacing(1),
+  },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  summaryCard: {
+    marginHorizontal: spacing(2),
+    marginBottom: spacing(1.5),
+    gap: spacing(1),
+  },
+  summaryHeader: {
+    gap: spacing(0.25),
+  },
+  summaryTitle: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: '700' as const,
+  },
+  summarySubtitle: {
+    color: palette.mutedText,
+    fontSize: 12,
+  },
+  summaryBody: {
+    flexDirection: 'row' as const,
+    gap: spacing(2),
+    alignItems: 'center' as const,
+  },
+  summaryLabel: {
+    color: palette.mutedText,
+    fontSize: 12,
+    marginBottom: spacing(0.5),
+  },
+  summaryLink: {
+    color: palette.primary,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  summaryValue: {
+    color: palette.text,
+    fontSize: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(0.5),
+    marginBottom: spacing(0.25),
+  },
+  summaryChart: {
+    width: 80,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  sheetOverlay: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: addAlpha(palette.text, 0.2),
+    alignItems: 'center' as const,
+    justifyContent: 'flex-end' as const,
+  },
+  sheetContainer: {
+    width: '100%',
+    maxHeight: '60%',
+    backgroundColor: palette.surface,
+    borderTopLeftRadius: radius.card,
+    borderTopRightRadius: radius.card,
+    padding: spacing(2),
+  } as ViewStyle,
+  sheetRow: {
+    paddingVertical: spacing(1),
+    paddingHorizontal: spacing(0.5),
+    borderRadius: radius.card,
+  },
+});
 
 const formatLabel = (value: MuscleGroup) =>
   value
@@ -744,98 +776,6 @@ const addAlpha = (hex: string, alpha: number) => {
     .toString(16)
     .padStart(2, '0');
   return `${hex}${alphaHex}`;
-};
-
-const MusclePie = ({
-  data,
-  radius = 36,
-}: {
-  data: {
-    key: ReturnType<typeof asDisplayLabel>;
-    label: ReturnType<typeof asDisplayLabel>;
-    percent: number;
-    color?: ColorHex;
-  }[];
-  radius?: number;
-}) => {
-  if (!data.length) return null;
-  const center = radius;
-  let currentAngle = 0;
-  const arcs = data.map(slice => {
-    const sweep = (slice.percent / 100) * 360;
-    const startAngle = currentAngle;
-    const endAngle = currentAngle + sweep;
-    currentAngle = endAngle;
-    return {
-      key: slice.key,
-      color: slice.color ?? palette.primary,
-      path: describeArc(center, center, radius, startAngle, endAngle),
-    };
-  });
-  return (
-    <Svg width={radius * 2} height={radius * 2}>
-      {arcs.map(arc => (
-        <Path key={arc.key} d={arc.path} fill={arc.color} opacity={0.9} />
-      ))}
-    </Svg>
-  );
-};
-
-const polarToCartesian = (
-  centerX: number,
-  centerY: number,
-  radius: number,
-  angleInDegrees: number,
-) => {
-  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
-  return {
-    x: centerX + radius * Math.cos(angleInRadians),
-    y: centerY + radius * Math.sin(angleInRadians),
-  };
-};
-
-const describeArc = (
-  x: number,
-  y: number,
-  radius: number,
-  startAngle: number,
-  endAngle: number,
-) => {
-  const start = polarToCartesian(x, y, radius, endAngle);
-  const end = polarToCartesian(x, y, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
-  return [
-    `M ${x} ${y}`,
-    `L ${start.x} ${start.y}`,
-    `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`,
-    'Z',
-  ].join(' ');
-};
-
-const sheetOverlay = {
-  position: 'absolute' as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: '#00000099',
-  alignItems: 'center' as const,
-  justifyContent: 'flex-end' as const,
-};
-
-const sheetContainer: ViewStyle = {
-  width: '100%',
-  maxHeight: '60%',
-  backgroundColor: palette.surface,
-  borderTopLeftRadius: radius.card,
-  borderTopRightRadius: radius.card,
-  padding: spacing(2),
-};
-
-const sheetRow = {
-  paddingVertical: spacing(1),
-  paddingHorizontal: spacing(0.5),
-  borderRadius: radius.card,
 };
 
 export default CalendarScreen;

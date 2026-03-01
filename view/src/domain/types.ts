@@ -35,7 +35,14 @@ export type ToastToneValue = 'success' | 'info' | 'danger';
 export type ToastTone = Brand<ToastToneValue, 'ToastTone'>;
 export type PlannerKindValue = 'strength' | 'hypertrophy' | 'conditioning';
 export type PlannerKind = Brand<PlannerKindValue, 'PlannerKind'>;
-export type AnalyticsRangeKeyValue = '8w' | '16w' | '6m' | '1y' | 'all';
+export type AnalyticsRangeKeyValue =
+  | '1w'
+  | '2w'
+  | '1m'
+  | '3m'
+  | '6m'
+  | '1y'
+  | 'all';
 export type AnalyticsRangeKey = Brand<
   AnalyticsRangeKeyValue,
   'AnalyticsRangeKey'
@@ -172,6 +179,8 @@ export const asMetricKey = (value: string): MetricKey => value as MetricKey;
 export const asJsonKey = (value: string): JsonKey => value as JsonKey;
 
 export const unwrapLabelText = (value: LabelText): string => value as string;
+export const unwrapDisplayLabel = (value: DisplayLabel): string =>
+  value as string;
 export const unwrapPlaceholderText = (value: PlaceholderText): string =>
   value as string;
 export const unwrapToastText = (value: ToastText): string => value as string;

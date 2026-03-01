@@ -8,7 +8,7 @@ import {
 } from 'react-native';
 import { palette, spacing, typography } from './theme';
 import ArrowLeftIcon from '../assets/arrow-left.svg';
-import { LabelText, unwrapLabelText } from '../domain/types';
+import { LabelText, asLabelText, unwrapLabelText } from '../domain/types';
 
 type Props = {
   title: LabelText;
@@ -60,6 +60,8 @@ const ScreenHeader = ({
             justifyContent: 'center',
             backgroundColor: 'transparent',
           }}
+          accessibilityRole="button"
+          accessibilityLabel={asLabelText('Go back')}
         >
           <ArrowLeftIcon width={18} height={18} color={resolvedTitleColor} />
         </TouchableOpacity>

@@ -91,6 +91,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
@@ -415,6 +416,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker_analytics"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+]
+
+[[package]]
 name = "tracker_engine"
 version = "0.1.0"
 dependencies = [
@@ -574,6 +583,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "tracker_analytics",
  "tracker_engine",
  "tracker_ir",
 ]

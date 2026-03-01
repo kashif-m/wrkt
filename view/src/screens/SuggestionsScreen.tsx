@@ -2,13 +2,12 @@ import React, { useMemo } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { PlanSuggestion } from '../workoutFlows';
 import { Card, SectionHeading, BodyText } from '../ui/components';
-import { palette, spacing, radius } from '../ui/theme';
+import { getContrastTextColor, palette, spacing, radius } from '../ui/theme';
 import { useAppDispatch, useAppState } from '../state/appContext';
 import {
   LabelText,
   MetricKey,
   PlannerKind,
-  asColorHex,
   asLabelText,
   asMetricKey,
   asPlannerKind,
@@ -92,7 +91,9 @@ const SuggestionsScreen = () => {
               >
                 <Text
                   style={{
-                    color: active ? asColorHex('#0f172a') : palette.text,
+                    color: active
+                      ? getContrastTextColor(palette.primary)
+                      : palette.text,
                     fontWeight: '600',
                   }}
                 >

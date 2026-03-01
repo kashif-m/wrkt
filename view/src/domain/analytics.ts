@@ -1,0 +1,149 @@
+export interface StreakResult {
+  current_streak: number;
+  longest_streak: number;
+  total_active_days: number;
+  last_active_ts?: number;
+  longest_start_ts?: number;
+  longest_end_ts?: number;
+}
+
+export interface HeatmapPoint {
+  date: string;
+  timestamp: number;
+  count: number;
+  level: number;
+}
+
+export interface DistributionItem {
+  label: string;
+  value: number;
+  percentage: number;
+}
+
+export interface VolumePoint {
+  label: string;
+  volume: number;
+  count: number;
+  bucket: number;
+}
+
+export type WorkoutMetricKey =
+  | 'volume'
+  | 'sets'
+  | 'reps'
+  | 'duration'
+  | 'distance'
+  | 'active_duration'
+  | 'load_distance';
+export type WorkoutGroupByKey = 'workout' | 'week' | 'month';
+export type WorkoutFilterKind = 'none' | 'exercise' | 'muscle';
+
+export interface WorkoutAnalyticsFilter {
+  kind: WorkoutFilterKind;
+  value?: string | null;
+}
+
+export interface WorkoutAnalyticsQuery {
+  metric: WorkoutMetricKey;
+  group_by: WorkoutGroupByKey;
+  filter: WorkoutAnalyticsFilter;
+}
+
+export interface WorkoutMetricPoint {
+  label: string;
+  value: number;
+  count: number;
+  bucket: number;
+}
+
+export interface WorkoutMetricsSeries {
+  metric: WorkoutMetricKey;
+  group_by: WorkoutGroupByKey;
+  points: WorkoutMetricPoint[];
+}
+
+export type BreakdownMetricKey =
+  | 'volume'
+  | 'sets'
+  | 'reps'
+  | 'distance'
+  | 'active_duration'
+  | 'load_distance';
+export type BreakdownGroupByKey = 'muscle' | 'exercise' | 'category';
+
+export interface BreakdownQuery {
+  metric: BreakdownMetricKey;
+  group_by: BreakdownGroupByKey;
+}
+
+export interface BreakdownTotals {
+  workouts: number;
+  sets: number;
+  reps: number;
+  volume: number;
+  distance?: number;
+  active_duration?: number;
+  load_distance?: number;
+}
+
+export interface BreakdownResponse {
+  metric: BreakdownMetricKey;
+  group_by: BreakdownGroupByKey;
+  items: DistributionItem[];
+  totals: BreakdownTotals;
+  qa_unmapped_events?: number;
+}
+
+export type ExerciseMetricKey =
+  | 'estimated_one_rm'
+  | 'max_weight'
+  | 'max_reps'
+  | 'max_volume'
+  | 'workout_volume'
+  | 'workout_reps'
+  | 'max_distance'
+  | 'workout_distance'
+  | 'max_active_duration'
+  | 'workout_active_duration'
+  | 'max_load_distance'
+  | 'workout_load_distance'
+  | 'pr_by_rm';
+
+export type ExerciseGroupByKey = 'workout' | 'week' | 'month';
+
+export interface ExerciseSeriesQuery {
+  exercise: string;
+  metric: ExerciseMetricKey;
+  group_by: ExerciseGroupByKey;
+  rm_reps?: number;
+}
+
+export interface ExerciseSeriesPoint {
+  label: string;
+  value: number;
+  count: number;
+  bucket: number;
+}
+
+export interface ExerciseSeriesResponse {
+  exercise: string;
+  metric: ExerciseMetricKey;
+  group_by: ExerciseGroupByKey;
+  points: ExerciseSeriesPoint[];
+}
+
+export interface PersonalRecord {
+  exercise: string;
+  one_rm: number;
+  max_weight: number;
+  max_reps: number;
+  best_volume: number;
+}
+
+export interface AnalyticsSummary {
+  consistency: StreakResult;
+  heatmap: HeatmapPoint[];
+  muscle_split: DistributionItem[];
+  recent_volume: VolumePoint[];
+  prs: PersonalRecord[];
+}

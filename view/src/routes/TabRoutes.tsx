@@ -3,14 +3,11 @@
  */
 
 import React from 'react';
-import { View } from 'react-native';
 import { ScreenShell } from './ScreenShell';
 import HomeScreen from '../screens/HomeScreen';
 import CalendarScreen from '../screens/CalendarScreen';
-import AnalyticsScreen from '../screens/AnalyticsScreen';
 import MoreScreen from '../screens/MoreScreen';
-import ScreenHeader from '../ui/ScreenHeader';
-import { asLabelText } from '../domain/types';
+import AnalyticsHub from '../screens/AnalyticsHub';
 
 export const HomeRoute = () => (
   <ScreenShell>
@@ -26,13 +23,7 @@ export const CalendarRoute = () => (
 
 export const AnalyticsRoute = () => (
   <ScreenShell>
-    <View style={{ flex: 1 }}>
-      <ScreenHeader
-        title={asLabelText('Trends')}
-        subtitle={asLabelText('Charts & records')}
-      />
-      <AnalyticsScreen />
-    </View>
+    <AnalyticsHub />
   </ScreenShell>
 );
 

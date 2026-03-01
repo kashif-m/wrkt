@@ -1,5 +1,6 @@
 //! Workout-specific planning strategies and catalog helpers.
 
+pub mod analytics;
 pub mod catalog;
 pub mod import;
 pub mod metrics;

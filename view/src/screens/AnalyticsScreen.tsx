@@ -8,9 +8,10 @@ import {
 } from 'react-native';
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, SectionHeading, BodyText } from '../ui/components';
-import { palette, spacing, radius } from '../ui/theme';
+import { getContrastTextColor, palette, spacing, radius } from '../ui/theme';
 import { roundToLocalWeek, roundToLocalDay } from '../timePolicy';
 import { useAppDispatch, useAppState } from '../state/appContext';
+import { formatDurationMinutes } from '../ui/formatters';
 import {
   AnalyticsMetricKey,
   AnalyticsRangeKey,
@@ -20,7 +21,6 @@ import {
   LabelText,
   asAnalyticsMetricKey,
   asAnalyticsRangeKey,
-  asColorHex,
   asDisplayLabel,
   asLabelText,
 } from '../domain/types';
@@ -39,8 +39,10 @@ const rangeOptions: ReadonlyArray<{
   label: LabelText;
   weeks: number | null;
 }> = [
-  { key: asAnalyticsRangeKey('8w'), label: asLabelText('8w'), weeks: 8 },
-  { key: asAnalyticsRangeKey('16w'), label: asLabelText('16w'), weeks: 16 },
+  { key: asAnalyticsRangeKey('1w'), label: asLabelText('1w'), weeks: 1 },
+  { key: asAnalyticsRangeKey('2w'), label: asLabelText('2w'), weeks: 2 },
+  { key: asAnalyticsRangeKey('1m'), label: asLabelText('1m'), weeks: 4 },
+  { key: asAnalyticsRangeKey('3m'), label: asLabelText('3m'), weeks: 13 },
   { key: asAnalyticsRangeKey('6m'), label: asLabelText('6m'), weeks: 26 },
   { key: asAnalyticsRangeKey('1y'), label: asLabelText('1y'), weeks: 52 },
   { key: asAnalyticsRangeKey('all'), label: asLabelText('All'), weeks: null },
@@ -288,7 +290,9 @@ const SegmentedControl = <T extends AnalyticsRangeKey | AnalyticsMetricKey>({
         <Text
           style={{
             color:
-              selected === option.key ? asColorHex('#0f172a') : palette.text,
+              selected === option.key
+                ? getContrastTextColor(palette.primary)
+                : palette.text,
             fontWeight: '600',
           }}
         >
@@ -421,10 +425,10 @@ const describeSet = (event: WorkoutEvent) => {
     return `${reps} reps`;
   }
   if (distance && duration) {
-    return `${distance} m / ${duration} s`;
+    return `${distance} m / ${formatDurationMinutes(duration)}`;
   }
   if (duration) {
-    return `${duration} sec`;
+    return formatDurationMinutes(duration);
   }
   return 'Logged set';
 };

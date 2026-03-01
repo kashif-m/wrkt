@@ -5,17 +5,15 @@ import React, {
   useReducer,
   useState,
 } from 'react';
-import { BackHandler, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, BackHandler, Text, TouchableOpacity, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   NavigationContainer,
   StackActions,
-  TabActions,
   useNavigation,
   useNavigationContainerRef,
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import {
   SafeAreaProvider,
   SafeAreaView,
@@ -26,7 +24,7 @@ import { roundToLocalDay } from './timePolicy';
 import ExerciseBrowser from './screens/ExerciseBrowser';
 import LoggingScreen from './screens/LoggingScreen';
 import HistoryScreen from './screens/HistoryScreen';
-import AnalyticsScreen from './screens/AnalyticsScreen';
+import AnalyticsHub from './screens/AnalyticsHub';
 import MoreScreen from './screens/MoreScreen';
 import ImportSummaryScreen from './screens/ImportSummaryScreen';
 import HomeScreen from './screens/HomeScreen';
@@ -41,13 +39,19 @@ import {
   updateLoggedSet,
 } from './workoutFlows';
 import { init } from './storage';
-import { loadAllEvents, scheduleSave } from './state/persistence';
+import {
+  loadAllEvents,
+  loadSettings,
+  saveSettings,
+  scheduleSave,
+} from './state/persistence';
 import {
   estimateOneRm as rustEstimateOneRm,
   scoreSet as rustScoreSet,
 } from './TrackerEngine';
-import { palette } from './ui/theme';
+import { applyThemeSettings, palette } from './ui/theme';
 import { getMuscleColor } from './ui/muscleColors';
+import { formatTrimmedNumber, secondsToMinutes } from './ui/formatters';
 import BottomNav from './navigation/BottomNav';
 import ScreenHeader from './ui/ScreenHeader';
 import {
@@ -109,15 +113,11 @@ import {
   buildPrPayload,
 } from './hooks/useMetrics';
 
-type TabParamList = {
+type RootStackParamList = {
   home: undefined;
   calendar: undefined;
   analytics: undefined;
   more: undefined;
-};
-
-type RootStackParamList = {
-  mainTabs: { screen?: keyof TabParamList } | undefined;
   browser: undefined;
   log: undefined;
   history: undefined;
@@ -125,7 +125,6 @@ type RootStackParamList = {
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
-const Tab = createBottomTabNavigator<TabParamList>();
 
 enableScreens();
 
@@ -136,8 +135,12 @@ const ScreenShell = ({
   children: React.ReactNode;
   topInsetColor?: string;
 }) => {
+  const { preferences } = useAppState();
   const insets = useSafeAreaInsets();
   const insetColor = topInsetColor ?? palette.background;
+  const _themeKey = `${preferences.themeMode}:${preferences.themeAccent}:${
+    preferences.customAccentHex ?? ''
+  }`;
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.background }}>
@@ -162,43 +165,107 @@ const getActiveRouteName = (state: unknown): ScreenKeyValue => {
   return route?.name as ScreenKeyValue;
 };
 
-const getMainTabsKey = (state: unknown): string | null => {
-  const navState = state as {
-    routes?: Array<{ name: string; key?: string; state?: { key?: string } }>;
-  };
-  if (!navState?.routes?.length) return null;
-  const route = navState.routes.find(item => item.name === 'mainTabs');
-  return route?.state?.key ?? route?.key ?? null;
+const isPrimaryRoute = (route: ScreenKeyValue) =>
+  route === 'home' ||
+  route === 'calendar' ||
+  route === 'analytics' ||
+  route === 'more';
+
+const resetBrowserUiState = (dispatch: ReturnType<typeof useAppDispatch>) => {
+  dispatch({ type: 'browser/mode', mode: 'groups' });
+  dispatch({ type: 'browser/returnMode', mode: 'groups' });
+  dispatch({ type: 'browser/group', group: null });
+  dispatch({ type: 'browser/query', query: asSearchQuery('') });
+  dispatch({ type: 'browser/search', expanded: false });
+  dispatch({ type: 'browser/menu', open: false });
+  dispatch({ type: 'browser/context', context: null });
+  dispatch({ type: 'browser/tab', tab: 'all' });
+  dispatch({ type: 'browser/form', entry: null });
+  dispatch({
+    type: 'browser/formDraft',
+    draft: {
+      displayName: asExerciseName(''),
+      slug: asExerciseSlug(''),
+      primary: asMuscleGroup('chest'),
+      secondary: [],
+      modality: asModality('strength'),
+      loggingMode: asLoggingMode('reps_weight'),
+      minLoad: asNumericInput(''),
+      maxLoad: asNumericInput(''),
+      tags: [],
+      saving: false,
+      error: null,
+    },
+  });
+};
+
+const PrimaryRoute = ({
+  current,
+  children,
+}: {
+  current: NavKey;
+  children: React.ReactNode;
+}) => {
+  const state = useAppState();
+  const actions = useAppActions();
+  const dispatch = useAppDispatch();
+  const isToday =
+    roundToLocalDay(state.selectedDate.getTime()) ===
+    roundToLocalDay(Date.now());
+
+  return (
+    <ScreenShell>
+      <View style={{ flex: 1 }}>
+        {children}
+        <BottomNav
+          current={current}
+          themeMode={state.preferences.themeMode}
+          onSelect={key => {
+            if (key === asNavKey('browser')) {
+              resetBrowserUiState(dispatch);
+              actions.navigate(asScreenKey('browser'));
+              return;
+            }
+            if (key === asNavKey('home')) {
+              if (!isToday) {
+                actions.setSelectedDate(new Date());
+              }
+              if (current !== asNavKey('home')) {
+                actions.navigate(asScreenKey('home'));
+              }
+              return;
+            }
+            if (key === current) return;
+            actions.navigate(asScreenKey(key as NavKeyValue));
+          }}
+        />
+      </View>
+    </ScreenShell>
+  );
 };
 
 const HomeRoute = () => (
-  <ScreenShell>
+  <PrimaryRoute current={asNavKey('home')}>
     <HomeScreen />
-  </ScreenShell>
+  </PrimaryRoute>
 );
 
 const CalendarRoute = () => (
-  <ScreenShell>
+  <PrimaryRoute current={asNavKey('calendar')}>
     <CalendarScreen />
-  </ScreenShell>
+  </PrimaryRoute>
 );
 
 const AnalyticsRoute = () => (
-  <ScreenShell>
-    <View style={{ flex: 1 }}>
-      <ScreenHeader
-        title={asLabelText('Trends')}
-        subtitle={asLabelText('Charts & records')}
-      />
-      <AnalyticsScreen />
-    </View>
-  </ScreenShell>
+  <PrimaryRoute current={asNavKey('analytics')}>
+    <AnalyticsHub />
+  </PrimaryRoute>
 );
 
 const MoreRoute = () => (
-  <ScreenShell>
+  <PrimaryRoute current={asNavKey('more')}>
     <MoreScreen />
-  </ScreenShell>
+  </PrimaryRoute>
 );
 
 const BrowserRoute = () => (
@@ -218,82 +285,6 @@ const ImportSummaryRoute = () => (
     <ImportSummaryScreen />
   </ScreenShell>
 );
-
-const MainTabs = () => {
-  const state = useAppState();
-  const actions = useAppActions();
-  const dispatch = useAppDispatch();
-
-  const resetBrowserState = () => {
-    dispatch({ type: 'browser/mode', mode: 'groups' });
-    dispatch({ type: 'browser/returnMode', mode: 'groups' });
-    dispatch({ type: 'browser/group', group: null });
-    dispatch({ type: 'browser/query', query: asSearchQuery('') });
-    dispatch({ type: 'browser/search', expanded: false });
-    dispatch({ type: 'browser/menu', open: false });
-    dispatch({ type: 'browser/context', context: null });
-    dispatch({ type: 'browser/tab', tab: 'all' });
-    dispatch({ type: 'browser/form', entry: null });
-    dispatch({
-      type: 'browser/formDraft',
-      draft: {
-        displayName: asExerciseName(''),
-        slug: asExerciseSlug(''),
-        primary: asMuscleGroup('chest'),
-        secondary: [],
-        modality: asModality('strength'),
-        loggingMode: asLoggingMode('reps_weight'),
-        minLoad: asNumericInput(''),
-        maxLoad: asNumericInput(''),
-        tags: [],
-        saving: false,
-        error: null,
-      },
-    });
-  };
-
-  return (
-    <Tab.Navigator
-      screenOptions={{ headerShown: false }}
-      tabBar={({ state: tabState, navigation }) => {
-        const routeName =
-          tabState.routes[tabState.index]?.name ?? ('home' as string);
-        const currentKey = asNavKey(routeName as NavKeyValue);
-        const isToday =
-          roundToLocalDay(state.selectedDate.getTime()) ===
-          roundToLocalDay(Date.now());
-        return (
-          <BottomNav
-            current={currentKey}
-            onSelect={key => {
-              if (key === asNavKey('browser')) {
-                resetBrowserState();
-                actions.navigate(asScreenKey('browser'));
-                return;
-              }
-              if (key === asNavKey('home')) {
-                if (!isToday) {
-                  actions.setSelectedDate(new Date());
-                }
-                if (currentKey !== asNavKey('home')) {
-                  navigation.navigate('home');
-                }
-                return;
-              }
-              if (key === currentKey) return;
-              navigation.navigate(key as unknown as keyof TabParamList);
-            }}
-          />
-        );
-      }}
-    >
-      <Tab.Screen name="home" component={HomeRoute} />
-      <Tab.Screen name="calendar" component={CalendarRoute} />
-      <Tab.Screen name="analytics" component={AnalyticsRoute} />
-      <Tab.Screen name="more" component={MoreRoute} />
-    </Tab.Navigator>
-  );
-};
 
 const LogRoute = () => {
   const state = useAppState();
@@ -392,6 +383,14 @@ const AppInner = () => {
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
   const [currentRouteName, setCurrentRouteName] =
     useState<ScreenKeyValue>('home');
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
+
+  // Apply theme before rendering descendants so accent/mode changes repaint immediately.
+  applyThemeSettings({
+    mode: state.preferences.themeMode,
+    accent: state.preferences.themeAccent,
+    customAccentHex: state.preferences.customAccentHex,
+  });
 
   // scoreFromPayload and buildPrPayload replaced by hooks
 
@@ -414,11 +413,55 @@ const AppInner = () => {
   useEffect(() => {
     init()
       .then(async () => {
+        const settings = await loadSettings();
+        applyThemeSettings({
+          mode: settings.themeMode,
+          accent: settings.themeAccent,
+          customAccentHex: settings.customAccentHex,
+        });
+        dispatch({
+          type: 'preferences/themeAccent',
+          accent: settings.themeAccent,
+        });
+        dispatch({
+          type: 'preferences/themeMode',
+          mode: settings.themeMode,
+        });
+        dispatch({
+          type: 'preferences/customAccent',
+          color: settings.customAccentHex,
+        });
+        dispatch({
+          type: 'preferences/homeSplitMode',
+          mode: settings.homeSplitMode,
+        });
         await refreshFromStorage();
         await refreshCatalog();
+        setSettingsHydrated(true);
       })
-      .catch(console.warn);
+      .catch(error => {
+        console.warn(error);
+        setSettingsHydrated(true);
+      });
   }, [refreshCatalog, refreshFromStorage]);
+
+  useEffect(() => {
+    if (!settingsHydrated) {
+      return;
+    }
+    void saveSettings({
+      themeAccent: state.preferences.themeAccent,
+      themeMode: state.preferences.themeMode,
+      customAccentHex: state.preferences.customAccentHex,
+      homeSplitMode: state.preferences.homeSplitMode,
+    });
+  }, [
+    settingsHydrated,
+    state.preferences.customAccentHex,
+    state.preferences.homeSplitMode,
+    state.preferences.themeAccent,
+    state.preferences.themeMode,
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -485,27 +528,6 @@ const AppInner = () => {
     await refreshCatalog();
   }, [pushScreen, refreshCatalog, refreshFromStorage]);
 
-  const jumpToMainTab = useCallback(
-    (
-      target: TabParamList extends infer T
-        ? keyof T & ScreenKeyValue
-        : ScreenKeyValue,
-    ) => {
-      if (!navigationRef.isReady()) return;
-      const rootState = navigationRef.getRootState();
-      const mainTabsKey = getMainTabsKey(rootState);
-      if (!mainTabsKey) {
-        navigationRef.navigate('mainTabs', { screen: target });
-        return;
-      }
-      navigationRef.dispatch({
-        ...TabActions.jumpTo(target),
-        target: mainTabsKey,
-      });
-    },
-    [navigationRef],
-  );
-
   const handleBack = useCallback(() => {
     if (state.browser.menuOpen) {
       dispatch({ type: 'browser/menu', open: false });
@@ -527,15 +549,18 @@ const AppInner = () => {
         : currentRouteName;
     const currentScreen = asScreenKey(activeRouteName);
 
-    if (currentScreen === asScreenKey('browser')) {
-      if (state.browser.selectedGroup) {
-        dispatch({ type: 'browser/group', group: null });
-        dispatch({ type: 'browser/query', query: asSearchQuery('') });
-        return true;
+    if (currentScreen === asScreenKey('importSummary')) {
+      if (navigationRef.isReady()) {
+        navigationRef.goBack();
       }
+      return true;
     }
 
-    if (currentScreen === asScreenKey('importSummary')) {
+    if (
+      currentScreen === asScreenKey('calendar') ||
+      currentScreen === asScreenKey('analytics') ||
+      currentScreen === asScreenKey('more')
+    ) {
       if (navigationRef.isReady()) {
         navigationRef.goBack();
       }
@@ -549,13 +574,13 @@ const AppInner = () => {
 
     if (currentScreen !== asScreenKey('home')) {
       if (navigationRef.isReady()) {
-        jumpToMainTab('home');
+        navigationRef.dispatch(StackActions.popToTop());
       }
       return true;
     }
 
     return false;
-  }, [currentRouteName, jumpToMainTab, navigationRef, state.browser]);
+  }, [currentRouteName, navigationRef, state.browser]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
@@ -571,13 +596,24 @@ const AppInner = () => {
         if (!navigationRef.isReady()) return;
         const target = unwrapScreenKey(screen);
         if (currentRouteName === target) return;
-        if (
-          target === 'home' ||
-          target === 'calendar' ||
-          target === 'analytics' ||
-          target === 'more'
-        ) {
-          jumpToMainTab(target);
+        if (isPrimaryRoute(target as ScreenKeyValue)) {
+          const current = currentRouteName;
+          if (target === 'home') {
+            navigationRef.dispatch(StackActions.popToTop());
+            return;
+          }
+          if (current === 'home') {
+            navigationRef.dispatch(StackActions.push(target as ScreenKeyValue));
+            return;
+          }
+          if (isPrimaryRoute(current)) {
+            navigationRef.dispatch(
+              StackActions.replace(target as ScreenKeyValue),
+            );
+            return;
+          }
+          navigationRef.dispatch(StackActions.popToTop());
+          navigationRef.dispatch(StackActions.push(target as ScreenKeyValue));
           return;
         }
         navigationRef.dispatch(StackActions.push(target as ScreenKeyValue));
@@ -640,7 +676,12 @@ const AppInner = () => {
                   : asNumericInput(''),
               duration:
                 typeof matching.payload?.duration === 'number'
-                  ? asNumericInput(matching.payload.duration.toString())
+                  ? asNumericInput(
+                      formatTrimmedNumber(
+                        secondsToMinutes(matching.payload.duration),
+                        2,
+                      ),
+                    )
                   : asNumericInput(''),
               distance:
                 typeof matching.payload?.distance === 'number'
@@ -674,7 +715,12 @@ const AppInner = () => {
           event_id: eventId,
           ts: eventTs,
           payload,
-          meta: { source: asJsonString('manual') },
+          meta: {
+            source: asJsonString('manual'),
+            ...(typeof payload.duration === 'number'
+              ? { duration_unit: asJsonString('s') }
+              : {}),
+          },
         };
         const nextState = await logSet({ events: state.events }, baseEvent);
         const createdEvent =
@@ -817,20 +863,96 @@ const AppInner = () => {
         await refreshCatalog();
       },
       deleteExercise: async (entry: ExerciseCatalogEntry) => {
-        const hasEvents = state.events.some(
+        const matchedEvents = state.events.filter(
           event =>
-            asExerciseName(String(event.payload?.exercise ?? '')) ===
-            entry.display_name,
+            asExerciseName(
+              String(event.payload?.exercise ?? ''),
+            ).toLowerCase() === entry.display_name.toLowerCase(),
         );
+        const setCount = matchedEvents.length;
+        const favorite = state.catalog.favorites.includes(entry.slug);
+        const firstTs =
+          matchedEvents.length > 0
+            ? Math.min(...matchedEvents.map(event => event.ts))
+            : null;
+        const lastTs =
+          matchedEvents.length > 0
+            ? Math.max(...matchedEvents.map(event => event.ts))
+            : null;
+        const confirmMessage = [
+          setCount > 0
+            ? `${setCount} logged ${
+                setCount === 1 ? 'set' : 'sets'
+              } will be permanently deleted.`
+            : 'No logged sets found for this exercise.',
+          firstTs
+            ? `First log: ${new Date(firstTs).toLocaleDateString()}`
+            : null,
+          lastTs ? `Last log: ${new Date(lastTs).toLocaleDateString()}` : null,
+          favorite ? 'This exercise will be removed from favorites.' : null,
+        ]
+          .filter(Boolean)
+          .join('\n');
+        const confirmed = await new Promise<boolean>(resolve => {
+          let resolved = false;
+          const finish = (value: boolean) => {
+            if (resolved) return;
+            resolved = true;
+            resolve(value);
+          };
+          Alert.alert(
+            'Delete exercise',
+            confirmMessage,
+            [
+              {
+                text: 'Cancel',
+                style: 'cancel',
+                onPress: () => finish(false),
+              },
+              {
+                text: 'Delete',
+                style: 'destructive',
+                onPress: () => finish(true),
+              },
+            ],
+            {
+              cancelable: true,
+              onDismiss: () => finish(false),
+            },
+          );
+        });
+        if (!confirmed) {
+          return;
+        }
+        const remainingEvents = state.events.filter(
+          event =>
+            asExerciseName(
+              String(event.payload?.exercise ?? ''),
+            ).toLowerCase() !== entry.display_name.toLowerCase(),
+        );
+        dispatch({ type: 'events/set', events: remainingEvents });
+        scheduleSave(remainingEvents);
+        if (favorite) {
+          await setExerciseFavorite(entry.slug, false);
+          dispatch({
+            type: 'catalog/favorites',
+            favorites: state.catalog.favorites.filter(
+              slug => slug !== entry.slug,
+            ),
+          });
+        }
         if (entry.source === asExerciseSource('custom')) {
-          if (hasEvents) {
-            await setCustomExerciseArchived(entry.slug, true);
-          } else {
-            await deleteCustomExercise(entry.slug);
-          }
+          await deleteCustomExercise(entry.slug);
         } else {
           await setExerciseHidden(entry.slug, true);
         }
+        dispatch({
+          type: 'log/status',
+          status: {
+            text: asToastText('Exercise deleted'),
+            tone: asToastTone('info'),
+          },
+        });
         await refreshCatalog();
       },
       beginImport,
@@ -843,7 +965,6 @@ const AppInner = () => {
       beginImport,
       currentRouteName,
       handleBack,
-      jumpToMainTab,
       pushScreen,
       refreshCatalog,
       refreshFromStorage,
@@ -868,7 +989,6 @@ const AppInner = () => {
 
   const browserGestureEnabled =
     state.browser.mode === 'groups' &&
-    !state.browser.selectedGroup &&
     !state.browser.searchExpanded &&
     !state.browser.menuOpen &&
     !state.browser.contextEntry;
@@ -886,6 +1006,7 @@ const AppInner = () => {
             onStateChange={handleNavStateChange}
           >
             <Stack.Navigator
+              initialRouteName="home"
               screenOptions={{
                 headerShown: false,
                 gestureEnabled: true,
@@ -894,7 +1015,22 @@ const AppInner = () => {
                 statusBarStyle: baseStatusBarStyle,
               }}
             >
-              <Stack.Screen name="mainTabs" component={MainTabs} />
+              <Stack.Screen name="home" component={HomeRoute} />
+              <Stack.Screen
+                name="calendar"
+                component={CalendarRoute}
+                options={{ animation: 'none' }}
+              />
+              <Stack.Screen
+                name="analytics"
+                component={AnalyticsRoute}
+                options={{ animation: 'none' }}
+              />
+              <Stack.Screen
+                name="more"
+                component={MoreRoute}
+                options={{ animation: 'none' }}
+              />
               <Stack.Screen
                 name="browser"
                 component={BrowserRoute}

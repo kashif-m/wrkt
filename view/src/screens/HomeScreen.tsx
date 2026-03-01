@@ -6,28 +6,34 @@ import React, {
   useState,
 } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { DonutChart } from '../components/analytics/DonutChart';
 import { roundToLocalDay } from '../timePolicy';
-import { palette, radius, spacing, fontSizes } from '../ui/theme';
+import { palette, radius, spacing } from '../ui/theme';
 import { Card } from '../ui/components';
 import { getMuscleColor } from '../ui/muscleColors';
+import {
+  formatDurationMinutes,
+  formatMuscleLabel,
+  formatPercent,
+} from '../ui/formatters';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
-import PlusIcon from '../assets/plus.svg';
-import { useAppActions, useAppState } from '../state/appContext';
+import {
+  useAppActions,
+  useAppDispatch,
+  useAppState,
+} from '../state/appContext';
 import { WorkoutEvent } from '../workoutFlows';
 import {
   ColorHex,
   DisplayLabel,
   ExerciseName,
-  LabelText,
   MuscleGroup,
   asDisplayLabel,
   asExerciseName,
   asLabelText,
   asMuscleGroup,
   asScreenKey,
-  unwrapLabelText,
 } from '../domain/types';
 import HorizontalSwipePager, {
   SwipeDirection,
@@ -64,6 +70,18 @@ type HomeDayModel = {
     color?: ColorHex;
     percent: number;
   }>;
+  volumeChips: Array<{
+    key: DisplayLabel;
+    label: DisplayLabel;
+    color?: ColorHex;
+    percent: number;
+  }>;
+  volumePieData: Array<{
+    key: DisplayLabel;
+    label: DisplayLabel;
+    color?: ColorHex;
+    percent: number;
+  }>;
   totalSets: number;
   totalExercises: number;
   averageSets: number;
@@ -71,10 +89,16 @@ type HomeDayModel = {
 
 const HomeScreen = () => {
   const state = useAppState();
+  const dispatch = useAppDispatch();
   const actions = useAppActions();
   const [expandedExercises, setExpandedExercises] = useState<
     Record<string, boolean>
   >({});
+  const homeSplitMode = state.preferences.homeSplitMode;
+  const themeKey = `${state.preferences.themeMode}:${
+    state.preferences.themeAccent
+  }:${state.preferences.customAccentHex ?? ''}`;
+  const styles = useMemo(() => createStyles(), [themeKey]);
   const { events } = state;
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
@@ -138,6 +162,7 @@ const HomeScreen = () => {
           }[];
         }
       >();
+      const volumeByGroup = new Map<MuscleGroup, number>();
       dayEvents.forEach(event => {
         const exercise = asExerciseName(
           typeof event.payload?.exercise === 'string'
@@ -163,6 +188,20 @@ const HomeScreen = () => {
         }
         bucket.exerciseSets.get(exercise)?.push(event);
         groupMap.set(groupKey, bucket);
+        const reps =
+          typeof event.payload?.reps === 'number' && event.payload.reps > 0
+            ? event.payload.reps
+            : 0;
+        const weight =
+          typeof event.payload?.weight === 'number' && event.payload.weight > 0
+            ? event.payload.weight
+            : 0;
+        if (reps > 0 && weight > 0) {
+          volumeByGroup.set(
+            groupKey,
+            (volumeByGroup.get(groupKey) ?? 0) + reps * weight,
+          );
+        }
       });
       const sections = Array.from(groupMap.entries())
         .map(([key, section]) => {
@@ -196,7 +235,7 @@ const HomeScreen = () => {
             key: formatMuscleLabel(section.key),
             label: formatMuscleLabel(section.key),
             color: section.exercises[0]?.color,
-            percent: Math.round((section.exercises.length / total) * 100),
+            percent: (section.exercises.length / total) * 100,
           }))
           .sort((a, b) => b.percent - a.percent);
       })();
@@ -210,6 +249,35 @@ const HomeScreen = () => {
                 label: asDisplayLabel('Other'),
                 color: palette.mutedSurface,
                 percent: muscleChips
+                  .slice(3)
+                  .reduce((sum, item) => sum + item.percent, 0),
+              },
+            ];
+      const totalVolume = Array.from(volumeByGroup.values()).reduce(
+        (sum, value) => sum + value,
+        0,
+      );
+      const volumeChips =
+        totalVolume <= 0
+          ? []
+          : Array.from(volumeByGroup.entries())
+              .map(([group, volume]) => ({
+                key: formatMuscleLabel(group),
+                label: formatMuscleLabel(group),
+                color: getMuscleColor(group),
+                percent: (volume / totalVolume) * 100,
+              }))
+              .sort((a, b) => b.percent - a.percent);
+      const volumePieData =
+        volumeChips.length <= 4
+          ? volumeChips
+          : [
+              ...volumeChips.slice(0, 3),
+              {
+                key: asDisplayLabel('Other'),
+                label: asDisplayLabel('Other'),
+                color: palette.mutedSurface,
+                percent: volumeChips
                   .slice(3)
                   .reduce((sum, item) => sum + item.percent, 0),
               },
@@ -232,6 +300,8 @@ const HomeScreen = () => {
         emptyState,
         muscleChips,
         musclePieData,
+        volumeChips,
+        volumePieData,
         totalSets,
         totalExercises,
         averageSets,
@@ -333,10 +403,10 @@ const HomeScreen = () => {
 
   return (
     <View style={{ flex: 1 }}>
-      <View style={daySelector}>
+      <View style={styles.daySelector}>
         <TouchableOpacity
           onPress={() => actions.shiftDate(-1)}
-          style={arrowButton}
+          style={styles.arrowButton}
         >
           <ChevronLeftIcon width={20} height={20} color={palette.text} />
         </TouchableOpacity>
@@ -356,7 +426,7 @@ const HomeScreen = () => {
         <View style={{ flexDirection: 'row', gap: spacing(0.75) }}>
           <TouchableOpacity
             onPress={() => actions.shiftDate(1)}
-            style={arrowButton}
+            style={styles.arrowButton}
           >
             <ChevronRightIcon width={20} height={20} color={palette.text} />
           </TouchableOpacity>
@@ -383,7 +453,11 @@ const HomeScreen = () => {
               expandedExercises={expandedExercises}
               setExpandedExercises={setExpandedExercises}
               onOpenLog={actions.openLogForExercise}
-              onStartWorkout={actions.startWorkoutForDate}
+              splitMode={homeSplitMode}
+              onSplitModeChange={mode =>
+                dispatch({ type: 'preferences/homeSplitMode', mode })
+              }
+              styles={styles}
             />
           );
         }}
@@ -398,7 +472,9 @@ const HomeDayContent = ({
   expandedExercises,
   setExpandedExercises,
   onOpenLog,
-  onStartWorkout,
+  splitMode,
+  onSplitModeChange,
+  styles,
 }: {
   model: HomeDayModel;
   date: Date;
@@ -411,8 +487,21 @@ const HomeDayContent = ({
     date: Date,
     tab: 'Track' | 'History' | 'Trends',
   ) => void;
-  onStartWorkout: (date: Date) => void;
+  splitMode: 'muscle' | 'volume';
+  onSplitModeChange: (mode: 'muscle' | 'volume') => void;
+  styles: ReturnType<typeof createStyles>;
 }) => {
+  const [splitMenuOpen, setSplitMenuOpen] = useState(false);
+  const splitLabel = splitMode === 'muscle' ? 'Muscle Split' : 'Volume Split';
+  const splitLegend =
+    splitMode === 'muscle' ? model.musclePieData : model.volumePieData;
+  const hasSplitData = splitLegend.length > 0;
+  const showSplitEmpty = !hasSplitData && !model.emptyState;
+
+  useEffect(() => {
+    setSplitMenuOpen(false);
+  }, [date, splitMode]);
+
   return (
     <View style={{ flex: 1 }}>
       <ScrollView
@@ -422,65 +511,136 @@ const HomeDayContent = ({
           gap: spacing(2),
         }}
       >
-        <Card style={heroCard}>
-          <View style={{ flexDirection: 'row', gap: spacing(2) }}>
-            {model.muscleChips.length > 0 ? (
-              <View style={donutWrap}>
-                <MusclePie data={model.musclePieData} radius={44} />
-              </View>
-            ) : null}
-            <View style={{ flex: 1, gap: spacing(1) }}>
-              <View style={{ alignItems: 'flex-end' }}>
-                <PrimaryAction
-                  label={asLabelText('Start workout')}
-                  onPress={() => onStartWorkout(date)}
-                />
-              </View>
-              {model.muscleChips.length > 0 ? (
-                <View style={{ gap: spacing(0.5) }}>
-                  {model.musclePieData.map(chip => (
-                    <View key={chip.key} style={legendRow}>
-                      <View style={legendLabel}>
-                        <View
-                          style={[
-                            legendDot,
-                            {
-                              backgroundColor: chip.color ?? palette.primary,
-                            },
-                          ]}
-                        />
-                        <Text style={legendText}>{chip.label}</Text>
-                      </View>
-                      <Text style={legendValue}>{chip.percent}%</Text>
-                    </View>
-                  ))}
+        {!model.emptyState ? (
+          <Card style={styles.heroCard}>
+            <View style={{ flexDirection: 'row', gap: spacing(2) }}>
+              {hasSplitData ? (
+                <View style={styles.donutWrap}>
+                  <DonutChart data={splitLegend} radius={44} />
                 </View>
               ) : null}
-            </View>
-          </View>
-          <View style={statsRow}>
-            <View style={statCard}>
-              <Text style={statTitle}>Sets logged</Text>
-              <View>
-                <Text style={statValue}>{model.totalSets} sets</Text>
-                <Text style={statMuted}>{model.averageSets} avg</Text>
+              <View style={{ flex: 1, gap: spacing(1) }}>
+                <View style={styles.splitHeader}>
+                  <TouchableOpacity
+                    onPress={() => setSplitMenuOpen(current => !current)}
+                    style={styles.splitLabelRow}
+                    accessibilityRole="button"
+                    accessibilityLabel="Change split mode"
+                  >
+                    <Text style={styles.splitHeaderLabel}>{splitLabel}</Text>
+                    <View style={styles.splitDropdownTrigger}>
+                      <ChevronRightIcon
+                        width={14}
+                        height={14}
+                        color={palette.mutedText}
+                        style={{
+                          transform: [
+                            { rotate: splitMenuOpen ? '270deg' : '90deg' },
+                          ],
+                        }}
+                      />
+                    </View>
+                  </TouchableOpacity>
+                </View>
+                {splitMenuOpen ? (
+                  <View style={styles.splitInlineDropdown}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        onSplitModeChange('muscle');
+                        setSplitMenuOpen(false);
+                      }}
+                      style={styles.splitInlineOption}
+                    >
+                      <Text
+                        style={[
+                          styles.splitInlineOptionText,
+                          splitMode === 'muscle' &&
+                            styles.splitInlineOptionTextActive,
+                        ]}
+                      >
+                        Muscle Split
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      onPress={() => {
+                        onSplitModeChange('volume');
+                        setSplitMenuOpen(false);
+                      }}
+                      style={styles.splitInlineOption}
+                    >
+                      <Text
+                        style={[
+                          styles.splitInlineOptionText,
+                          splitMode === 'volume' &&
+                            styles.splitInlineOptionTextActive,
+                        ]}
+                      >
+                        Volume Split
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : null}
+                {hasSplitData ? (
+                  <View style={{ gap: spacing(0.5) }}>
+                    {splitLegend.map(chip => (
+                      <View key={chip.key} style={styles.legendRow}>
+                        <View style={styles.legendLabel}>
+                          <View
+                            style={[
+                              styles.legendDot,
+                              {
+                                backgroundColor: chip.color ?? palette.primary,
+                              },
+                            ]}
+                          />
+                          <Text style={styles.legendText}>{chip.label}</Text>
+                        </View>
+                        <Text style={styles.legendValue}>
+                          {formatPercent(chip.percent)}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : showSplitEmpty ? (
+                  <Text style={styles.splitEmptyHint}>
+                    No {splitMode === 'volume' ? 'volume' : 'muscle'} data for
+                    this day
+                  </Text>
+                ) : null}
               </View>
             </View>
-          </View>
-        </Card>
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <Text style={styles.statTitle}>Sets logged</Text>
+                <View>
+                  <Text style={styles.statValue}>{model.totalSets} sets</Text>
+                  <Text style={styles.statMuted}>{model.averageSets} avg</Text>
+                </View>
+              </View>
+            </View>
+          </Card>
+        ) : null}
+
+        {model.emptyState ? (
+          <Card style={styles.emptySetsCard}>
+            <Text style={styles.emptySetsText}>No sets logged</Text>
+          </Card>
+        ) : null}
 
         {model.emptyState ? null : (
-          <Card style={listContainer}>
+          <Card style={styles.listContainer}>
             {model.sections.map((section, sectionIndex) => (
-              <View key={section.key} style={sectionBlock}>
-                <Text style={sectionLabel}>{section.label}</Text>
+              <View key={section.key} style={styles.sectionBlock}>
+                <Text style={styles.sectionLabel}>{section.label}</Text>
                 {section.exercises.map((exercise, index) => (
                   <TouchableOpacity
                     key={`${section.key}-${exercise.name}-${index}`}
                     onPress={() => onOpenLog(exercise.name, date, 'Track')}
+                    activeOpacity={0.78}
                     style={[
-                      listRow,
-                      index !== section.exercises.length - 1 && listRowDivider,
+                      styles.listRow,
+                      index !== section.exercises.length - 1 &&
+                        styles.listRowDivider,
                     ]}
                   >
                     {(() => {
@@ -495,19 +655,21 @@ const HomeDayContent = ({
                         : exercise.sets.slice(0, MAX_SET_PREVIEW);
                       return (
                         <View style={{ flex: 1, gap: spacing(0.5) }}>
-                          <Text style={exerciseTitle}>{exercise.name}</Text>
+                          <Text style={styles.exerciseTitle}>
+                            {exercise.name}
+                          </Text>
                           <View style={{ gap: spacing(0.25) }}>
                             {visibleSets.map((setItem, chunkIndex) => (
                               <Text
                                 key={`${exercise.name}-${chunkIndex}`}
-                                style={exerciseMeta}
+                                style={styles.exerciseMeta}
                               >
                                 {formatSetLabel(setItem)}
                               </Text>
                             ))}
                             {hasOverflow && !isExpanded ? (
-                              <View style={moreSetsRow}>
-                                <Text style={exerciseMeta}>
+                              <View style={styles.moreSetsRow}>
+                                <Text style={styles.exerciseMeta}>
                                   {(() => {
                                     const hiddenCount = countHiddenSets(
                                       exercise.sets,
@@ -519,42 +681,58 @@ const HomeDayContent = ({
                                   })()}
                                 </Text>
                                 <TouchableOpacity
-                                  onPress={() =>
+                                  onPress={event => {
+                                    event.stopPropagation?.();
                                     setExpandedExercises(previous => ({
                                       ...previous,
                                       [exerciseKey]: true,
-                                    }))
-                                  }
+                                    }));
+                                  }}
                                 >
-                                  <Text style={showMoreLink}>Show all</Text>
+                                  <Text
+                                    style={[
+                                      styles.showMoreLink,
+                                      { color: palette.primary },
+                                    ]}
+                                  >
+                                    Show all
+                                  </Text>
                                 </TouchableOpacity>
                               </View>
                             ) : null}
                             {hasOverflow && isExpanded ? (
                               <TouchableOpacity
-                                onPress={() =>
+                                onPress={event => {
+                                  event.stopPropagation?.();
                                   setExpandedExercises(previous => ({
                                     ...previous,
                                     [exerciseKey]: false,
-                                  }))
-                                }
+                                  }));
+                                }}
                               >
-                                <Text style={showMoreLink}>Show fewer</Text>
+                                <Text
+                                  style={[
+                                    styles.showMoreLink,
+                                    { color: palette.primary },
+                                  ]}
+                                >
+                                  Show fewer
+                                </Text>
                               </TouchableOpacity>
                             ) : null}
                           </View>
                         </View>
                       );
                     })()}
-                    <View style={setCountPill}>
-                      <Text style={setCountText}>{`${exercise.totalSets} ${
-                        exercise.totalSets === 1 ? 'set' : 'sets'
-                      }`}</Text>
+                    <View style={styles.setCountPill}>
+                      <Text style={styles.setCountText}>{`${
+                        exercise.totalSets
+                      } ${exercise.totalSets === 1 ? 'set' : 'sets'}`}</Text>
                     </View>
                   </TouchableOpacity>
                 ))}
                 {sectionIndex !== model.sections.length - 1 ? (
-                  <View style={sectionDivider} />
+                  <View style={styles.sectionDivider} />
                 ) : null}
               </View>
             ))}
@@ -565,50 +743,8 @@ const HomeDayContent = ({
   );
 };
 
-const PrimaryAction = ({
-  label,
-  onPress,
-}: {
-  label: LabelText;
-  onPress: () => void;
-}) => (
-  <TouchableOpacity
-    onPress={onPress}
-    style={{
-      borderRadius: radius.pill,
-      borderWidth: 1,
-      borderColor: palette.primary,
-      backgroundColor: palette.primary,
-      paddingVertical: spacing(0.75),
-      paddingHorizontal: spacing(1.5),
-      alignItems: 'center',
-      flexDirection: 'row',
-      gap: spacing(0.5),
-    }}
-  >
-    <PlusIcon width={16} height={16} color="#0f172a" />
-    <Text
-      style={{
-        color: '#0f172a',
-        fontWeight: '700',
-        fontSize: fontSizes.actionButton,
-      }}
-    >
-      {unwrapLabelText(label)}
-    </Text>
-  </TouchableOpacity>
-);
-
 type SetChunk = { description: DisplayLabel; count: number };
 const MAX_SET_PREVIEW = 4;
-
-const formatMuscleLabel = (label: MuscleGroup): DisplayLabel =>
-  asDisplayLabel(
-    label
-      .split('_')
-      .map(part => (part.length ? part[0].toUpperCase() + part.slice(1) : ''))
-      .join(' '),
-  );
 
 const summarizeSets = (sets: WorkoutEvent[]): SetChunk[] => {
   const condensation: Array<{ description: DisplayLabel; count: number }> = [];
@@ -642,13 +778,13 @@ const describeSet = (event: WorkoutEvent): DisplayLabel => {
     return asDisplayLabel(`${reps} reps`);
   }
   if (distance > 0 && duration > 0) {
-    return asDisplayLabel(`${distance} m / ${duration} s`);
+    return asDisplayLabel(`${distance} m / ${formatDurationMinutes(duration)}`);
   }
   if (distance > 0) {
     return asDisplayLabel(`${distance} m`);
   }
   if (duration > 0) {
-    return asDisplayLabel(`${duration} s`);
+    return asDisplayLabel(formatDurationMinutes(duration));
   }
   return asDisplayLabel('Logged set');
 };
@@ -660,241 +796,208 @@ const formatSetLabel = (chunk: SetChunk): DisplayLabel => {
   return asDisplayLabel(`${chunk.count} sets · ${chunk.description}`);
 };
 
-const daySelector = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  justifyContent: 'space-between' as const,
-  paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1.25),
-  borderBottomWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.background,
-};
-
-const arrowButton = {
-  width: 38,
-  height: 38,
-  borderRadius: 19,
-  borderWidth: 1,
-  borderColor: palette.border,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  backgroundColor: palette.surface,
-};
-
-const heroCard = {
-  paddingVertical: spacing(2),
-  gap: spacing(1.5),
-};
-
-const donutWrap = {
-  width: 96,
-  height: 96,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  borderRadius: 48,
-  borderWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.mutedSurface,
-};
-
-const legendRow = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  justifyContent: 'space-between' as const,
-};
-
-const legendLabel = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(0.5),
-};
-
-const legendText = {
-  color: palette.text,
-  fontWeight: '600' as const,
-  fontSize: 12,
-};
-
-const legendValue = {
-  color: palette.mutedText,
-  fontSize: 12,
-};
-
-const statsRow = {
-  flexDirection: 'row' as const,
-  gap: spacing(1.5),
-};
-
-const statCard = {
-  flex: 1,
-  paddingVertical: spacing(1.5),
-  gap: spacing(1),
-};
-
-const statTitle = {
-  color: palette.text,
-  fontWeight: '600' as const,
-  fontSize: 14,
-};
-
-const statValue = {
-  color: palette.text,
-  fontSize: 18,
-  fontWeight: '700' as const,
-};
-
-const statMuted = {
-  color: palette.mutedText,
-  fontSize: 12,
-};
-
-const listContainer = {
-  padding: spacing(2),
-  gap: spacing(1.5),
-};
-
-const sectionBlock = {
-  gap: spacing(0.75),
-};
-
-const sectionLabel = {
-  color: palette.mutedText,
-  fontSize: 12,
-  letterSpacing: 0.5,
-  textTransform: 'uppercase' as const,
-};
-
-const listRow = {
-  flexDirection: 'row' as const,
-  justifyContent: 'space-between' as const,
-  alignItems: 'flex-start' as const,
-  paddingVertical: spacing(1),
-};
-
-const listRowDivider = {
-  borderBottomWidth: 1,
-  borderColor: palette.border,
-};
-
-const sectionDivider = {
-  height: 1,
-  backgroundColor: palette.border,
-  marginTop: spacing(1),
-};
-
-const legendDot = {
-  width: 8,
-  height: 8,
-  borderRadius: 999,
-};
-
-const exerciseTitle = {
-  color: palette.text,
-  fontSize: 16,
-  fontWeight: '600' as const,
-};
-
-const exerciseMeta = {
-  color: palette.mutedText,
-  fontSize: 12,
-};
-
-const setCountPill = {
-  paddingHorizontal: spacing(1.25),
-  paddingVertical: spacing(0.5),
-  borderRadius: radius.pill,
-  borderWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.mutedSurface,
-  alignSelf: 'flex-start' as const,
-};
-
-const setCountText = {
-  color: palette.mutedText,
-  fontSize: 12,
-  fontWeight: '600' as const,
-};
-
-const moreSetsRow = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(0.5),
-};
-
-const showMoreLink = {
-  color: palette.primary,
-  fontSize: 12,
-  fontWeight: '600' as const,
-};
-
-const MusclePie = ({
-  data,
-  radius = 36,
-}: {
-  data: {
-    key: DisplayLabel;
-    label: DisplayLabel;
-    percent: number;
-    color?: ColorHex;
-  }[];
-  radius?: number;
-}) => {
-  if (!data.length) return null;
-  const center = radius;
-  let currentAngle = 0;
-  const arcs = data.map(slice => {
-    const sweep = (slice.percent / 100) * 360;
-    const startAngle = currentAngle;
-    const endAngle = currentAngle + sweep;
-    currentAngle = endAngle;
-    return {
-      key: slice.key,
-      label: slice.label,
-      color: slice.color ?? palette.primary,
-      percent: slice.percent,
-      path: describeArc(center, center, radius, startAngle, endAngle),
-    };
-  });
-  return (
-    <Svg width={radius * 2} height={radius * 2}>
-      {arcs.map(arc => (
-        <Path key={arc.key} d={arc.path} fill={arc.color} opacity={0.9} />
-      ))}
-    </Svg>
-  );
-};
-
-const polarToCartesian = (
-  centerX: number,
-  centerY: number,
-  radius: number,
-  angleInDegrees: number,
-) => {
-  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180;
-  return {
-    x: centerX + radius * Math.cos(angleInRadians),
-    y: centerY + radius * Math.sin(angleInRadians),
-  };
-};
-
-const describeArc = (
-  x: number,
-  y: number,
-  radius: number,
-  startAngle: number,
-  endAngle: number,
-) => {
-  const start = polarToCartesian(x, y, radius, endAngle);
-  const end = polarToCartesian(x, y, radius, startAngle);
-  const largeArcFlag = endAngle - startAngle <= 180 ? 0 : 1;
-  return [
-    `M ${x} ${y}`,
-    `L ${start.x} ${start.y}`,
-    `A ${radius} ${radius} 0 ${largeArcFlag} 0 ${end.x} ${end.y}`,
-    'Z',
-  ].join(' ');
-};
+const createStyles = () => ({
+  daySelector: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    paddingHorizontal: spacing(2),
+    paddingVertical: spacing(1.25),
+    borderBottomWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.background,
+  },
+  arrowButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: palette.border,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: palette.surface,
+  },
+  heroCard: {
+    paddingVertical: spacing(2),
+    gap: spacing(1.5),
+  },
+  splitHeader: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+    gap: spacing(1),
+  },
+  splitLabelRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(0.25),
+    paddingVertical: spacing(0.25),
+    paddingRight: spacing(0.25),
+  },
+  splitHeaderLabel: {
+    color: palette.mutedText,
+    fontSize: 12,
+    fontWeight: '600' as const,
+    textTransform: 'uppercase' as const,
+    flexShrink: 1 as const,
+  },
+  splitDropdownTrigger: {
+    width: 18,
+    height: 18,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  splitInlineDropdown: {
+    backgroundColor: palette.mutedSurface,
+    borderRadius: radius.card,
+    overflow: 'hidden' as const,
+  },
+  splitInlineOption: {
+    minHeight: 32,
+    paddingHorizontal: spacing(1.5),
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  splitInlineOptionText: {
+    color: palette.mutedText,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  splitInlineOptionTextActive: {
+    color: palette.primary,
+  },
+  splitEmptyHint: {
+    color: palette.mutedText,
+    fontSize: 12,
+  },
+  donutWrap: {
+    width: 96,
+    height: 96,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    borderRadius: 48,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.mutedSurface,
+  },
+  legendRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'space-between' as const,
+  },
+  legendLabel: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(0.5),
+  },
+  legendText: {
+    color: palette.text,
+    fontWeight: '600' as const,
+    fontSize: 12,
+  },
+  legendValue: {
+    color: palette.mutedText,
+    fontSize: 12,
+  },
+  statsRow: {
+    flexDirection: 'row' as const,
+    gap: spacing(1.5),
+  },
+  emptySetsCard: {
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    paddingVertical: spacing(4),
+  },
+  emptySetsText: {
+    color: palette.mutedText,
+    fontSize: 20,
+    fontWeight: '600' as const,
+  },
+  statCard: {
+    flex: 1,
+    paddingVertical: spacing(1.5),
+    gap: spacing(1),
+  },
+  statTitle: {
+    color: palette.text,
+    fontWeight: '600' as const,
+    fontSize: 14,
+  },
+  statValue: {
+    color: palette.text,
+    fontSize: 18,
+    fontWeight: '700' as const,
+  },
+  statMuted: {
+    color: palette.mutedText,
+    fontSize: 12,
+  },
+  listContainer: {
+    padding: spacing(2),
+    gap: spacing(1.5),
+  },
+  sectionBlock: {
+    gap: spacing(0.75),
+  },
+  sectionLabel: {
+    color: palette.mutedText,
+    fontSize: 12,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase' as const,
+  },
+  listRow: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'flex-start' as const,
+    paddingVertical: spacing(1),
+  },
+  listRowDivider: {
+    borderBottomWidth: 1,
+    borderColor: palette.border,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: palette.border,
+    marginTop: spacing(1),
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  exerciseTitle: {
+    color: palette.text,
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  exerciseMeta: {
+    color: palette.mutedText,
+    fontSize: 12,
+  },
+  setCountPill: {
+    paddingHorizontal: spacing(1.25),
+    paddingVertical: spacing(0.5),
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.mutedSurface,
+    alignSelf: 'flex-start' as const,
+  },
+  setCountText: {
+    color: palette.mutedText,
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+  moreSetsRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(0.5),
+  },
+  showMoreLink: {
+    fontSize: 12,
+    fontWeight: '600' as const,
+  },
+});
 
 const countHiddenSets = (chunks: SetChunk[], maxShown: number) =>
   chunks.slice(maxShown).reduce((total, chunk) => total + chunk.count, 0);

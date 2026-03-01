@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   InputAccessoryView,
   Keyboard,
@@ -9,10 +15,10 @@ import {
   View,
   TouchableOpacity,
 } from 'react-native';
-import Svg, { Polyline, Circle } from 'react-native-svg';
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, Divider, PrimaryButton, BodyText } from '../ui/components';
-import { palette, radius, spacing } from '../ui/theme';
+import { getContrastTextColor, palette, radius, spacing } from '../ui/theme';
+import { JsonObject } from '../TrackerEngine';
 import { roundToLocalDay } from '../timePolicy';
 import { getMuscleColor } from '../ui/muscleColors';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
@@ -28,7 +34,6 @@ import {
   ColorValue,
   DisplayLabel,
   ExerciseName,
-  LoggingMode,
   LoggingModeValue,
   NumericInput,
   asDisplayLabel,
@@ -37,6 +42,21 @@ import {
   asNumericInput,
   unwrapLoggingMode,
 } from '../domain/types';
+import { AnalyticsRangeSelector } from '../components/analytics/AnalyticsRangeSelector';
+import { AnalyticsInlineSelect } from '../components/analytics/AnalyticsInlineSelect';
+import { analyticsRangeOptions } from '../components/analytics/analyticsRanges';
+import {
+  exerciseMetricOptionsForMode,
+  unitForExerciseMetric,
+} from '../components/analytics/analyticsExercises';
+import { SkiaTrendChart } from '../components/analytics/SkiaTrendChart';
+import { useExerciseTrendSeries } from '../components/analytics/useExerciseTrendSeries';
+import {
+  formatDurationMinutes,
+  formatTrimmedNumber,
+  minutesToSeconds,
+  secondsToMinutes,
+} from '../ui/formatters';
 
 const sessionTabs = ['Track', 'History', 'Trends'] as const;
 const INPUT_ACCESSORY_ID = 'logging-numeric-accessory';
@@ -55,111 +75,6 @@ type FieldConfig = {
   unit?: DisplayLabel;
   step: number;
 };
-
-const trendRangeOptions = [
-  {
-    key: '1m',
-    label: asDisplayLabel('1m'),
-    days: 30,
-    longLabel: asDisplayLabel('Last 1 month'),
-  },
-  {
-    key: '3m',
-    label: asDisplayLabel('3m'),
-    days: 90,
-    longLabel: asDisplayLabel('Last 3 months'),
-  },
-  {
-    key: '6m',
-    label: asDisplayLabel('6m'),
-    days: 180,
-    longLabel: asDisplayLabel('Last 6 months'),
-  },
-  {
-    key: '1y',
-    label: asDisplayLabel('1y'),
-    days: 365,
-    longLabel: asDisplayLabel('Last year'),
-  },
-  {
-    key: 'all',
-    label: asDisplayLabel('All'),
-    days: null,
-    longLabel: asDisplayLabel('All time'),
-  },
-] as const;
-type TrendRangeKey = (typeof trendRangeOptions)[number]['key'];
-
-type MetricDefinition = {
-  label: DisplayLabel;
-  description: DisplayLabel;
-  reducer: 'max' | 'sum';
-  compute: (event: WorkoutEvent) => number | undefined;
-};
-
-const metricDefinitions = {
-  estimated_1rm: {
-    label: asDisplayLabel('Estimated 1RM'),
-    description: asDisplayLabel('Epley estimate based on top sets.'),
-    reducer: 'max',
-    compute: (event: WorkoutEvent) => {
-      const weight = readNumber(event.payload?.weight);
-      const reps = readNumber(event.payload?.reps);
-      if (!weight || !reps) return undefined;
-      return Math.round(weight * (1 + reps / 30) * 10) / 10;
-    },
-  },
-  max_weight: {
-    label: asDisplayLabel('Max Weight'),
-    description: asDisplayLabel('Heaviest set logged per day.'),
-    reducer: 'max',
-    compute: (event: WorkoutEvent) => {
-      const weight = readNumber(event.payload?.weight);
-      return weight && weight > 0 ? weight : undefined;
-    },
-  },
-  max_reps: {
-    label: asDisplayLabel('Max Reps'),
-    description: asDisplayLabel('Highest rep count recorded.'),
-    reducer: 'max',
-    compute: (event: WorkoutEvent) => {
-      const reps = readNumber(event.payload?.reps);
-      return reps && reps > 0 ? reps : undefined;
-    },
-  },
-  max_volume: {
-    label: asDisplayLabel('Max Volume'),
-    description: asDisplayLabel('Largest weight × reps combo for the day.'),
-    reducer: 'max',
-    compute: (event: WorkoutEvent) => {
-      const weight = readNumber(event.payload?.weight);
-      const reps = readNumber(event.payload?.reps);
-      if (!weight || !reps) return undefined;
-      return weight * reps;
-    },
-  },
-  workout_volume: {
-    label: asDisplayLabel('Workout Volume'),
-    description: asDisplayLabel('Total weight × reps per day.'),
-    reducer: 'sum',
-    compute: (event: WorkoutEvent) => {
-      const weight = readNumber(event.payload?.weight);
-      const reps = readNumber(event.payload?.reps);
-      if (!weight || !reps) return undefined;
-      return weight * reps;
-    },
-  },
-  workout_reps: {
-    label: asDisplayLabel('Workout Reps'),
-    description: asDisplayLabel('Total reps completed per day.'),
-    reducer: 'sum',
-    compute: (event: WorkoutEvent) => {
-      const reps = readNumber(event.payload?.reps);
-      return reps && reps > 0 ? reps : undefined;
-    },
-  },
-} as const;
-type TrendMetricKey = keyof typeof metricDefinitions;
 
 const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
   reps_weight: [
@@ -281,11 +196,41 @@ const LoggingScreen = () => {
   const fields = state.logging.fields;
   const sessionTab = state.logging.tab;
   const selectedTrendRange = state.logging.selectedTrendRange;
-  const selectedMetric = state.logging.selectedMetric;
+  const selectedTrendMetric = state.logging.selectedTrendMetric;
+  const selectedTrendRmReps = state.logging.selectedTrendRmReps;
   const loggingDate = state.logging.logDate;
   const editingEventId = state.logging.editingEventId;
   const [historySets, setHistorySets] = useState<WorkoutEvent[]>([]);
   const [historyReady, setHistoryReady] = useState(false);
+  const [interactionLocked, setInteractionLocked] = useState(false);
+  const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const themeKey = `${state.preferences.themeMode}:${
+    state.preferences.themeAccent
+  }:${state.preferences.customAccentHex ?? ''}`;
+  const styles = useMemo(() => createStyles(), [themeKey]);
+
+  const handleInteractionLockChange = useCallback((locked: boolean) => {
+    if (unlockTimerRef.current) {
+      clearTimeout(unlockTimerRef.current);
+      unlockTimerRef.current = null;
+    }
+    setInteractionLocked(locked);
+    if (locked) {
+      unlockTimerRef.current = setTimeout(() => {
+        setInteractionLocked(false);
+      }, 1800);
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (unlockTimerRef.current) {
+        clearTimeout(unlockTimerRef.current);
+      }
+    },
+    [],
+  );
+
   const shiftLogDate = (deltaDays: number) => {
     const next = new Date(loggingDate);
     next.setDate(next.getDate() + deltaDays);
@@ -365,51 +310,125 @@ const LoggingScreen = () => {
     return new Set(ids);
   }, [historySets, needsHistorySets, todaySets]);
 
-  const trendData = useMemo(() => {
-    if (sessionTab !== 'Trends' || !historyReady || !historySets.length)
-      return [];
-    const range =
-      trendRangeOptions.find(option => option.key === selectedTrendRange) ??
-      trendRangeOptions[0];
-    const minTimestamp =
-      range.days === null
-        ? null
-        : Date.now() - range.days * 24 * 60 * 60 * 1000;
-    const metricDef = metricDefinitions[selectedMetric];
-    const grouped = new Map<number, number>();
-    historySets.forEach(event => {
-      if (minTimestamp && event.ts < minTimestamp) return;
-      const metricValue = metricDef.compute(event);
-      if (typeof metricValue !== 'number') return;
-      const day = roundToLocalDay(event.ts);
-      const current = grouped.get(day);
-      if (metricDef.reducer === 'sum') {
-        grouped.set(day, (current ?? 0) + metricValue);
-      } else {
-        grouped.set(
-          day,
-          Math.max(current ?? Number.NEGATIVE_INFINITY, metricValue),
-        );
+  const { chartData: trendData, exerciseEventsInRange: trendEventsInRange } =
+    useExerciseTrendSeries({
+      events: historyReady ? historySets : [],
+      catalog: state.catalog.entries as unknown as JsonObject[],
+      exercise: selectedExercise?.display_name ?? null,
+      metric: selectedTrendMetric,
+      range: selectedTrendRange,
+      rmReps: selectedTrendMetric === 'pr_by_rm' ? selectedTrendRmReps : null,
+    });
+
+  const displayTrendData = useMemo(() => {
+    const usesDurationMetric =
+      selectedTrendMetric === 'max_active_duration' ||
+      selectedTrendMetric === 'workout_active_duration';
+    if (!usesDurationMetric) return trendData;
+    return trendData.map(point => ({
+      ...point,
+      value: secondsToMinutes(point.value),
+    }));
+  }, [selectedTrendMetric, trendData]);
+
+  const trendMetricSignals = useMemo(
+    () =>
+      trendEventsInRange.reduce(
+        (signals, event) => {
+          const weight = readNumber(event.payload?.weight);
+          const reps = readNumber(event.payload?.reps);
+          const distance = readNumber(event.payload?.distance);
+          const duration = readNumber(event.payload?.duration);
+          if (typeof weight === 'number' && weight > 0)
+            signals.hasWeight = true;
+          if (typeof reps === 'number' && reps > 0) signals.hasReps = true;
+          if (typeof distance === 'number' && distance > 0) {
+            signals.hasDistance = true;
+          }
+          if (typeof duration === 'number' && duration > 0) {
+            signals.hasDuration = true;
+          }
+          return signals;
+        },
+        {
+          hasWeight: false,
+          hasReps: false,
+          hasDistance: false,
+          hasDuration: false,
+        },
+      ),
+    [trendEventsInRange],
+  );
+
+  const trendMetricOptions = useMemo(
+    () =>
+      exerciseMetricOptionsForMode(
+        selectedExercise
+          ? unwrapLoggingMode(selectedExercise.logging_mode)
+          : null,
+        trendMetricSignals,
+      ),
+    [selectedExercise, trendMetricSignals],
+  );
+
+  useEffect(() => {
+    if (trendMetricOptions.length === 0) return;
+    if (
+      !trendMetricOptions.some(option => option.key === selectedTrendMetric)
+    ) {
+      dispatch({ type: 'log/trendMetric', metric: trendMetricOptions[0].key });
+    }
+  }, [dispatch, selectedTrendMetric, trendMetricOptions]);
+
+  const trendRmOptions = useMemo(() => {
+    const reps = new Set<number>();
+    trendEventsInRange.forEach(event => {
+      const weight = readNumber(event.payload?.weight);
+      const setReps = readNumber(event.payload?.reps);
+      if (
+        typeof weight === 'number' &&
+        weight > 0 &&
+        typeof setReps === 'number' &&
+        setReps > 0
+      ) {
+        reps.add(Math.round(setReps));
       }
     });
-    return [...grouped.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([day, value]) => ({
-        label: asDisplayLabel(
-          new Date(day).toLocaleDateString(undefined, {
-            month: 'short',
-            day: 'numeric',
-          }),
-        ),
-        value,
+    return Array.from(reps)
+      .sort((a, b) => a - b)
+      .map(value => ({
+        key: `${value}`,
+        label: asLabelText(`${value}RM`),
       }));
-  }, [
-    historySets,
-    historyReady,
-    selectedMetric,
-    selectedTrendRange,
-    sessionTab,
-  ]);
+  }, [trendEventsInRange]);
+
+  useEffect(() => {
+    if (selectedTrendMetric !== 'pr_by_rm') {
+      if (selectedTrendRmReps !== null) {
+        dispatch({ type: 'log/trendRm', rmReps: null });
+      }
+      return;
+    }
+
+    if (trendRmOptions.length === 0) {
+      if (selectedTrendRmReps !== null) {
+        dispatch({ type: 'log/trendRm', rmReps: null });
+      }
+      return;
+    }
+
+    const selectedKey =
+      selectedTrendRmReps === null ? null : `${selectedTrendRmReps}`;
+    if (
+      !selectedKey ||
+      !trendRmOptions.some(option => option.key === selectedKey)
+    ) {
+      dispatch({
+        type: 'log/trendRm',
+        rmReps: Number(trendRmOptions[0].key),
+      });
+    }
+  }, [dispatch, selectedTrendMetric, selectedTrendRmReps, trendRmOptions]);
 
   const trackDisabled =
     !selectedExercise ||
@@ -432,7 +451,9 @@ const LoggingScreen = () => {
     if (typeof payload.weight === 'number')
       nextFields.weight = asNumericInput(payload.weight.toString());
     if (typeof payload.duration === 'number')
-      nextFields.duration = asNumericInput(payload.duration.toString());
+      nextFields.duration = asNumericInput(
+        formatTrimmedNumber(secondsToMinutes(payload.duration), 2),
+      );
     if (typeof payload.distance === 'number')
       nextFields.distance = asNumericInput(payload.distance.toString());
     dispatch({ type: 'log/fields', fields: nextFields });
@@ -474,6 +495,7 @@ const LoggingScreen = () => {
     <View style={{ flex: 1 }}>
       <ScrollView
         style={{ flex: 1 }}
+        scrollEnabled={!interactionLocked}
         contentContainerStyle={{
           padding: spacing(2),
           gap: spacing(2),
@@ -489,12 +511,12 @@ const LoggingScreen = () => {
         )}
 
         {selectedExercise && (
-          <Card>
+          <Card variant="analytics" style={{ gap: spacing(0.75) }}>
             <View
               style={{
                 flexDirection: 'row',
                 gap: spacing(1),
-                marginBottom: spacing(1),
+                marginBottom: spacing(1.25),
               }}
             >
               {sessionTabs.map(tab => (
@@ -514,7 +536,10 @@ const LoggingScreen = () => {
                 >
                   <Text
                     style={{
-                      color: sessionTab === tab ? '#0f172a' : palette.text,
+                      color:
+                        sessionTab === tab
+                          ? getContrastTextColor(palette.primary)
+                          : palette.text,
                       fontWeight: '600',
                     }}
                   >
@@ -526,10 +551,10 @@ const LoggingScreen = () => {
 
             {sessionTab === 'Track' && (
               <>
-                <View style={dateRow}>
+                <View style={styles.dateRow}>
                   <TouchableOpacity
                     onPress={() => shiftLogDate(-1)}
-                    style={dateButton}
+                    style={styles.dateButton}
                   >
                     <ChevronLeftIcon
                       width={16}
@@ -551,7 +576,7 @@ const LoggingScreen = () => {
                   </View>
                   <TouchableOpacity
                     onPress={() => shiftLogDate(1)}
-                    style={dateButton}
+                    style={styles.dateButton}
                   >
                     <ChevronRightIcon
                       width={16}
@@ -656,115 +681,84 @@ const LoggingScreen = () => {
                     Loading trends...
                   </BodyText>
                 ) : null}
-                <View style={{ marginBottom: spacing(1) }}>
-                  <Text
-                    style={{
-                      color: palette.mutedText,
-                      marginBottom: spacing(0.5),
-                      fontWeight: '600',
-                    }}
-                  >
-                    Metric
-                  </Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                    {Object.entries(metricDefinitions).map(([key, def]) => (
-                      <TouchableOpacity
-                        key={key}
-                        onPress={() =>
-                          dispatch({
-                            type: 'log/trendMetric',
-                            metric: key as TrendMetricKey,
-                          })
-                        }
-                        style={[
-                          pillStyle,
-                          selectedMetric === key && {
-                            backgroundColor: palette.primary,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            color:
-                              selectedMetric === key ? '#0f172a' : palette.text,
-                            fontWeight: '600',
-                          }}
-                        >
-                          {def.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-
-                <View style={{ marginBottom: spacing(1) }}>
-                  <Text
-                    style={{
-                      color: palette.mutedText,
-                      marginBottom: spacing(0.5),
-                      fontWeight: '600',
-                    }}
-                  >
-                    Range
-                  </Text>
-                  <View
-                    style={{
-                      flexDirection: 'row',
-                      flexWrap: 'wrap',
-                      gap: spacing(1),
-                    }}
-                  >
-                    {trendRangeOptions.map(option => (
-                      <TouchableOpacity
-                        key={option.key}
-                        onPress={() =>
-                          dispatch({
-                            type: 'log/trendRange',
-                            range: option.key,
-                          })
-                        }
-                        style={[
-                          pillStyle,
-                          {
-                            paddingVertical: spacing(0.5),
-                            paddingHorizontal: spacing(1.5),
-                          },
-                          selectedTrendRange === option.key && {
-                            backgroundColor: palette.primary,
-                          },
-                        ]}
-                      >
-                        <Text
-                          style={{
-                            color:
-                              selectedTrendRange === option.key
-                                ? '#0f172a'
-                                : palette.text,
-                            fontWeight: '600',
-                          }}
-                        >
-                          {option.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                </View>
-
-                <TrendChart
-                  data={trendData}
-                  muscleColor={getMuscleColor(
-                    selectedExercise?.primary_muscle_group,
+                <View style={{ gap: spacing(1) }}>
+                  {trendMetricOptions.length > 0 ? (
+                    <AnalyticsInlineSelect
+                      title={asLabelText('Metric')}
+                      options={trendMetricOptions}
+                      selected={selectedTrendMetric}
+                      onSelect={metric =>
+                        dispatch({ type: 'log/trendMetric', metric })
+                      }
+                      onInteractionLockChange={handleInteractionLockChange}
+                    />
+                  ) : (
+                    <BodyText style={{ color: palette.mutedText }}>
+                      No metrics available for this range.
+                    </BodyText>
                   )}
-                  metricLabel={metricDefinitions[selectedMetric].label}
-                  metricDescription={
-                    metricDefinitions[selectedMetric].description
-                  }
-                  rangeLabel={
-                    trendRangeOptions.find(
-                      option => option.key === selectedTrendRange,
-                    )?.longLabel ?? asDisplayLabel('Recent')
-                  }
-                />
+                  <View style={{ gap: spacing(0.5) }}>
+                    <Text
+                      style={{
+                        color: palette.mutedText,
+                        fontWeight: '600',
+                        fontSize: 12,
+                      }}
+                    >
+                      RANGE
+                    </Text>
+                    <AnalyticsRangeSelector
+                      selected={selectedTrendRange}
+                      onSelect={range =>
+                        dispatch({ type: 'log/trendRange', range })
+                      }
+                      options={analyticsRangeOptions.map(option => option.key)}
+                      onInteractionLockChange={handleInteractionLockChange}
+                    />
+                  </View>
+                  {selectedTrendMetric === 'pr_by_rm' &&
+                  trendRmOptions.length > 0 ? (
+                    <AnalyticsInlineSelect
+                      title={asLabelText('RM')}
+                      options={trendRmOptions}
+                      selected={
+                        selectedTrendRmReps === null
+                          ? trendRmOptions[0].key
+                          : `${selectedTrendRmReps}`
+                      }
+                      onSelect={value =>
+                        dispatch({
+                          type: 'log/trendRm',
+                          rmReps: Number(value),
+                        })
+                      }
+                      onInteractionLockChange={handleInteractionLockChange}
+                    />
+                  ) : null}
+                  {selectedTrendMetric === 'pr_by_rm' &&
+                  trendRmOptions.length === 0 ? (
+                    <BodyText style={{ color: palette.mutedText }}>
+                      No RM-specific records in this range.
+                    </BodyText>
+                  ) : null}
+                  {displayTrendData.length === 0 ? (
+                    <BodyText style={{ color: palette.mutedText }}>
+                      No trend data for this selection.
+                    </BodyText>
+                  ) : (
+                    <View style={{ height: 220 }}>
+                      <SkiaTrendChart
+                        data={displayTrendData}
+                        height={220}
+                        unit={unitForExerciseMetric(selectedTrendMetric)}
+                        showTooltip
+                        rangeKey={selectedTrendRange}
+                        countLabel="set"
+                        onInteractionLockChange={handleInteractionLockChange}
+                      />
+                    </View>
+                  )}
+                </View>
               </>
             )}
           </Card>
@@ -772,7 +766,7 @@ const LoggingScreen = () => {
       </ScrollView>
 
       {selectedExercise && (
-        <View style={bottomCta}>
+        <View style={styles.bottomCta}>
           {editingEventId ? (
             <>
               <PrimaryButton
@@ -780,7 +774,10 @@ const LoggingScreen = () => {
                 onPress={handleUpdateSet}
                 disabled={trackDisabled}
               />
-              <TouchableOpacity onPress={handleDeleteSet} style={dangerButton}>
+              <TouchableOpacity
+                onPress={handleDeleteSet}
+                style={styles.dangerButton}
+              >
                 <Text style={{ color: '#fffaf2', fontWeight: '600' }}>
                   Delete set
                 </Text>
@@ -819,43 +816,38 @@ const LoggingScreen = () => {
   );
 };
 
-const bottomCta = {
-  padding: spacing(2),
-  borderTopWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.background,
-  gap: spacing(1),
-};
-
-const dateRow = {
-  flexDirection: 'row' as const,
-  alignItems: 'center' as const,
-  gap: spacing(1),
-  paddingHorizontal: spacing(1),
-  paddingVertical: spacing(1),
-  borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
-  backgroundColor: palette.surface,
-};
-
-const dateButton = {
-  width: 36,
-  height: 36,
-  borderRadius: 18,
-  borderWidth: 1,
-  borderColor: palette.border,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  backgroundColor: palette.mutedSurface,
-};
-
-const dangerButton = {
-  paddingVertical: spacing(1.5),
-  borderRadius: radius.card,
-  backgroundColor: palette.danger,
-  alignItems: 'center' as const,
-};
+const createStyles = () => ({
+  bottomCta: {
+    padding: spacing(2),
+    borderTopWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: palette.background,
+    gap: spacing(1),
+  },
+  dateRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: spacing(1),
+    paddingHorizontal: spacing(1),
+    paddingVertical: spacing(1),
+    borderRadius: radius.card,
+    backgroundColor: palette.mutedSurface,
+  },
+  dateButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: addAlpha(palette.background, 0.32),
+  },
+  dangerButton: {
+    paddingVertical: spacing(1.5),
+    borderRadius: radius.card,
+    backgroundColor: palette.danger,
+    alignItems: 'center' as const,
+  },
+});
 
 const Stepper = ({
   label,
@@ -879,7 +871,8 @@ const Stepper = ({
       width: '100%',
       backgroundColor: palette.mutedSurface,
       borderRadius: radius.card,
-      padding: spacing(1),
+      paddingHorizontal: spacing(1),
+      paddingVertical: spacing(0.9),
     }}
   >
     <Text style={{ color: palette.mutedText, marginBottom: spacing(0.5) }}>
@@ -896,7 +889,7 @@ const Stepper = ({
       <TouchableOpacity
         onPress={onDecrement}
         style={{
-          backgroundColor: palette.surface,
+          backgroundColor: addAlpha(palette.background, 0.35),
           width: 48,
           height: 48,
           borderRadius: radius.card,
@@ -910,7 +903,7 @@ const Stepper = ({
       <TouchableOpacity
         onPress={onIncrement}
         style={{
-          backgroundColor: palette.surface,
+          backgroundColor: addAlpha(palette.background, 0.35),
           width: 48,
           height: 48,
           borderRadius: radius.card,
@@ -947,12 +940,10 @@ const InputPill = ({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: palette.border,
         borderRadius: radius.pill,
         paddingVertical: 0,
         paddingHorizontal: spacing(1.5),
-        backgroundColor: palette.surface,
+        backgroundColor: addAlpha(palette.background, 0.45),
       }}
     >
       <TextInput
@@ -985,22 +976,6 @@ const InputPill = ({
       ) : null}
     </TouchableOpacity>
   );
-};
-
-const pillStyle = {
-  marginRight: spacing(1),
-  borderRadius: radius.pill,
-  borderWidth: 1,
-  borderColor: palette.border,
-  paddingVertical: spacing(0.75),
-  paddingHorizontal: spacing(2),
-  backgroundColor: palette.mutedSurface,
-} as const;
-
-const toNumber = (value: unknown): number => {
-  if (typeof value === 'number') return value;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
 };
 
 const readNumber = (value: unknown): number | undefined => {
@@ -1050,13 +1025,13 @@ const describeLoggedSet = (event: WorkoutEvent) => {
     return `${payload.reps} reps`;
   }
   if (payload.distance && payload.duration) {
-    return `${payload.distance} m / ${payload.duration} s`;
+    return `${payload.distance} m / ${formatDurationMinutes(payload.duration)}`;
   }
   if (payload.distance) {
     return `${payload.distance} m`;
   }
   if (payload.duration) {
-    return `${payload.duration} s`;
+    return formatDurationMinutes(payload.duration);
   }
   return 'Logged set';
 };
@@ -1166,7 +1141,12 @@ const formatNumberInput = (value: unknown): NumericInput => {
 const fieldsFromEvent = (event: WorkoutEvent): LoggingFields => ({
   reps: formatNumberInput(event.payload?.reps),
   weight: formatNumberInput(event.payload?.weight),
-  duration: formatNumberInput(event.payload?.duration),
+  duration:
+    typeof event.payload?.duration === 'number'
+      ? asNumericInput(
+          formatTrimmedNumber(secondsToMinutes(event.payload.duration), 2),
+        )
+      : asNumericInput(''),
   distance: formatNumberInput(event.payload?.distance),
 });
 
@@ -1181,7 +1161,8 @@ const buildPayloadFromFields = (
   const payload: LoggedSetPayload = { exercise: exerciseName };
   if (typeof reps === 'number') payload.reps = reps;
   if (typeof weight === 'number') payload.weight = weight;
-  if (typeof duration === 'number') payload.duration = duration;
+  if (typeof duration === 'number')
+    payload.duration = minutesToSeconds(duration);
   if (typeof distance === 'number') payload.distance = distance;
   return payload;
 };
@@ -1199,132 +1180,6 @@ const addAlpha = (hex: ColorHex, alpha: number): ColorValue => {
     .toString(16)
     .padStart(2, '0');
   return `${hex}${alphaHex}` as ColorValue;
-};
-
-const TrendChart = ({
-  data,
-  muscleColor,
-  metricLabel,
-  metricDescription,
-  rangeLabel,
-}: {
-  data: { label: DisplayLabel; value: number }[];
-  muscleColor: ColorHex;
-  metricLabel: DisplayLabel;
-  metricDescription: DisplayLabel;
-  rangeLabel: DisplayLabel;
-}) => {
-  if (!data.length) {
-    return (
-      <BodyText style={{ color: palette.mutedText }}>
-        Need more sessions to display trends.
-      </BodyText>
-    );
-  }
-  const maxValue = Math.max(...data.map(point => point.value)) || 1;
-  const minValue = Math.min(...data.map(point => point.value)) || 0;
-  const width = 320;
-  const height = 160;
-  const padding = 16;
-  const step = data.length > 1 ? (width - padding * 2) / (data.length - 1) : 0;
-  const points = data.map((point, index) => {
-    const x = padding + step * index;
-    const range = Math.max(maxValue - minValue, 1);
-    const normalized = (point.value - minValue) / range;
-    const y = height - padding - normalized * (height - padding * 2);
-    return { x, y, label: point.label, value: point.value };
-  });
-  const linePath = points.map(point => `${point.x},${point.y}`).join(' ');
-  return (
-    <View style={{ marginTop: spacing(1) }}>
-      <Text
-        style={{
-          color: palette.text,
-          fontWeight: '700',
-          marginBottom: spacing(0.5),
-        }}
-      >
-        {metricLabel}
-      </Text>
-      <Text style={{ color: palette.mutedText, marginBottom: spacing(1) }}>
-        {rangeLabel}
-      </Text>
-      <View style={{ flexDirection: 'row' }}>
-        <View
-          style={{
-            width: 44,
-            justifyContent: 'space-between',
-            paddingRight: spacing(0.5),
-          }}
-        >
-          <Text
-            style={{
-              color: palette.mutedText,
-              fontSize: 10,
-              textAlign: 'right',
-            }}
-          >
-            {Math.round(maxValue)}
-          </Text>
-          <Text
-            style={{
-              color: palette.mutedText,
-              fontSize: 10,
-              textAlign: 'right',
-            }}
-          >
-            {Math.round(minValue)}
-          </Text>
-        </View>
-        <View>
-          <Svg width={width} height={height}>
-            <Polyline
-              points={linePath}
-              fill="none"
-              stroke={muscleColor}
-              strokeWidth={3}
-              strokeLinejoin="round"
-              strokeLinecap="round"
-            />
-            {points.map(point => (
-              <Circle
-                key={`${point.label}-${point.value}`}
-                cx={point.x}
-                cy={point.y}
-                r={4}
-                fill={muscleColor}
-              />
-            ))}
-          </Svg>
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'space-between',
-              marginTop: spacing(0.5),
-            }}
-          >
-            {points.map(point => (
-              <Text
-                key={`label-${point.label}`}
-                style={{ color: palette.mutedText, fontSize: 10 }}
-              >
-                {point.label}
-              </Text>
-            ))}
-          </View>
-        </View>
-      </View>
-      <Text
-        style={{
-          color: palette.mutedText,
-          fontSize: 12,
-          marginTop: spacing(1),
-        }}
-      >
-        {metricDescription}
-      </Text>
-    </View>
-  );
 };
 
 export default LoggingScreen;

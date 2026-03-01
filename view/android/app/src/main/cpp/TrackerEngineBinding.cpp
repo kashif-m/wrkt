@@ -42,6 +42,14 @@ double strata_score_set(double weight, int32_t reps, double duration, double dis
 FfiResult strata_build_pr_payload(const char* payload_json, int64_t event_ts,
                                   const char* events_json, const char* existing_event_json,
                                   const char* logging_mode);
+FfiResult strata_compute_analytics(const char* events_json, int32_t offset_minutes,
+                                   const char* catalog_json);
+FfiResult strata_compute_workout_analytics(const char* events_json, int32_t offset_minutes,
+                                           const char* catalog_json, const char* query_json);
+FfiResult strata_compute_breakdown_analytics(const char* events_json, int32_t offset_minutes,
+                                             const char* catalog_json, const char* query_json);
+FfiResult strata_compute_exercise_analytics(const char* events_json, int32_t offset_minutes,
+                                            const char* catalog_json, const char* query_json);
 }
 
 namespace {
@@ -233,6 +241,62 @@ void installTrackerEngineBinding(Runtime& rt) {
                                        existing_event_json.c_str(), mode.c_str());
     return makeStringResult(runtime, callStrata(ffi));
   });
+
+  makeFunction("computeAnalytics", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+    if (count < 3) {
+      throw std::invalid_argument("computeAnalytics requires events + offset + catalog");
+    }
+    auto events_json = args[0].asString(runtime).utf8(runtime);
+    int32_t offset = static_cast<int32_t>(args[1].asNumber());
+    auto catalog_json = args[2].asString(runtime).utf8(runtime);
+    auto ffi = strata_compute_analytics(events_json.c_str(), offset, catalog_json.c_str());
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
+  makeFunction("computeWorkoutAnalytics",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 if (count < 4) {
+                   throw std::invalid_argument(
+                       "computeWorkoutAnalytics requires events + offset + catalog + query");
+                 }
+                 auto events_json = args[0].asString(runtime).utf8(runtime);
+                 int32_t offset = static_cast<int32_t>(args[1].asNumber());
+                 auto catalog_json = args[2].asString(runtime).utf8(runtime);
+                 auto query_json = args[3].asString(runtime).utf8(runtime);
+                 auto ffi = strata_compute_workout_analytics(
+                     events_json.c_str(), offset, catalog_json.c_str(), query_json.c_str());
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
+
+  makeFunction("computeBreakdownAnalytics",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 if (count < 4) {
+                   throw std::invalid_argument(
+                       "computeBreakdownAnalytics requires events + offset + catalog + query");
+                 }
+                 auto events_json = args[0].asString(runtime).utf8(runtime);
+                 int32_t offset = static_cast<int32_t>(args[1].asNumber());
+                 auto catalog_json = args[2].asString(runtime).utf8(runtime);
+                 auto query_json = args[3].asString(runtime).utf8(runtime);
+                 auto ffi = strata_compute_breakdown_analytics(
+                     events_json.c_str(), offset, catalog_json.c_str(), query_json.c_str());
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
+
+  makeFunction("computeExerciseAnalytics",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 if (count < 4) {
+                   throw std::invalid_argument(
+                       "computeExerciseAnalytics requires events + offset + catalog + query");
+                 }
+                 auto events_json = args[0].asString(runtime).utf8(runtime);
+                 int32_t offset = static_cast<int32_t>(args[1].asNumber());
+                 auto catalog_json = args[2].asString(runtime).utf8(runtime);
+                 auto query_json = args[3].asString(runtime).utf8(runtime);
+                 auto ffi = strata_compute_exercise_analytics(
+                     events_json.c_str(), offset, catalog_json.c_str(), query_json.c_str());
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
 
   rt.global().setProperty(rt, "TrackerEngine", std::move(module));
 }

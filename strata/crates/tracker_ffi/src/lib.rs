@@ -2,6 +2,7 @@
 
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use tracker_engine::{self, EngineError};
@@ -264,6 +265,164 @@ pub extern "C" fn strata_build_pr_payload(
 
         Ok(result)
     })
+}
+
+#[no_mangle]
+pub extern "C" fn strata_compute_analytics(
+    events_json_ptr: *const c_char,
+    offset_minutes: i32,
+    catalog_json_ptr: *const c_char,
+) -> FfiResult {
+    handle(|| {
+        let events_json = cstr_to_str(events_json_ptr)?;
+        // Parse into our local struct list
+        let events: Vec<workout_pack::analytics::AnalyticsInputEvent> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        let catalog_json = cstr_to_str(catalog_json_ptr)?;
+        let entries: Vec<workout_pack::ExerciseDefinition> =
+            serde_json::from_str(catalog_json).map_err(|e| e.to_string())?;
+
+        let map = build_catalog_map(entries);
+
+        let summary = workout_pack::analytics::compute_summary(&events, offset_minutes, &map);
+        Ok(summary)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn strata_compute_workout_analytics(
+    events_json_ptr: *const c_char,
+    offset_minutes: i32,
+    catalog_json_ptr: *const c_char,
+    query_json_ptr: *const c_char,
+) -> FfiResult {
+    handle(|| {
+        let events_json = cstr_to_str(events_json_ptr)?;
+        let events: Vec<workout_pack::analytics::AnalyticsInputEvent> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        let catalog_json = cstr_to_str(catalog_json_ptr)?;
+        let entries: Vec<workout_pack::ExerciseDefinition> =
+            serde_json::from_str(catalog_json).map_err(|e| e.to_string())?;
+
+        let query_json = cstr_to_str(query_json_ptr)?;
+        let query: workout_pack::analytics::WorkoutAnalyticsQuery =
+            serde_json::from_str(query_json).map_err(|e| e.to_string())?;
+
+        let map = build_catalog_map(entries);
+
+        let series =
+            workout_pack::analytics::compute_workout_metrics(&events, offset_minutes, &map, &query);
+        Ok(series)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn strata_compute_breakdown_analytics(
+    events_json_ptr: *const c_char,
+    offset_minutes: i32,
+    catalog_json_ptr: *const c_char,
+    query_json_ptr: *const c_char,
+) -> FfiResult {
+    handle(|| {
+        let events_json = cstr_to_str(events_json_ptr)?;
+        let events: Vec<workout_pack::analytics::AnalyticsInputEvent> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        let catalog_json = cstr_to_str(catalog_json_ptr)?;
+        let entries: Vec<workout_pack::ExerciseDefinition> =
+            serde_json::from_str(catalog_json).map_err(|e| e.to_string())?;
+
+        let query_json = cstr_to_str(query_json_ptr)?;
+        let query: workout_pack::analytics::BreakdownQuery =
+            serde_json::from_str(query_json).map_err(|e| e.to_string())?;
+
+        let map = build_catalog_map(entries);
+
+        let response =
+            workout_pack::analytics::compute_breakdown(&events, offset_minutes, &map, &query);
+        Ok(response)
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn strata_compute_exercise_analytics(
+    events_json_ptr: *const c_char,
+    offset_minutes: i32,
+    catalog_json_ptr: *const c_char,
+    query_json_ptr: *const c_char,
+) -> FfiResult {
+    handle(|| {
+        let events_json = cstr_to_str(events_json_ptr)?;
+        let events: Vec<workout_pack::analytics::AnalyticsInputEvent> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        let catalog_json = cstr_to_str(catalog_json_ptr)?;
+        let entries: Vec<workout_pack::ExerciseDefinition> =
+            serde_json::from_str(catalog_json).map_err(|e| e.to_string())?;
+
+        let query_json = cstr_to_str(query_json_ptr)?;
+        let query: workout_pack::analytics::ExerciseSeriesQuery =
+            serde_json::from_str(query_json).map_err(|e| e.to_string())?;
+
+        let map = build_catalog_map(entries);
+
+        let response =
+            workout_pack::analytics::compute_exercise_series(&events, offset_minutes, &map, &query);
+        Ok(response)
+    })
+}
+
+fn normalize_catalog_key(value: &str) -> String {
+    let mut output = String::with_capacity(value.len());
+    let mut previous_separator = false;
+    for character in value.trim().to_lowercase().chars() {
+        if character.is_ascii_alphanumeric() {
+            output.push(character);
+            previous_separator = false;
+            continue;
+        }
+        if !previous_separator {
+            output.push('_');
+            previous_separator = true;
+        }
+    }
+    output.trim_matches('_').to_string()
+}
+
+fn build_catalog_map(
+    entries: Vec<workout_pack::ExerciseDefinition>,
+) -> HashMap<String, workout_pack::analytics::CatalogEntryLite> {
+    let mut map = HashMap::new();
+    for entry in entries {
+        let entry_lite = workout_pack::analytics::CatalogEntryLite {
+            muscle: entry.primary_muscle_group,
+            logging_mode: entry.logging_mode,
+            modality: entry.modality,
+        };
+
+        let raw_name = entry.display_name;
+        let raw_slug = entry.slug;
+        let normalized_name = normalize_catalog_key(&raw_name);
+        let normalized_slug = normalize_catalog_key(&raw_slug);
+
+        if !raw_name.is_empty() {
+            map.entry(raw_name).or_insert_with(|| entry_lite.clone());
+        }
+        if !raw_slug.is_empty() {
+            map.entry(raw_slug).or_insert_with(|| entry_lite.clone());
+        }
+        if !normalized_name.is_empty() {
+            map.entry(normalized_name)
+                .or_insert_with(|| entry_lite.clone());
+        }
+        if !normalized_slug.is_empty() {
+            map.entry(normalized_slug)
+                .or_insert_with(|| entry_lite.clone());
+        }
+    }
+    map
 }
 
 fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {

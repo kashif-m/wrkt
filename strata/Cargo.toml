@@ -7,6 +7,7 @@ members = [
     "crates/tracker_planning",
     "crates/tracker_catalog",
     "crates/tracker_ffi",
+    "crates/tracker_analytics",
 ]
 
 [workspace.metadata]

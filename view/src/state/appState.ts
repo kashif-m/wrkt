@@ -1,4 +1,5 @@
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import { ExerciseMetricKey } from '../domain/analytics';
 import {
   AnalyticsMetricKey,
   AnalyticsRangeKey,
@@ -30,19 +31,14 @@ import { PlannerKind } from '../domain/types';
 
 import { ToastText, ToastTone } from '../domain/types';
 import { FitNotesImportSummary } from '../import/fitnotes';
+import { AccentKey, ThemeMode } from '../ui/theme';
 
 export type BrowserMode = 'groups' | 'exercises' | 'manage' | 'form';
 export type BrowserTab = 'all' | 'favorites';
 
 export type SessionTab = 'Track' | 'History' | 'Trends';
-export type TrendRangeKey = '1m' | '3m' | '6m' | '1y' | 'all';
-export type TrendMetricKey =
-  | 'estimated_1rm'
-  | 'max_weight'
-  | 'max_reps'
-  | 'max_volume'
-  | 'workout_volume'
-  | 'workout_reps';
+export type TrendRangeKey = '1w' | '2w' | '1m' | '3m' | '6m' | '1y' | 'all';
+export type HomeSplitMode = 'muscle' | 'volume';
 
 export type LoggingFields = {
   reps: NumericInput;
@@ -192,13 +188,20 @@ export type RootState = {
     fields: LoggingFields;
     tab: SessionTab;
     selectedTrendRange: TrendRangeKey;
-    selectedMetric: TrendMetricKey;
+    selectedTrendMetric: ExerciseMetricKey;
+    selectedTrendRmReps: number | null;
     editingEventId: EventId | null;
     status: { text: ToastText; tone: ToastTone } | null;
   };
   analytics: {
     selectedRange: AnalyticsRangeKey;
     selectedMetric: AnalyticsMetricKey;
+  };
+  preferences: {
+    themeAccent: AccentKey;
+    themeMode: ThemeMode;
+    customAccentHex: string | null;
+    homeSplitMode: HomeSplitMode;
   };
   suggestions: {
     planner: PlannerKind;
@@ -243,11 +246,16 @@ export type Action =
   | { type: 'log/fields'; fields: LoggingFields }
   | { type: 'log/tab'; tab: SessionTab }
   | { type: 'log/trendRange'; range: TrendRangeKey }
-  | { type: 'log/trendMetric'; metric: TrendMetricKey }
+  | { type: 'log/trendMetric'; metric: ExerciseMetricKey }
+  | { type: 'log/trendRm'; rmReps: number | null }
   | { type: 'log/editing'; eventId: EventId | null }
   | { type: 'log/status'; status: RootState['logging']['status'] }
   | { type: 'analytics/range'; range: AnalyticsRangeKey }
   | { type: 'analytics/metric'; metric: AnalyticsMetricKey }
+  | { type: 'preferences/themeAccent'; accent: AccentKey }
+  | { type: 'preferences/themeMode'; mode: ThemeMode }
+  | { type: 'preferences/customAccent'; color: string | null }
+  | { type: 'preferences/homeSplitMode'; mode: HomeSplitMode }
   | { type: 'suggestions/planner'; planner: PlannerKind }
   | { type: 'suggestions/loading'; loading: boolean }
   | { type: 'suggestions/items'; items: PlanSuggestion[] }
@@ -309,13 +317,20 @@ export const createInitialState = (): RootState => {
       fields: { ...initialFields },
       tab: 'Track',
       selectedTrendRange: '3m',
-      selectedMetric: 'estimated_1rm',
+      selectedTrendMetric: 'estimated_one_rm',
+      selectedTrendRmReps: null,
       editingEventId: null,
       status: null,
     },
     analytics: {
-      selectedRange: asAnalyticsRangeKey('16w'),
+      selectedRange: asAnalyticsRangeKey('3m'),
       selectedMetric: asAnalyticsMetricKey('volume'),
+    },
+    preferences: {
+      themeAccent: 'blue',
+      themeMode: 'dark',
+      customAccentHex: null,
+      homeSplitMode: 'muscle',
     },
     suggestions: {
       planner: asPlannerKind('strength'),
@@ -487,7 +502,12 @@ export const reducer = (state: RootState, action: Action): RootState => {
     case 'log/trendMetric':
       return {
         ...state,
-        logging: { ...state.logging, selectedMetric: action.metric },
+        logging: { ...state.logging, selectedTrendMetric: action.metric },
+      };
+    case 'log/trendRm':
+      return {
+        ...state,
+        logging: { ...state.logging, selectedTrendRmReps: action.rmReps },
       };
     case 'log/editing':
       return {
@@ -505,6 +525,38 @@ export const reducer = (state: RootState, action: Action): RootState => {
       return {
         ...state,
         analytics: { ...state.analytics, selectedMetric: action.metric },
+      };
+    case 'preferences/themeAccent':
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          themeAccent: action.accent,
+        },
+      };
+    case 'preferences/themeMode':
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          themeMode: action.mode,
+        },
+      };
+    case 'preferences/customAccent':
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          customAccentHex: action.color,
+        },
+      };
+    case 'preferences/homeSplitMode':
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          homeSplitMode: action.mode,
+        },
       };
     case 'suggestions/planner':
       return {

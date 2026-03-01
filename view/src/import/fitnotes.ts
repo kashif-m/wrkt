@@ -172,6 +172,7 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
       meta: {
         ...meta,
         source: asJsonString('fitnotes'),
+        duration_unit: asJsonString('s'),
         timezone_offset_minutes: offsetMinutes,
         day_bucket: roundToLocalDay(ts, offsetMinutes),
         week_bucket: roundToLocalWeek(ts, offsetMinutes),
