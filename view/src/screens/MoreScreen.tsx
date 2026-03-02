@@ -37,8 +37,7 @@ import {
 import { asLabelText } from '../domain/types';
 import ScreenHeader from '../ui/ScreenHeader';
 import {
-  buildExportSqliteSql,
-  shareExportSqliteSql,
+  exportAndShareSqlite,
 } from '../export/sqliteExport';
 
 type RgbColor = { r: number; g: number; b: number };
@@ -338,14 +337,11 @@ const MoreScreen = () => {
 
   const handleExport = async () => {
     try {
-      const sql = buildExportSqliteSql({
+      await exportAndShareSqlite({
         events: state.events,
-        catalog: state.catalog.entries,
-        custom: state.catalog.custom,
-        favorites: state.catalog.favorites,
-        settings: state.preferences,
+        catalog: state.catalog,
+        preferences: state.preferences,
       });
-      await shareExportSqliteSql(sql);
       setDataSheetOpen(false);
     } catch (error) {
       Alert.alert(

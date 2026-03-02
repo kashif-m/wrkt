@@ -17,6 +17,7 @@ const SETTINGS_KEY = asStorageKey('strata.settings');
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let pendingState: WorkoutEvent[] | null = null;
 let isSaving = false;
+let needsResave = false;
 
 // Configurable debounce time (500ms)
 const DEBOUNCE_MS = 500;
@@ -98,8 +99,14 @@ export const saveSettings = async (settings: PersistedSettings) => {
   }
 };
 
-const persistNow = async (events: WorkoutEvent[]) => {
-  if (isSaving) return; // Simple mutex - last write wins strategy will handle next call
+const persistNow = async () => {
+  if (isSaving) {
+    needsResave = true;
+    return;
+  }
+  const events = pendingState;
+  if (!events) return;
+
   isSaving = true;
   try {
     const json = JSON.stringify(events);
@@ -111,7 +118,14 @@ const persistNow = async (events: WorkoutEvent[]) => {
     console.error('[persistence] Write failed', error);
   } finally {
     isSaving = false;
-    pendingState = null;
+    const hasQueuedChanges = needsResave;
+    needsResave = false;
+    if (!hasQueuedChanges && pendingState === events) {
+      pendingState = null;
+    }
+    if (pendingState) {
+      void persistNow();
+    }
   }
 };
 
@@ -123,7 +137,7 @@ export const scheduleSave = (events: WorkoutEvent[]) => {
   }
 
   saveTimeout = setTimeout(() => {
-    persistNow(events);
+    void persistNow();
   }, DEBOUNCE_MS);
 };
 
@@ -132,7 +146,7 @@ const handleAppStateChange = (nextAppState: AppStateStatus) => {
   if (nextAppState.match(/inactive|background/) && pendingState) {
     if (saveTimeout) clearTimeout(saveTimeout);
     console.log('[persistence] Flushing on background');
-    persistNow(pendingState);
+    void persistNow();
   }
 };
 

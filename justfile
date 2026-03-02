@@ -17,10 +17,10 @@ core-test:
 	cd {{strata_dir}} && cargo test
 
 ffi-device:
-	cd {{strata_dir}} && cargo build --release --target aarch64-apple-ios -p tracker_ffi
+	cd workout-pack && CARGO_TARGET_DIR=../{{strata_dir}}/target cargo build --manifest-path crates/workout_ffi/Cargo.toml --release --target aarch64-apple-ios
 
 ffi-sim:
-	cd {{strata_dir}} && cargo build --release --target aarch64-apple-ios-sim -p tracker_ffi
+	cd workout-pack && CARGO_TARGET_DIR=../{{strata_dir}}/target cargo build --manifest-path crates/workout_ffi/Cargo.toml --release --target aarch64-apple-ios-sim
 
 ffi-xcframework: ffi-device ffi-sim
 	rm -rf {{ffi_output}}
@@ -32,8 +32,8 @@ ffi-xcframework: ffi-device ffi-sim
 # --- Android FFI -------------------------------------------------------------
 
 android-ffi:
-	cd {{strata_dir}} && RUSTFLAGS="-C link-arg=-Wl,-soname,libtracker_ffi.so" \
-		cargo ndk -t arm64-v8a -t armeabi-v7a -o ../view/android/app/src/main/jniLibs build -p tracker_ffi --release
+	cd workout-pack && CARGO_TARGET_DIR=../{{strata_dir}}/target RUSTFLAGS="-C link-arg=-Wl,-soname,libtracker_ffi.so" \
+		cargo ndk -t arm64-v8a -t armeabi-v7a -o ../view/android/app/src/main/jniLibs build --manifest-path crates/workout_ffi/Cargo.toml --release
 
 # --- Workout pack helpers ----------------------------------------------------
 
@@ -54,6 +54,10 @@ ts-check:
 
 ios:
 	cd {{view_dir}} && npm run ios
+
+# Run iOS app on a connected physical device by name
+ios-device device:
+	cd {{view_dir}} && npx react-native run-ios --device "{{device}}"
 
 metro:
 	cd {{view_dir}} && npm start
@@ -113,4 +117,3 @@ fmt-all: fmt-rs fmt-ts fmt-cpp fmt-kt
 
 # Quick format (Rust + TypeScript only, for daily use)
 fmt: fmt-ts fmt-rs
-

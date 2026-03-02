@@ -7,15 +7,16 @@ import React, {
 } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { DonutChart } from '../components/analytics/DonutChart';
+import { computeHomeDayAnalytics, JsonObject } from '../TrackerEngine';
+import {
+  DistributionItem,
+  HomeDayResponse,
+} from '../domain/analytics';
 import { roundToLocalDay } from '../timePolicy';
 import { palette, radius, spacing } from '../ui/theme';
 import { Card } from '../ui/components';
 import { getMuscleColor } from '../ui/muscleColors';
-import {
-  formatDurationMinutes,
-  formatMuscleLabel,
-  formatPercent,
-} from '../ui/formatters';
+import { formatMuscleLabel, formatPercent } from '../ui/formatters';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
 import {
@@ -23,7 +24,6 @@ import {
   useAppDispatch,
   useAppState,
 } from '../state/appContext';
-import { WorkoutEvent } from '../workoutFlows';
 import {
   ColorHex,
   DisplayLabel,
@@ -31,7 +31,6 @@ import {
   MuscleGroup,
   asDisplayLabel,
   asExerciseName,
-  asLabelText,
   asMuscleGroup,
   asScreenKey,
 } from '../domain/types';
@@ -47,13 +46,9 @@ type HomeDayModel = {
   sections: Array<{
     key: MuscleGroup;
     label: DisplayLabel;
-    firstTs: number;
-    exerciseOrder: ExerciseName[];
-    exerciseSets: Map<ExerciseName, WorkoutEvent[]>;
     exercises: {
       name: ExerciseName;
       sets: { description: DisplayLabel; count: number }[];
-      color: ColorHex;
       totalSets: number;
     }[];
   }>;
@@ -102,6 +97,15 @@ const HomeScreen = () => {
   const { events } = state;
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
+  const offsetMinutes = -new Date().getTimezoneOffset();
+  const eventPayload = useMemo(
+    () => events as unknown as JsonObject[],
+    [events],
+  );
+  const catalogPayload = useMemo(
+    () => catalog as unknown as JsonObject[],
+    [catalog],
+  );
   const pageDatesRef = useRef<[Date, Date, Date]>([
     new Date(selectedDate.getTime() - 24 * 60 * 60 * 1000),
     selectedDate,
@@ -116,12 +120,6 @@ const HomeScreen = () => {
   );
   const pendingCommitRef = useRef<SwipeDirection | null>(null);
 
-  const catalogMap = useMemo(() => {
-    const map = new Map<ExerciseName, (typeof catalog)[number]>();
-    catalog.forEach(entry => map.set(entry.display_name, entry));
-    return map;
-  }, [catalog]);
-
   useEffect(() => {
     setExpandedExercises({});
   }, [selectedDate]);
@@ -132,7 +130,7 @@ const HomeScreen = () => {
 
   const buildDayModel = useCallback(
     (date: Date): HomeDayModel => {
-      const dayBucket = roundToLocalDay(date.getTime());
+      const dayBucket = roundToLocalDay(date.getTime(), offsetMinutes);
       const todayBucket = roundToLocalDay(Date.now());
       const isToday = dayBucket === todayBucket;
       const primaryLabel = isToday
@@ -143,153 +141,19 @@ const HomeScreen = () => {
         day: 'numeric',
         year: 'numeric',
       });
-
-      const dayEvents = events
-        .filter(event => roundToLocalDay(event.ts) === dayBucket)
-        .sort((a, b) => a.ts - b.ts);
-      const groupMap = new Map<
-        MuscleGroup,
+      const analytics = computeHomeDayAnalytics(
+        eventPayload,
+        offsetMinutes,
+        catalogPayload,
         {
-          label: DisplayLabel;
-          firstTs: number;
-          exerciseOrder: ExerciseName[];
-          exerciseSets: Map<ExerciseName, WorkoutEvent[]>;
-          exercises: {
-            name: ExerciseName;
-            sets: { description: DisplayLabel; count: number }[];
-            color: ColorHex;
-            totalSets: number;
-          }[];
-        }
-      >();
-      const volumeByGroup = new Map<MuscleGroup, number>();
-      dayEvents.forEach(event => {
-        const exercise = asExerciseName(
-          typeof event.payload?.exercise === 'string'
-            ? event.payload.exercise
-            : 'Exercise',
-        );
-        const meta = catalogMap.get(exercise);
-        const groupKey =
-          meta?.primary_muscle_group ?? asMuscleGroup('untracked');
-        const label = asDisplayLabel(
-          groupKey.replace(/_/g, ' ').toUpperCase() || 'UNTRACKED',
-        );
-        const bucket = groupMap.get(groupKey) ?? {
-          label,
-          firstTs: event.ts,
-          exerciseOrder: [] as ExerciseName[],
-          exerciseSets: new Map<ExerciseName, WorkoutEvent[]>(),
-          exercises: [],
-        };
-        if (!bucket.exerciseSets.has(exercise)) {
-          bucket.exerciseSets.set(exercise, []);
-          bucket.exerciseOrder.push(exercise);
-        }
-        bucket.exerciseSets.get(exercise)?.push(event);
-        groupMap.set(groupKey, bucket);
-        const reps =
-          typeof event.payload?.reps === 'number' && event.payload.reps > 0
-            ? event.payload.reps
-            : 0;
-        const weight =
-          typeof event.payload?.weight === 'number' && event.payload.weight > 0
-            ? event.payload.weight
-            : 0;
-        if (reps > 0 && weight > 0) {
-          volumeByGroup.set(
-            groupKey,
-            (volumeByGroup.get(groupKey) ?? 0) + reps * weight,
-          );
-        }
-      });
-      const sections = Array.from(groupMap.entries())
-        .map(([key, section]) => {
-          const exercises = section.exerciseOrder.map(name => {
-            const sets = section.exerciseSets.get(name) ?? [];
-            const setChunks = summarizeSets(sets);
-            const meta = catalogMap.get(name);
-            return {
-              name,
-              sets: setChunks,
-              color: getMuscleColor(meta?.primary_muscle_group),
-              totalSets: setChunks.reduce(
-                (total, chunk) => total + chunk.count,
-                0,
-              ),
-            };
-          });
-          return { key, ...section, exercises };
-        })
-        .sort((a, b) => a.firstTs - b.firstTs);
-
-      const emptyState = sections.length === 0;
-      const muscleChips = (() => {
-        const total = sections.reduce(
-          (sum, section) => sum + section.exercises.length,
-          0,
-        );
-        if (!total) return [];
-        return sections
-          .map(section => ({
-            key: formatMuscleLabel(section.key),
-            label: formatMuscleLabel(section.key),
-            color: section.exercises[0]?.color,
-            percent: (section.exercises.length / total) * 100,
-          }))
-          .sort((a, b) => b.percent - a.percent);
-      })();
-      const musclePieData =
-        muscleChips.length <= 4
-          ? muscleChips
-          : [
-              ...muscleChips.slice(0, 3),
-              {
-                key: asDisplayLabel('Other'),
-                label: asDisplayLabel('Other'),
-                color: palette.mutedSurface,
-                percent: muscleChips
-                  .slice(3)
-                  .reduce((sum, item) => sum + item.percent, 0),
-              },
-            ];
-      const totalVolume = Array.from(volumeByGroup.values()).reduce(
-        (sum, value) => sum + value,
-        0,
+          day_bucket: dayBucket,
+        },
       );
-      const volumeChips =
-        totalVolume <= 0
-          ? []
-          : Array.from(volumeByGroup.entries())
-              .map(([group, volume]) => ({
-                key: formatMuscleLabel(group),
-                label: formatMuscleLabel(group),
-                color: getMuscleColor(group),
-                percent: (volume / totalVolume) * 100,
-              }))
-              .sort((a, b) => b.percent - a.percent);
-      const volumePieData =
-        volumeChips.length <= 4
-          ? volumeChips
-          : [
-              ...volumeChips.slice(0, 3),
-              {
-                key: asDisplayLabel('Other'),
-                label: asDisplayLabel('Other'),
-                color: palette.mutedSurface,
-                percent: volumeChips
-                  .slice(3)
-                  .reduce((sum, item) => sum + item.percent, 0),
-              },
-            ];
-      const totalSets = dayEvents.length;
-      const totalExercises = sections.reduce(
-        (sum, section) => sum + section.exercises.length,
-        0,
-      );
-      const averageSets = totalExercises
-        ? Math.round(totalSets / totalExercises)
-        : 0;
+      const sections = mapHomeSections(analytics);
+      const muscleChips = mapSplitItems(analytics.muscle_split);
+      const volumeChips = mapSplitItems(analytics.volume_split);
+      const musclePieData = collapseSplitItems(muscleChips);
+      const volumePieData = collapseSplitItems(volumeChips);
 
       return {
         date,
@@ -297,17 +161,17 @@ const HomeScreen = () => {
         primaryLabel,
         secondaryLabel,
         sections,
-        emptyState,
+        emptyState: analytics.empty_state,
         muscleChips,
         musclePieData,
         volumeChips,
         volumePieData,
-        totalSets,
-        totalExercises,
-        averageSets,
+        totalSets: analytics.totals.total_sets,
+        totalExercises: analytics.totals.total_exercises,
+        averageSets: analytics.totals.average_sets_per_exercise,
       };
     },
-    [catalogMap, events],
+    [catalogPayload, eventPayload, offsetMinutes],
   );
 
   const shiftDate = useCallback((date: Date, delta: number) => {
@@ -746,48 +610,67 @@ const HomeDayContent = ({
 type SetChunk = { description: DisplayLabel; count: number };
 const MAX_SET_PREVIEW = 4;
 
-const summarizeSets = (sets: WorkoutEvent[]): SetChunk[] => {
-  const condensation: Array<{ description: DisplayLabel; count: number }> = [];
-  sets.forEach(event => {
-    const description = describeSet(event);
-    const last = condensation[condensation.length - 1];
-    if (last && last.description === description) {
-      last.count += 1;
-    } else {
-      condensation.push({ description, count: 1 });
-    }
+const toMuscleGroup = (value: string | null | undefined): MuscleGroup =>
+  asMuscleGroup(value && value.trim() ? value : 'untracked');
+
+const toSplitLabel = (group: MuscleGroup): DisplayLabel =>
+  formatMuscleLabel(group);
+
+const mapSplitItems = (
+  items: DistributionItem[],
+): Array<{
+  key: DisplayLabel;
+  label: DisplayLabel;
+  color?: ColorHex;
+  percent: number;
+}> =>
+  items.map(item => {
+    const group = toMuscleGroup(item.label);
+    return {
+      key: asDisplayLabel(item.label),
+      label: toSplitLabel(group),
+      color: getMuscleColor(group),
+      percent: item.percentage,
+    };
   });
-  return condensation;
-};
 
-const toNumber = (value: unknown): number => {
-  if (typeof value === 'number') return value;
-  const parsed = Number(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
+const collapseSplitItems = (
+  items: Array<{
+    key: DisplayLabel;
+    label: DisplayLabel;
+    color?: ColorHex;
+    percent: number;
+  }>,
+) =>
+  items.length <= 4
+    ? items
+    : [
+        ...items.slice(0, 3),
+        {
+          key: asDisplayLabel('other'),
+          label: asDisplayLabel('Other'),
+          color: palette.mutedSurface,
+          percent: items
+            .slice(3)
+            .reduce((sum, item) => sum + item.percent, 0),
+        },
+      ];
 
-const describeSet = (event: WorkoutEvent): DisplayLabel => {
-  const reps = toNumber(event.payload?.reps);
-  const weight = toNumber(event.payload?.weight);
-  const distance = toNumber(event.payload?.distance);
-  const duration = toNumber(event.payload?.duration);
-  if (weight > 0 && reps > 0) {
-    return asDisplayLabel(`${weight} kg × ${reps} reps`);
-  }
-  if (reps > 0) {
-    return asDisplayLabel(`${reps} reps`);
-  }
-  if (distance > 0 && duration > 0) {
-    return asDisplayLabel(`${distance} m / ${formatDurationMinutes(duration)}`);
-  }
-  if (distance > 0) {
-    return asDisplayLabel(`${distance} m`);
-  }
-  if (duration > 0) {
-    return asDisplayLabel(formatDurationMinutes(duration));
-  }
-  return asDisplayLabel('Logged set');
-};
+const mapHomeSections = (
+  analytics: HomeDayResponse,
+): HomeDayModel['sections'] =>
+  analytics.sections.map(section => ({
+    key: toMuscleGroup(section.key),
+    label: asDisplayLabel(section.label),
+    exercises: section.exercises.map(exercise => ({
+      name: asExerciseName(exercise.exercise),
+      sets: exercise.set_chunks.map(chunk => ({
+        description: asDisplayLabel(chunk.description),
+        count: chunk.count,
+      })),
+      totalSets: exercise.total_sets,
+    })),
+  }));
 
 const formatSetLabel = (chunk: SetChunk): DisplayLabel => {
   if (chunk.count === 1) {

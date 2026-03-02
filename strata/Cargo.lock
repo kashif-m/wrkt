@@ -453,14 +453,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker_export"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "tracker_ffi"
 version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
  "tracker_engine",
+ "tracker_export",
  "tracker_ir",
- "workout_pack",
 ]
 
 [[package]]
@@ -596,19 +605,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7837d08f69c77cf6b07689544538e017c1bfcf57e34b4c0ff58e6c2cd3b37091"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "workout_pack"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rusqlite",
- "serde",
- "serde_json",
- "tracker_analytics",
- "tracker_engine",
- "tracker_ir",
 ]
 
 [[package]]

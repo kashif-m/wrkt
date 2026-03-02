@@ -75,6 +75,20 @@ interface TrackerEngineBinding {
     catalog: JsonText,
     query: JsonText,
   ) => JsonText;
+  computeHomeDayAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+    query: JsonText,
+  ) => JsonText;
+  computeCalendarMonthAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+    query: JsonText,
+  ) => JsonText;
+  exportGenericSqlite: (payload: JsonText, outputPath: string) => JsonText;
+  importGenericSqlite: (inputPath: string) => JsonText;
 }
 
 declare global {
@@ -274,8 +288,12 @@ import {
   AnalyticsSummary,
   BreakdownQuery,
   BreakdownResponse,
+  CalendarMonthQuery,
+  CalendarMonthResponse,
   ExerciseSeriesQuery,
   ExerciseSeriesResponse,
+  HomeDayQuery,
+  HomeDayResponse,
   WorkoutAnalyticsQuery,
   WorkoutMetricsSeries,
 } from './domain/analytics';
@@ -340,4 +358,54 @@ export const computeExerciseAnalytics = (
     JSON.stringify(query) as JsonText,
   );
   return JSON.parse(result) as ExerciseSeriesResponse;
+};
+
+export const computeHomeDayAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+  query: HomeDayQuery,
+): HomeDayResponse => {
+  const engine = ensureBinding();
+  const result = engine.computeHomeDayAnalytics(
+    JSON.stringify(events) as JsonText,
+    offset,
+    JSON.stringify(catalog) as JsonText,
+    JSON.stringify(query) as JsonText,
+  );
+  return JSON.parse(result) as HomeDayResponse;
+};
+
+export const computeCalendarMonthAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+  query: CalendarMonthQuery,
+): CalendarMonthResponse => {
+  const engine = ensureBinding();
+  const result = engine.computeCalendarMonthAnalytics(
+    JSON.stringify(events) as JsonText,
+    offset,
+    JSON.stringify(catalog) as JsonText,
+    JSON.stringify(query) as JsonText,
+  );
+  return JSON.parse(result) as CalendarMonthResponse;
+};
+
+export const exportGenericSqlite = (
+  payload: JsonObject,
+  outputPath = '',
+): JsonObject => {
+  const engine = ensureBinding();
+  const result = engine.exportGenericSqlite(
+    JSON.stringify(payload) as JsonText,
+    outputPath,
+  );
+  return JSON.parse(result) as JsonObject;
+};
+
+export const importGenericSqlite = (inputPath: string): JsonObject => {
+  const engine = ensureBinding();
+  const result = engine.importGenericSqlite(inputPath);
+  return JSON.parse(result) as JsonObject;
 };

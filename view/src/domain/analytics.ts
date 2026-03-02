@@ -132,6 +132,61 @@ export interface ExerciseSeriesResponse {
   points: ExerciseSeriesPoint[];
 }
 
+export interface HomeDayQuery {
+  day_bucket: number;
+}
+
+export interface HomeSetChunk {
+  description: string;
+  count: number;
+}
+
+export interface HomeExerciseSummary {
+  exercise: string;
+  set_chunks: HomeSetChunk[];
+  total_sets: number;
+}
+
+export interface HomeSectionSummary {
+  key: string;
+  label: string;
+  exercises: HomeExerciseSummary[];
+}
+
+export interface HomeDayTotals {
+  total_sets: number;
+  total_exercises: number;
+  average_sets_per_exercise: number;
+}
+
+export interface HomeDayResponse {
+  day_bucket: number;
+  empty_state: boolean;
+  totals: HomeDayTotals;
+  sections: HomeSectionSummary[];
+  muscle_split: DistributionItem[];
+  volume_split: DistributionItem[];
+}
+
+export interface CalendarMonthQuery {
+  month_bucket: number;
+}
+
+export interface CalendarMuscleCount {
+  group: string;
+  count: number;
+}
+
+export interface CalendarMonthResponse {
+  month_bucket: number;
+  sessions: number;
+  attendance_percent: number;
+  is_future_month: boolean;
+  top_muscles: CalendarMuscleCount[];
+  all_muscles: CalendarMuscleCount[];
+  pie_data: DistributionItem[];
+}
+
 export interface PersonalRecord {
   exercise: string;
   one_rm: number;

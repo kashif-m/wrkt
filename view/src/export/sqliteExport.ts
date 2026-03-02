@@ -1,83 +1,63 @@
 import { Share } from 'react-native';
-import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import { exportGenericSqlite, JsonObject } from '../TrackerEngine';
 import { RootState } from '../state/appState';
-import { WorkoutEvent } from '../workoutFlows';
+import { getTrackerIdentifier, WORKOUT_DSL } from '../workoutFlows';
 
-const escapeSql = (value: string): string => value.replace(/'/g, "''");
+const toJsonObject = (value: unknown): JsonObject => value as JsonObject;
 
-const jsonSqlLiteral = (value: unknown): string =>
-  `'${escapeSql(JSON.stringify(value))}'`;
+export const buildGenericExportPayload = async (
+  state: Pick<RootState, 'events' | 'catalog' | 'preferences'>,
+): Promise<JsonObject> => {
+  const trackerId = await getTrackerIdentifier();
+  const tracker = {
+    tracker_id: String(trackerId),
+    dsl: String(WORKOUT_DSL),
+    version: 1,
+    meta: {
+      source: 'wrkt',
+      scope: 'workout',
+    },
+  };
 
-export const buildExportSqliteSql = ({
-  events,
-  catalog,
-  custom,
-  favorites,
-  settings,
-}: {
-  events: WorkoutEvent[];
-  catalog: ExerciseCatalogEntry[];
-  custom: ExerciseCatalogEntry[];
-  favorites: string[];
-  settings: RootState['preferences'];
-}) => {
-  const statements: string[] = [
-    'BEGIN TRANSACTION;',
-    'CREATE TABLE IF NOT EXISTS wrkt_events (event_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL);',
-    'CREATE TABLE IF NOT EXISTS wrkt_catalog (slug TEXT PRIMARY KEY, payload_json TEXT NOT NULL);',
-    'CREATE TABLE IF NOT EXISTS wrkt_custom_catalog (slug TEXT PRIMARY KEY, payload_json TEXT NOT NULL);',
-    'CREATE TABLE IF NOT EXISTS wrkt_favorites (slug TEXT PRIMARY KEY);',
-    'CREATE TABLE IF NOT EXISTS wrkt_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL);',
-    'DELETE FROM wrkt_events;',
-    'DELETE FROM wrkt_catalog;',
-    'DELETE FROM wrkt_custom_catalog;',
-    'DELETE FROM wrkt_favorites;',
-    'DELETE FROM wrkt_settings;',
-  ];
+  const events = state.events.map(event => ({
+    event_id: String(event.event_id),
+    tracker_id: String(event.tracker_id),
+    ts: Number(event.ts),
+    payload: event.payload ?? {},
+    meta: event.meta ?? {},
+  }));
 
-  events.forEach(event => {
-    const eventId = String(event.event_id);
-    statements.push(
-      `INSERT INTO wrkt_events (event_id, payload_json) VALUES ('${escapeSql(
-        eventId,
-      )}', ${jsonSqlLiteral(event)});`,
-    );
+  // App/workout-specific backup state stays layered as kv_meta.
+  const kv_meta = {
+    wrkt_catalog_entries: state.catalog.entries,
+    wrkt_custom_catalog: state.catalog.custom,
+    wrkt_favorites: state.catalog.favorites,
+    wrkt_preferences: state.preferences,
+  };
+
+  return toJsonObject({
+    trackers: [tracker],
+    events,
+    kv_meta,
   });
-
-  catalog.forEach(entry => {
-    statements.push(
-      `INSERT INTO wrkt_catalog (slug, payload_json) VALUES ('${escapeSql(
-        entry.slug,
-      )}', ${jsonSqlLiteral(entry)});`,
-    );
-  });
-
-  custom.forEach(entry => {
-    statements.push(
-      `INSERT INTO wrkt_custom_catalog (slug, payload_json) VALUES ('${escapeSql(
-        entry.slug,
-      )}', ${jsonSqlLiteral(entry)});`,
-    );
-  });
-
-  favorites.forEach(slug => {
-    statements.push(
-      `INSERT INTO wrkt_favorites (slug) VALUES ('${escapeSql(slug)}');`,
-    );
-  });
-
-  statements.push(
-    `INSERT INTO wrkt_settings (key, value_json) VALUES ('preferences', ${jsonSqlLiteral(
-      settings,
-    )});`,
-  );
-  statements.push('COMMIT;');
-  return statements.join('\n');
 };
 
-export const shareExportSqliteSql = async (sql: string) => {
+export const exportAndShareSqlite = async (
+  state: Pick<RootState, 'events' | 'catalog' | 'preferences'>,
+): Promise<{ output_path: string }> => {
+  const payload = await buildGenericExportPayload(state);
+  const result = exportGenericSqlite(payload, '');
+
+  const outputPath = String(result.output_path ?? '');
+  if (!outputPath) {
+    throw new Error('Export completed without output path');
+  }
+
   await Share.share({
     title: 'WRKT export',
-    message: sql,
+    url: `file://${outputPath}`,
+    message: outputPath,
   });
+
+  return { output_path: outputPath };
 };

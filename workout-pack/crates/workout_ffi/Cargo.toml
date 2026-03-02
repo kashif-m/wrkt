@@ -1,0 +1,17 @@
+[package]
+name = "workout_ffi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tracker_engine = { path = "../../../strata/crates/tracker_engine" }
+tracker_ir = { path = "../../../strata/crates/tracker_ir" }
+tracker_export = { path = "../../../strata/crates/tracker_export" }
+workout_pack = { path = "../.." }
+
+[lib]
+name = "tracker_ffi"
+crate-type = ["rlib", "staticlib", "cdylib"]

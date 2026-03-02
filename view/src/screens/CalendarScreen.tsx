@@ -18,6 +18,8 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
 import { DonutChart } from '../components/analytics/DonutChart';
+import { computeCalendarMonthAnalytics, JsonObject } from '../TrackerEngine';
+import { CalendarMonthResponse } from '../domain/analytics';
 import { getMuscleColor } from '../ui/muscleColors';
 import { roundToLocalDay } from '../timePolicy';
 import { formatPercent } from '../ui/formatters';
@@ -39,6 +41,7 @@ import {
   MuscleGroup,
   asDisplayLabel,
   asExerciseName,
+  asMuscleGroup,
   asScreenKey,
 } from '../domain/types';
 
@@ -50,8 +53,17 @@ const CalendarScreen = () => {
   const dispatch = useAppDispatch();
   const actions = useAppActions();
   const events = state.events;
+  const offsetMinutes = -new Date().getTimezoneOffset();
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
+  const eventPayload = useMemo(
+    () => events as unknown as JsonObject[],
+    [events],
+  );
+  const catalogPayload = useMemo(
+    () => catalog as unknown as JsonObject[],
+    [catalog],
+  );
   const visibleMonth = state.calendar.visibleMonth;
   const yearSheetOpen = state.calendar.yearSheetOpen;
   const monthAnim = useRef(new Animated.Value(1)).current;
@@ -109,117 +121,32 @@ const CalendarScreen = () => {
     return buckets;
   }, [events, catalogMap]);
 
-  const legendEntries = useMemo(() => {
-    const groups = new Map<MuscleGroup, ColorHex>();
-    events.forEach(event => {
-      const exerciseName =
-        typeof event.payload?.exercise === 'string'
-          ? asExerciseName(event.payload.exercise)
-          : null;
-      const meta = exerciseName ? catalogMap.get(exerciseName) : null;
-      const group = meta?.primary_muscle_group;
-      if (group && !groups.has(group)) {
-        groups.set(group, getMuscleColor(group));
-      }
-    });
-    return Array.from(groups.entries())
-      .map(([group, color]) => ({
-        key: group,
-        label: asDisplayLabel(group.replace(/_/g, ' ')),
-        color,
-      }))
-      .sort((a, b) => a.label.localeCompare(b.label));
-  }, [events, catalogMap]);
-
   const monthStats = useMemo(() => {
-    const start = new Date(
+    const monthBucket = new Date(
       visibleMonth.getFullYear(),
       visibleMonth.getMonth(),
       1,
-    );
-    const end = new Date(
-      visibleMonth.getFullYear(),
-      visibleMonth.getMonth() + 1,
-      1,
-    );
-    const daysInMonth = new Date(
-      visibleMonth.getFullYear(),
-      visibleMonth.getMonth() + 1,
-      0,
-    ).getDate();
-    const today = new Date();
-    const currentMonthStart = new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      1,
     ).getTime();
-    const isFutureMonth = start.getTime() > currentMonthStart;
-    const daysElapsed =
-      today.getFullYear() === visibleMonth.getFullYear() &&
-      today.getMonth() === visibleMonth.getMonth()
-        ? today.getDate()
-        : daysInMonth;
-    const sessionDays = new Set<number>();
-    const dayGroups = new Map<number, Set<MuscleGroup>>();
-    const muscleSetCounts = new Map<MuscleGroup, number>();
-    events.forEach(event => {
-      if (event.ts < start.getTime() || event.ts >= end.getTime()) return;
-      const day = roundToLocalDay(event.ts);
-      sessionDays.add(day);
-      const exerciseName =
-        typeof event.payload?.exercise === 'string'
-          ? asExerciseName(event.payload.exercise)
-          : null;
-      const meta = exerciseName ? catalogMap.get(exerciseName) : null;
-      const group = meta?.primary_muscle_group;
-      if (!group) return;
-      const daySet = dayGroups.get(day) ?? new Set<MuscleGroup>();
-      daySet.add(group);
-      dayGroups.set(day, daySet);
-      muscleSetCounts.set(group, (muscleSetCounts.get(group) ?? 0) + 1);
-    });
-    const muscleSessionCounts = new Map<MuscleGroup, number>();
-    dayGroups.forEach(groups => {
-      groups.forEach(group => {
-        muscleSessionCounts.set(
-          group,
-          (muscleSessionCounts.get(group) ?? 0) + 1,
-        );
-      });
-    });
-    const sessions = sessionDays.size;
-    const attendance = daysElapsed ? (sessions / daysElapsed) * 100 : 0;
-    const allMuscles = Array.from(muscleSessionCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .map(([group, count]) => ({
-        group,
-        count,
-        color: getMuscleColor(group),
-      }));
-    const topMuscles = allMuscles.slice(0, 3);
-    const totalSets = Array.from(muscleSetCounts.values()).reduce(
-      (sum, count) => sum + count,
-      0,
+    const analytics = computeCalendarMonthAnalytics(
+      eventPayload,
+      offsetMinutes,
+      catalogPayload,
+      {
+        month_bucket: monthBucket,
+      },
     );
-    const pieData =
-      totalSets > 0
-        ? Array.from(muscleSetCounts.entries()).map(([group, count]) => ({
-            key: asDisplayLabel(group),
-            label: asDisplayLabel(group.replace(/_/g, ' ')),
-            percent: Math.round((count / totalSets) * 100),
-            color: getMuscleColor(group),
-          }))
-        : [];
+    const allMuscles = mapCalendarMuscles(analytics.all_muscles);
+    const topMuscles = mapCalendarMuscles(analytics.top_muscles);
+    const pieData = mapCalendarPieData(analytics);
     return {
-      daysInMonth,
-      sessions,
-      attendance,
-      isFutureMonth,
+      sessions: analytics.sessions,
+      attendance: analytics.attendance_percent,
+      isFutureMonth: analytics.is_future_month,
       topMuscles,
       allMuscles,
       pieData,
     };
-  }, [events, visibleMonth, catalogMap]);
+  }, [catalogPayload, eventPayload, offsetMinutes, visibleMonth]);
 
   const days = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
   const monthLabel = visibleMonth.toLocaleDateString(undefined, {
@@ -603,6 +530,34 @@ const shiftMonth = (date: Date, delta: number) => {
   next.setMonth(next.getMonth() + delta, 1);
   return next;
 };
+
+const toCalendarGroup = (value: string): MuscleGroup =>
+  asMuscleGroup(value && value.trim() ? value : 'untracked');
+
+const mapCalendarMuscles = (
+  rows: CalendarMonthResponse['all_muscles'],
+) =>
+  rows.map(item => {
+    const group = toCalendarGroup(item.group);
+    return {
+      group,
+      count: item.count,
+      color: getMuscleColor(group),
+    };
+  });
+
+const mapCalendarPieData = (
+  analytics: CalendarMonthResponse,
+) =>
+  analytics.pie_data.map(item => {
+    const group = toCalendarGroup(item.label);
+    return {
+      key: asDisplayLabel(item.label),
+      label: asDisplayLabel(formatLabel(group)),
+      percent: item.percentage,
+      color: getMuscleColor(group),
+    };
+  });
 
 const createStyles = () => ({
   headerRow: {
