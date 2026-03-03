@@ -8,6 +8,7 @@ import {
   formatBucketLabel,
   groupByForRange,
 } from './analyticsUtils';
+import { toAnalyticsInputEvents } from './analyticsPayload';
 
 type UseExerciseTrendSeriesArgs = {
   events: WorkoutEvent[];
@@ -16,6 +17,8 @@ type UseExerciseTrendSeriesArgs = {
   metric: ExerciseMetricKey;
   range: AnalyticsRangeKey;
   rmReps?: number | null;
+  traceSource?: string;
+  revisions?: { eventsRevision: number; catalogRevision: number };
 };
 
 export const useExerciseTrendSeries = ({
@@ -25,6 +28,8 @@ export const useExerciseTrendSeries = ({
   metric,
   range,
   rmReps,
+  traceSource = 'trends/exercises',
+  revisions,
 }: UseExerciseTrendSeriesArgs) => {
   const filteredEvents = useMemo(
     () => filterEventsByRange(events, range),
@@ -60,13 +65,32 @@ export const useExerciseTrendSeries = ({
           : undefined,
     };
     const offsetMinutes = new Date().getTimezoneOffset();
+    const inputEvents = toAnalyticsInputEvents(filteredEvents);
     return computeExerciseAnalytics(
-      filteredEvents as unknown as JsonObject[],
+      inputEvents,
       -offsetMinutes,
       catalog,
       query,
+      {
+        trace: traceSource,
+        cache: {
+          enabled: true,
+          eventsRevision: revisions?.eventsRevision,
+          catalogRevision: revisions?.catalogRevision,
+        },
+      },
     );
-  }, [catalog, exercise, filteredEvents, groupBy, metric, rmReps]);
+  }, [
+    catalog,
+    exercise,
+    filteredEvents,
+    groupBy,
+    metric,
+    revisions?.catalogRevision,
+    revisions?.eventsRevision,
+    rmReps,
+    traceSource,
+  ]);
 
   const chartData = useMemo(() => {
     if (!series) return [];

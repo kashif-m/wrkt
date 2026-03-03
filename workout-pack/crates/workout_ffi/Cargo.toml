@@ -5,11 +5,8 @@ edition = "2021"
 publish = false
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tracker_engine = { path = "../../../strata/crates/tracker_engine" }
-tracker_ir = { path = "../../../strata/crates/tracker_ir" }
-tracker_export = { path = "../../../strata/crates/tracker_export" }
+tracker_ffi_core = { path = "../../../strata/crates/tracker_ffi_core" }
 workout_pack = { path = "../.." }
 
 [lib]

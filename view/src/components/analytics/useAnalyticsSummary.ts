@@ -3,10 +3,12 @@ import { AnalyticsSummary } from '../../domain/analytics';
 import { JsonObject, computeAnalytics } from '../../TrackerEngine';
 import { WorkoutEvent } from '../../workoutFlows';
 import { fetchMergedCatalog } from '../../exercise/catalogStorage';
+import { toAnalyticsInputEvents } from './analyticsPayload';
 
 export const useAnalyticsSummary = (
   events: WorkoutEvent[],
   providedCatalog?: JsonObject[] | null,
+  revisions?: { eventsRevision: number; catalogRevision: number },
 ) => {
   const [catalog, setCatalog] = useState<JsonObject[] | null>(null);
   const [loading, setLoading] = useState(!providedCatalog);
@@ -50,12 +52,21 @@ export const useAnalyticsSummary = (
   const summary = useMemo<AnalyticsSummary | null>(() => {
     if (!catalog || events.length === 0) return null;
     const offset = new Date().getTimezoneOffset();
+    const inputEvents = toAnalyticsInputEvents(events);
     return computeAnalytics(
-      events as unknown as JsonObject[],
+      inputEvents,
       -offset,
       catalog,
+      {
+        trace: 'trends/summary',
+        cache: {
+          enabled: true,
+          eventsRevision: revisions?.eventsRevision,
+          catalogRevision: revisions?.catalogRevision,
+        },
+      },
     );
-  }, [events, catalog]);
+  }, [catalog, events, revisions?.catalogRevision, revisions?.eventsRevision]);
 
   return { summary, loading, error, catalog };
 };

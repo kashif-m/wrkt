@@ -136,6 +136,10 @@ export interface HomeDayQuery {
   day_bucket: number;
 }
 
+export interface HomeDaysQuery {
+  day_buckets: number[];
+}
+
 export interface HomeSetChunk {
   description: string;
   count: number;
@@ -166,6 +170,10 @@ export interface HomeDayResponse {
   sections: HomeSectionSummary[];
   muscle_split: DistributionItem[];
   volume_split: DistributionItem[];
+}
+
+export interface HomeDaysResponse {
+  days: HomeDayResponse[];
 }
 
 export interface CalendarMonthQuery {

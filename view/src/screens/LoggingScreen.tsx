@@ -18,6 +18,7 @@ import {
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, Divider, PrimaryButton, BodyText } from '../ui/components';
 import { getContrastTextColor, palette, radius, spacing } from '../ui/theme';
+import { addAlpha } from '../ui/color';
 import { JsonObject } from '../TrackerEngine';
 import { roundToLocalDay } from '../timePolicy';
 import { getMuscleColor } from '../ui/muscleColors';
@@ -31,7 +32,6 @@ import {
 import { LoggingFields } from '../state/appState';
 import {
   ColorHex,
-  ColorValue,
   DisplayLabel,
   ExerciseName,
   LoggingModeValue,
@@ -318,6 +318,11 @@ const LoggingScreen = () => {
       metric: selectedTrendMetric,
       range: selectedTrendRange,
       rmReps: selectedTrendMetric === 'pr_by_rm' ? selectedTrendRmReps : null,
+      traceSource: 'logging/trends',
+      revisions: {
+        eventsRevision: state.eventsRevision,
+        catalogRevision: state.catalogRevision,
+      },
     });
 
   const displayTrendData = useMemo(() => {
@@ -1172,14 +1177,6 @@ const parseNumericField = (value: NumericInput): number | undefined => {
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
   return Number.isNaN(parsed) ? undefined : parsed;
-};
-
-const addAlpha = (hex: ColorHex, alpha: number): ColorValue => {
-  const normalized = Math.max(0, Math.min(1, alpha));
-  const alphaHex = Math.round(normalized * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `${hex}${alphaHex}` as ColorValue;
 };
 
 export default LoggingScreen;

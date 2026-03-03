@@ -24,6 +24,7 @@ import { getMuscleColor } from '../ui/muscleColors';
 import { roundToLocalDay } from '../timePolicy';
 import { formatPercent } from '../ui/formatters';
 import { palette, radius, spacing } from '../ui/theme';
+import { addAlpha } from '../ui/color';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
 import TodayIcon from '../assets/today-target.svg';
@@ -35,6 +36,7 @@ import {
 } from '../state/appContext';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
 import { Card } from '../ui/components';
+import { toAnalyticsInputEvents } from '../components/analytics/analyticsPayload';
 import {
   ColorHex,
   ExerciseName,
@@ -57,7 +59,7 @@ const CalendarScreen = () => {
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
   const eventPayload = useMemo(
-    () => events as unknown as JsonObject[],
+    () => toAnalyticsInputEvents(events),
     [events],
   );
   const catalogPayload = useMemo(
@@ -134,6 +136,14 @@ const CalendarScreen = () => {
       {
         month_bucket: monthBucket,
       },
+      {
+        trace: 'calendar/month-change',
+        cache: {
+          enabled: true,
+          eventsRevision: state.eventsRevision,
+          catalogRevision: state.catalogRevision,
+        },
+      },
     );
     const allMuscles = mapCalendarMuscles(analytics.all_muscles);
     const topMuscles = mapCalendarMuscles(analytics.top_muscles);
@@ -146,7 +156,14 @@ const CalendarScreen = () => {
       allMuscles,
       pieData,
     };
-  }, [catalogPayload, eventPayload, offsetMinutes, visibleMonth]);
+  }, [
+    catalogPayload,
+    eventPayload,
+    offsetMinutes,
+    state.catalogRevision,
+    state.eventsRevision,
+    visibleMonth,
+  ]);
 
   const days = useMemo(() => buildCalendarDays(visibleMonth), [visibleMonth]);
   const monthLabel = visibleMonth.toLocaleDateString(undefined, {
@@ -724,13 +741,5 @@ const formatLabel = (value: MuscleGroup) =>
     .split('_')
     .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
-
-const addAlpha = (hex: string, alpha: number) => {
-  const normalized = Math.max(0, Math.min(1, alpha));
-  const alphaHex = Math.round(normalized * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `${hex}${alphaHex}`;
-};
 
 export default CalendarScreen;

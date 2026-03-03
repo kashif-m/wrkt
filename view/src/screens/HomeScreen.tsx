@@ -7,10 +7,11 @@ import React, {
 } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { DonutChart } from '../components/analytics/DonutChart';
-import { computeHomeDayAnalytics, JsonObject } from '../TrackerEngine';
+import { computeHomeDaysAnalytics, JsonObject } from '../TrackerEngine';
 import {
   DistributionItem,
   HomeDayResponse,
+  HomeDaysResponse,
 } from '../domain/analytics';
 import { roundToLocalDay } from '../timePolicy';
 import { palette, radius, spacing } from '../ui/theme';
@@ -37,6 +38,7 @@ import {
 import HorizontalSwipePager, {
   SwipeDirection,
 } from '../ui/HorizontalSwipePager';
+import { toAnalyticsInputEvents } from '../components/analytics/analyticsPayload';
 
 type HomeDayModel = {
   date: Date;
@@ -99,7 +101,7 @@ const HomeScreen = () => {
   const catalog = state.catalog.entries;
   const offsetMinutes = -new Date().getTimezoneOffset();
   const eventPayload = useMemo(
-    () => events as unknown as JsonObject[],
+    () => toAnalyticsInputEvents(events),
     [events],
   );
   const catalogPayload = useMemo(
@@ -129,7 +131,7 @@ const HomeScreen = () => {
   }, [pageDates]);
 
   const buildDayModel = useCallback(
-    (date: Date): HomeDayModel => {
+    (date: Date, analytics?: HomeDayResponse): HomeDayModel => {
       const dayBucket = roundToLocalDay(date.getTime(), offsetMinutes);
       const todayBucket = roundToLocalDay(Date.now());
       const isToday = dayBucket === todayBucket;
@@ -141,17 +143,10 @@ const HomeScreen = () => {
         day: 'numeric',
         year: 'numeric',
       });
-      const analytics = computeHomeDayAnalytics(
-        eventPayload,
-        offsetMinutes,
-        catalogPayload,
-        {
-          day_bucket: dayBucket,
-        },
-      );
-      const sections = mapHomeSections(analytics);
-      const muscleChips = mapSplitItems(analytics.muscle_split);
-      const volumeChips = mapSplitItems(analytics.volume_split);
+      const resolved = analytics ?? emptyHomeDayResponse(dayBucket);
+      const sections = mapHomeSections(resolved);
+      const muscleChips = mapSplitItems(resolved.muscle_split);
+      const volumeChips = mapSplitItems(resolved.volume_split);
       const musclePieData = collapseSplitItems(muscleChips);
       const volumePieData = collapseSplitItems(volumeChips);
 
@@ -161,17 +156,17 @@ const HomeScreen = () => {
         primaryLabel,
         secondaryLabel,
         sections,
-        emptyState: analytics.empty_state,
+        emptyState: resolved.empty_state,
         muscleChips,
         musclePieData,
         volumeChips,
         volumePieData,
-        totalSets: analytics.totals.total_sets,
-        totalExercises: analytics.totals.total_exercises,
-        averageSets: analytics.totals.average_sets_per_exercise,
+        totalSets: resolved.totals.total_sets,
+        totalExercises: resolved.totals.total_exercises,
+        averageSets: resolved.totals.average_sets_per_exercise,
       };
     },
-    [catalogPayload, eventPayload, offsetMinutes],
+    [offsetMinutes],
   );
 
   const shiftDate = useCallback((date: Date, delta: number) => {
@@ -214,17 +209,69 @@ const HomeScreen = () => {
   const prevDate = pageDates[0];
   const nextDate = pageDates[2];
   const currentDate = overrideCenterDate ?? pageDates[1];
+  const visibleBuckets = useMemo(
+    () =>
+      pageDates.map(date => roundToLocalDay(date.getTime(), offsetMinutes)),
+    [offsetMinutes, pageDates],
+  );
+  const batchedDays = useMemo<HomeDaysResponse>(() => {
+    if (!catalogPayload || visibleBuckets.length === 0) {
+      return { days: [] };
+    }
+    return computeHomeDaysAnalytics(
+      eventPayload,
+      offsetMinutes,
+      catalogPayload,
+      {
+        day_buckets: visibleBuckets,
+      },
+      {
+        trace: 'home/day-change',
+        cache: {
+          enabled: true,
+          eventsRevision: state.eventsRevision,
+          catalogRevision: state.catalogRevision,
+        },
+      },
+    );
+  }, [
+    catalogPayload,
+    eventPayload,
+    offsetMinutes,
+    state.catalogRevision,
+    state.eventsRevision,
+    visibleBuckets,
+  ]);
+  const homeByBucket = useMemo(() => {
+    const map = new Map<number, HomeDayResponse>();
+    batchedDays.days.forEach(day => {
+      map.set(day.day_bucket, day);
+    });
+    return map;
+  }, [batchedDays.days]);
   const currentModel = useMemo(
-    () => buildDayModel(currentDate),
-    [buildDayModel, currentDate],
+    () =>
+      buildDayModel(
+        currentDate,
+        homeByBucket.get(roundToLocalDay(currentDate.getTime(), offsetMinutes)),
+      ),
+    [buildDayModel, currentDate, homeByBucket, offsetMinutes],
   );
   const prevModel = useMemo(
-    () => buildDayModel(prevDate),
-    [buildDayModel, prevDate],
+    () =>
+      buildDayModel(
+        prevDate,
+        homeByBucket.get(roundToLocalDay(prevDate.getTime(), offsetMinutes)),
+      ),
+    [buildDayModel, homeByBucket, offsetMinutes, prevDate],
   );
   const nextModel = useMemo(
-    () => buildDayModel(nextDate),
-    [buildDayModel, nextDate],
+    () =>
+      buildDayModel(
+        nextDate,
+        homeByBucket.get(roundToLocalDay(nextDate.getTime(), offsetMinutes)),
+      ),
+    [buildDayModel, homeByBucket, nextDate, offsetMinutes],
   );
 
   const rotateDates = useCallback(
@@ -671,6 +718,19 @@ const mapHomeSections = (
       totalSets: exercise.total_sets,
     })),
   }));
+
+const emptyHomeDayResponse = (dayBucket: number): HomeDayResponse => ({
+  day_bucket: dayBucket,
+  empty_state: true,
+  totals: {
+    total_sets: 0,
+    total_exercises: 0,
+    average_sets_per_exercise: 0,
+  },
+  sections: [],
+  muscle_split: [],
+  volume_split: [],
+});
 
 const formatSetLabel = (chunk: SetChunk): DisplayLabel => {
   if (chunk.count === 1) {

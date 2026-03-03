@@ -52,6 +52,8 @@ FfiResult strata_compute_exercise_analytics(const char* events_json, int32_t off
                                             const char* catalog_json, const char* query_json);
 FfiResult strata_compute_home_day_analytics(const char* events_json, int32_t offset_minutes,
                                             const char* catalog_json, const char* query_json);
+FfiResult strata_compute_home_days_analytics(const char* events_json, int32_t offset_minutes,
+                                             const char* catalog_json, const char* query_json);
 FfiResult strata_compute_calendar_month_analytics(const char* events_json,
                                                   int32_t offset_minutes,
                                                   const char* catalog_json,
@@ -317,6 +319,21 @@ void installTrackerEngineBinding(Runtime& rt) {
                  auto catalog_json = args[2].asString(runtime).utf8(runtime);
                  auto query_json = args[3].asString(runtime).utf8(runtime);
                  auto ffi = strata_compute_home_day_analytics(
+                     events_json.c_str(), offset, catalog_json.c_str(), query_json.c_str());
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
+
+  makeFunction("computeHomeDaysAnalytics",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 if (count < 4) {
+                   throw std::invalid_argument(
+                       "computeHomeDaysAnalytics requires events + offset + catalog + query");
+                 }
+                 auto events_json = args[0].asString(runtime).utf8(runtime);
+                 int32_t offset = static_cast<int32_t>(args[1].asNumber());
+                 auto catalog_json = args[2].asString(runtime).utf8(runtime);
+                 auto query_json = args[3].asString(runtime).utf8(runtime);
+                 auto ffi = strata_compute_home_days_analytics(
                      events_json.c_str(), offset, catalog_json.c_str(), query_json.c_str());
                  return makeStringResult(runtime, callStrata(ffi));
                });

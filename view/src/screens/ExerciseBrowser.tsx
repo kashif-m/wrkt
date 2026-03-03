@@ -41,6 +41,7 @@ import {
   asTag,
 } from '../domain/types';
 import { getContrastTextColor, palette, spacing, radius } from '../ui/theme';
+import { addAlpha } from '../ui/color';
 import { muscleColorMap } from '../ui/muscleColors';
 import ScreenHeader from '../ui/ScreenHeader';
 import { SectionHeading } from '../ui/components';
@@ -869,14 +870,6 @@ const slugify = (value: string) =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 40);
-
-const addAlpha = (hex: string, alpha: number) => {
-  const normalized = Math.max(0, Math.min(1, alpha));
-  const alphaHex = Math.round(normalized * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `${hex}${alphaHex}`;
-};
 
 const normalizeMuscleGroup = (value: string) => slugify(value);
 

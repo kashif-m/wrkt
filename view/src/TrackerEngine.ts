@@ -1,5 +1,6 @@
 import { TurboModuleRegistry } from 'react-native';
 import { BrandedString, DslText, JsonText, PlannerKind } from './domain/types';
+import { beginBridgePerfTrace } from './perf/bridgePerf';
 
 export type JsonValue =
   | null
@@ -12,6 +13,21 @@ export interface JsonObject {
   [key: string]: JsonValue;
 }
 export type JsonArray = JsonValue[];
+type BridgeCacheOptions = {
+  enabled?: boolean;
+  eventsRevision?: number;
+  catalogRevision?: number;
+};
+type BridgeTraceOptions = {
+  trace?: string;
+  cache?: BridgeCacheOptions;
+};
+type BridgeCacheEntry = {
+  value: JsonValue;
+  createdAt: number;
+};
+const BRIDGE_CACHE_MAX_ENTRIES = 256;
+const bridgeCache = new Map<string, BridgeCacheEntry>();
 
 interface TrackerEngineBinding {
   compileTracker: (dsl: DslText) => JsonText;
@@ -81,6 +97,12 @@ interface TrackerEngineBinding {
     catalog: JsonText,
     query: JsonText,
   ) => JsonText;
+  computeHomeDaysAnalytics: (
+    events: JsonText,
+    offset: number,
+    catalog: JsonText,
+    query: JsonText,
+  ) => JsonText;
   computeCalendarMonthAnalytics: (
     events: JsonText,
     offset: number,
@@ -121,6 +143,121 @@ const parse = <T extends JsonValue>(value: JsonText): T =>
 const stringify = (value: JsonValue): JsonText =>
   JSON.stringify(value) as JsonText;
 
+const hashText = (value: string): string => {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+};
+
+const mixHash = (hash: number, value: number): number => {
+  hash ^= value;
+  return Math.imul(hash, 16777619);
+};
+
+const eventsFingerprint = (events: JsonObject[]): string => {
+  if (events.length === 0) return '0';
+  let hash = 2166136261;
+  let minTs = Number.MAX_SAFE_INTEGER;
+  let maxTs = 0;
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    const rawTs = Number(event.ts ?? 0);
+    const ts = Number.isFinite(rawTs) ? rawTs : 0;
+    if (ts < minTs) minTs = ts;
+    if (ts > maxTs) maxTs = ts;
+    hash = mixHash(hash, ts & 0xffff);
+    hash = mixHash(hash, (ts >>> 16) & 0xffff);
+
+    const payload = event.payload as JsonObject | undefined;
+    const exercise = payload?.exercise;
+    if (typeof exercise === 'string') {
+      for (let i = 0; i < exercise.length; i += 1) {
+        hash = mixHash(hash, exercise.charCodeAt(i));
+      }
+    }
+  }
+  return `${events.length}:${minTs}:${maxTs}:${(hash >>> 0).toString(16)}`;
+};
+
+const payloadBytes = (...parts: string[]) =>
+  parts.reduce((sum, part) => sum + part.length, 0);
+
+const traceBridgeCall = <T>(
+  fn: string,
+  options: BridgeTraceOptions | undefined,
+  queryJson: string,
+  bytes: number,
+  action: () => T,
+): T => {
+  const endTrace = beginBridgePerfTrace({
+    scope: options?.trace ?? 'unscoped',
+    functionName: fn,
+    queryKey: hashText(queryJson),
+    payloadBytes: bytes,
+  });
+  try {
+    return action();
+  } finally {
+    endTrace();
+  }
+};
+
+const serializeForCache = (query: unknown): string => {
+  if (query == null) {
+    return '';
+  }
+  if (typeof query === 'string') {
+    return query;
+  }
+  try {
+    return JSON.stringify(query);
+  } catch {
+    return String(query);
+  }
+};
+
+const computeCacheKey = (
+  fn: string,
+  options: BridgeTraceOptions | undefined,
+  offset: number,
+  query: unknown,
+): string | null => {
+  const cache = options?.cache;
+  if (!cache?.enabled) {
+    return null;
+  }
+  const eventsRevision = cache.eventsRevision ?? -1;
+  const catalogRevision = cache.catalogRevision ?? -1;
+  const queryHash = hashText(serializeForCache(query));
+  return `${fn}|er:${eventsRevision}|cr:${catalogRevision}|off:${offset}|q:${queryHash}`;
+};
+
+const readBridgeCache = <T extends JsonValue>(
+  cacheKey: string | null,
+): T | null => {
+  if (!cacheKey) return null;
+  const entry = bridgeCache.get(cacheKey);
+  if (!entry) return null;
+  return entry.value as T;
+};
+
+const writeBridgeCache = (
+  cacheKey: string | null,
+  value: JsonValue,
+) => {
+  if (!cacheKey) return;
+  bridgeCache.set(cacheKey, { value, createdAt: Date.now() });
+  if (bridgeCache.size > BRIDGE_CACHE_MAX_ENTRIES) {
+    const firstKey = bridgeCache.keys().next().value as string | undefined;
+    if (firstKey) {
+      bridgeCache.delete(firstKey);
+    }
+  }
+};
+
 const call = <T extends JsonValue>(
   fn: keyof TrackerEngineBinding,
   ...args: Array<DslText | JsonText | PlannerKind>
@@ -151,12 +288,24 @@ export const compute = async (
   dsl: DslText,
   events: JsonObject[],
   query: JsonObject,
+  options?: BridgeTraceOptions,
 ) => {
-  return call<JsonObject>(
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const queryJson = stringify(query);
+  const dslText = dsl as unknown as string;
+  const traceKey = `${dslText}|${queryJson}|events:${events.length}`;
+  return traceBridgeCall(
     'compute',
-    dsl,
-    JSON.stringify(events) as JsonText,
-    stringify(query),
+    options,
+    traceKey,
+    payloadBytes(dslText, eventsJson as unknown as string, queryJson),
+    () =>
+      call<JsonObject>(
+        'compute',
+        dsl,
+        eventsJson,
+        queryJson,
+      ),
   );
 };
 
@@ -178,14 +327,34 @@ export const simulate = async (
   baseEvents: JsonObject[],
   hypotheticals: JsonObject[],
   query: JsonObject,
+  options?: BridgeTraceOptions,
 ) =>
-  call<JsonObject>(
-    'simulate',
-    dsl,
-    JSON.stringify(baseEvents) as JsonText,
-    JSON.stringify(hypotheticals) as JsonText,
-    stringify(query),
-  );
+  {
+    const baseJson = JSON.stringify(baseEvents) as JsonText;
+    const hypotheticalJson = JSON.stringify(hypotheticals) as JsonText;
+    const queryJson = stringify(query);
+    const dslText = dsl as unknown as string;
+    const traceKey = `${dslText}|${queryJson}|base:${baseEvents.length}|hyp:${hypotheticals.length}`;
+    return traceBridgeCall(
+      'simulate',
+      options,
+      traceKey,
+      payloadBytes(
+        dslText,
+        baseJson as unknown as string,
+        hypotheticalJson as unknown as string,
+        queryJson,
+      ),
+      () =>
+        call<JsonObject>(
+          'simulate',
+          dsl,
+          baseJson,
+          hypotheticalJson,
+          queryJson,
+        ),
+    );
+  };
 
 export const compileTracker = async (dsl: DslText) =>
   call<JsonObject>('compileTracker', dsl);
@@ -294,6 +463,8 @@ import {
   ExerciseSeriesResponse,
   HomeDayQuery,
   HomeDayResponse,
+  HomeDaysQuery,
+  HomeDaysResponse,
   WorkoutAnalyticsQuery,
   WorkoutMetricsSeries,
 } from './domain/analytics';
@@ -302,14 +473,36 @@ export const computeAnalytics = (
   events: JsonObject[],
   offset: number,
   catalog: JsonObject[],
+  options?: BridgeTraceOptions,
 ): AnalyticsSummary => {
   const engine = ensureBinding();
-  const result = engine.computeAnalytics(
-    JSON.stringify(events) as JsonText,
-    offset,
-    JSON.stringify(catalog) as JsonText,
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey('computeAnalytics', options, offset, {
+    type: 'summary',
+    eventKey,
+  });
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as AnalyticsSummary;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const traceKey = `${offset}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeAnalytics',
+    options,
+    traceKey,
+    payloadBytes(eventsJson as unknown as string, catalogJson as unknown as string),
+    () =>
+      engine.computeAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+      ),
   );
-  return JSON.parse(result) as AnalyticsSummary;
+  const parsed = JSON.parse(result) as AnalyticsSummary;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
 };
 
 export const computeWorkoutAnalytics = (
@@ -317,15 +510,42 @@ export const computeWorkoutAnalytics = (
   offset: number,
   catalog: JsonObject[],
   query: WorkoutAnalyticsQuery,
+  options?: BridgeTraceOptions,
 ): WorkoutMetricsSeries => {
   const engine = ensureBinding();
-  const result = engine.computeWorkoutAnalytics(
-    JSON.stringify(events) as JsonText,
-    offset,
-    JSON.stringify(catalog) as JsonText,
-    JSON.stringify(query) as JsonText,
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey('computeWorkoutAnalytics', options, offset, {
+    query,
+    eventKey,
+  });
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as WorkoutMetricsSeries;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const queryJson = JSON.stringify(query) as JsonText;
+  const traceKey = `${offset}|${queryJson}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeWorkoutAnalytics',
+    options,
+    traceKey,
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+      queryJson as unknown as string,
+    ),
+    () =>
+      engine.computeWorkoutAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+        queryJson,
+      ),
   );
-  return JSON.parse(result) as WorkoutMetricsSeries;
+  const parsed = JSON.parse(result) as WorkoutMetricsSeries;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
 };
 
 export const computeBreakdownAnalytics = (
@@ -333,15 +553,47 @@ export const computeBreakdownAnalytics = (
   offset: number,
   catalog: JsonObject[],
   query: BreakdownQuery,
+  options?: BridgeTraceOptions,
 ): BreakdownResponse => {
   const engine = ensureBinding();
-  const result = engine.computeBreakdownAnalytics(
-    JSON.stringify(events) as JsonText,
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey(
+    'computeBreakdownAnalytics',
+    options,
     offset,
-    JSON.stringify(catalog) as JsonText,
-    JSON.stringify(query) as JsonText,
+    {
+      query,
+      eventKey,
+    },
   );
-  return JSON.parse(result) as BreakdownResponse;
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as BreakdownResponse;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const queryJson = JSON.stringify(query) as JsonText;
+  const traceKey = `${offset}|${queryJson}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeBreakdownAnalytics',
+    options,
+    traceKey,
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+      queryJson as unknown as string,
+    ),
+    () =>
+      engine.computeBreakdownAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+        queryJson,
+      ),
+  );
+  const parsed = JSON.parse(result) as BreakdownResponse;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
 };
 
 export const computeExerciseAnalytics = (
@@ -349,15 +601,47 @@ export const computeExerciseAnalytics = (
   offset: number,
   catalog: JsonObject[],
   query: ExerciseSeriesQuery,
+  options?: BridgeTraceOptions,
 ): ExerciseSeriesResponse => {
   const engine = ensureBinding();
-  const result = engine.computeExerciseAnalytics(
-    JSON.stringify(events) as JsonText,
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey(
+    'computeExerciseAnalytics',
+    options,
     offset,
-    JSON.stringify(catalog) as JsonText,
-    JSON.stringify(query) as JsonText,
+    {
+      query,
+      eventKey,
+    },
   );
-  return JSON.parse(result) as ExerciseSeriesResponse;
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as ExerciseSeriesResponse;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const queryJson = JSON.stringify(query) as JsonText;
+  const traceKey = `${offset}|${queryJson}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeExerciseAnalytics',
+    options,
+    traceKey,
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+      queryJson as unknown as string,
+    ),
+    () =>
+      engine.computeExerciseAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+        queryJson,
+      ),
+  );
+  const parsed = JSON.parse(result) as ExerciseSeriesResponse;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
 };
 
 export const computeHomeDayAnalytics = (
@@ -365,15 +649,90 @@ export const computeHomeDayAnalytics = (
   offset: number,
   catalog: JsonObject[],
   query: HomeDayQuery,
+  options?: BridgeTraceOptions,
 ): HomeDayResponse => {
   const engine = ensureBinding();
-  const result = engine.computeHomeDayAnalytics(
-    JSON.stringify(events) as JsonText,
-    offset,
-    JSON.stringify(catalog) as JsonText,
-    JSON.stringify(query) as JsonText,
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey('computeHomeDayAnalytics', options, offset, {
+    query,
+    eventKey,
+  });
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as HomeDayResponse;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const queryJson = JSON.stringify(query) as JsonText;
+  const traceKey = `${offset}|${queryJson}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeHomeDayAnalytics',
+    options,
+    traceKey,
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+      queryJson as unknown as string,
+    ),
+    () =>
+      engine.computeHomeDayAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+        queryJson,
+      ),
   );
-  return JSON.parse(result) as HomeDayResponse;
+  const parsed = JSON.parse(result) as HomeDayResponse;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
+};
+
+export const computeHomeDaysAnalytics = (
+  events: JsonObject[],
+  offset: number,
+  catalog: JsonObject[],
+  query: HomeDaysQuery,
+  options?: BridgeTraceOptions,
+): HomeDaysResponse => {
+  const engine = ensureBinding();
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey(
+    'computeHomeDaysAnalytics',
+    options,
+    offset,
+    {
+      query,
+      eventKey,
+    },
+  );
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as HomeDaysResponse;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const queryJson = JSON.stringify(query) as JsonText;
+  const traceKey = `${offset}|${queryJson}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeHomeDaysAnalytics',
+    options,
+    traceKey,
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+      queryJson as unknown as string,
+    ),
+    () =>
+      engine.computeHomeDaysAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+        queryJson,
+      ),
+  );
+  const parsed = JSON.parse(result) as HomeDaysResponse;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
 };
 
 export const computeCalendarMonthAnalytics = (
@@ -381,15 +740,47 @@ export const computeCalendarMonthAnalytics = (
   offset: number,
   catalog: JsonObject[],
   query: CalendarMonthQuery,
+  options?: BridgeTraceOptions,
 ): CalendarMonthResponse => {
   const engine = ensureBinding();
-  const result = engine.computeCalendarMonthAnalytics(
-    JSON.stringify(events) as JsonText,
+  const eventKey = eventsFingerprint(events);
+  const cacheKey = computeCacheKey(
+    'computeCalendarMonthAnalytics',
+    options,
     offset,
-    JSON.stringify(catalog) as JsonText,
-    JSON.stringify(query) as JsonText,
+    {
+      query,
+      eventKey,
+    },
   );
-  return JSON.parse(result) as CalendarMonthResponse;
+  const cached = readBridgeCache<JsonObject>(cacheKey);
+  if (cached) {
+    return cached as unknown as CalendarMonthResponse;
+  }
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const catalogJson = JSON.stringify(catalog) as JsonText;
+  const queryJson = JSON.stringify(query) as JsonText;
+  const traceKey = `${offset}|${queryJson}|events:${events.length}|catalog:${catalog.length}`;
+  const result = traceBridgeCall(
+    'computeCalendarMonthAnalytics',
+    options,
+    traceKey,
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+      queryJson as unknown as string,
+    ),
+    () =>
+      engine.computeCalendarMonthAnalytics(
+        eventsJson,
+        offset,
+        catalogJson,
+        queryJson,
+      ),
+  );
+  const parsed = JSON.parse(result) as CalendarMonthResponse;
+  writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
+  return parsed;
 };
 
 export const exportGenericSqlite = (

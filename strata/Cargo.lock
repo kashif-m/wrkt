@@ -465,6 +465,13 @@ dependencies = [
 name = "tracker_ffi"
 version = "0.1.0"
 dependencies = [
+ "tracker_ffi_core",
+]
+
+[[package]]
+name = "tracker_ffi_core"
+version = "0.1.0"
+dependencies = [
  "serde",
  "serde_json",
  "tracker_engine",

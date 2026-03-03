@@ -52,7 +52,14 @@ const AnalyticsExercises = ({
   onClearFilter?: () => void;
 }) => {
   const state = useAppState();
-  const { events, loading, error, catalog } = useAnalyticsData();
+  const {
+    events,
+    loading,
+    error,
+    catalog,
+    eventsRevision,
+    catalogRevision,
+  } = useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
   const [metric, setMetric] = useState<ExerciseMetricKey>('estimated_one_rm');
   const [selectedRm, setSelectedRm] = useState('1');
@@ -141,6 +148,8 @@ const AnalyticsExercises = ({
     metric,
     range,
     rmReps: metric === 'pr_by_rm' && selectedRm ? Number(selectedRm) : null,
+    traceSource: 'trends/exercises',
+    revisions: { eventsRevision, catalogRevision },
   });
 
   const displayChartData = useMemo(() => {

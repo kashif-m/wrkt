@@ -50,6 +50,7 @@ import {
   scoreSet as rustScoreSet,
 } from './TrackerEngine';
 import { applyThemeSettings, palette } from './ui/theme';
+import { addAlpha } from './ui/color';
 import { getMuscleColor } from './ui/muscleColors';
 import { formatTrimmedNumber, secondsToMinutes } from './ui/formatters';
 import BottomNav from './navigation/BottomNav';
@@ -1066,14 +1067,6 @@ const formatLabel = (value: string) =>
     .split('_')
     .map(segment => segment.charAt(0).toUpperCase() + segment.slice(1))
     .join(' ');
-
-const addAlpha = (hex: string, alpha: number) => {
-  const normalized = Math.max(0, Math.min(1, alpha));
-  const alphaHex = Math.round(normalized * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `${hex}${alphaHex}`;
-};
 
 const contrastColor = (hex: string) => {
   const { r, g, b } = parseHex(hex);

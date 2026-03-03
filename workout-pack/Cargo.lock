@@ -454,6 +454,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker_ffi_core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracker_engine",
+ "tracker_export",
+ "tracker_ir",
+]
+
+[[package]]
 name = "tracker_ir"
 version = "0.1.0"
 dependencies = [
@@ -588,11 +599,8 @@ dependencies = [
 name = "workout_ffi"
 version = "0.1.0"
 dependencies = [
- "serde",
  "serde_json",
- "tracker_engine",
- "tracker_export",
- "tracker_ir",
+ "tracker_ffi_core",
  "workout_pack",
 ]
 

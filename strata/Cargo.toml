@@ -6,6 +6,7 @@ members = [
     "crates/tracker_eval",
     "crates/tracker_planning",
     "crates/tracker_catalog",
+    "crates/tracker_ffi_core",
     "crates/tracker_ffi",
     "crates/tracker_analytics",
     "crates/tracker_export",

@@ -17,7 +17,7 @@ import {
   metricSignalsFromEvents,
 } from '../components/analytics/analyticsUtils';
 import { SkiaTrendChart } from '../components/analytics/SkiaTrendChart';
-import { JsonObject, computeWorkoutAnalytics } from '../TrackerEngine';
+import { computeWorkoutAnalytics } from '../TrackerEngine';
 import {
   asLabelText,
   asMuscleGroup,
@@ -48,12 +48,15 @@ import { useAnalyticsData } from '../components/analytics/AnalyticsDataContext';
 const AnalyticsWorkouts = () => {
   const {
     events,
+    eventsRevision,
+    catalogRevision,
     summary,
     loading,
     error,
     catalog,
     catalogLookup,
     eventsByRange,
+    eventsPayloadByRange,
   } = useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
   const [metric, setMetric] = useState<WorkoutMetricKey>('volume');
@@ -89,6 +92,10 @@ const AnalyticsWorkouts = () => {
   const filteredEvents = useMemo(
     () => eventsByRange[range] ?? [],
     [eventsByRange, range],
+  );
+  const filteredPayload = useMemo(
+    () => eventsPayloadByRange[range] ?? [],
+    [eventsPayloadByRange, range],
   );
 
   const exerciseOptions = useMemo<AnalyticsSelectOption<string>[]>(() => {
@@ -214,12 +221,30 @@ const AnalyticsWorkouts = () => {
       },
     };
     return computeWorkoutAnalytics(
-      filteredEvents as unknown as JsonObject[],
+      filteredPayload,
       -offset,
       catalog,
       query,
+      {
+        trace: 'trends/workouts',
+        cache: {
+          enabled: true,
+          eventsRevision,
+          catalogRevision,
+        },
+      },
     );
-  }, [catalog, filteredEvents, filterKind, filterValue, groupBy, metric]);
+  }, [
+    catalog,
+    catalogRevision,
+    eventsRevision,
+    filteredEvents,
+    filteredPayload,
+    filterKind,
+    filterValue,
+    groupBy,
+    metric,
+  ]);
 
   const chartData = useMemo(() => {
     if (!workoutSeries) return [];

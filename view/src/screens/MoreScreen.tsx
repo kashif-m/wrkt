@@ -34,6 +34,7 @@ import {
   themeModeOptions,
   typography,
 } from '../ui/theme';
+import { addAlpha } from '../ui/color';
 import { asLabelText } from '../domain/types';
 import ScreenHeader from '../ui/ScreenHeader';
 import {
@@ -42,14 +43,6 @@ import {
 
 type RgbColor = { r: number; g: number; b: number };
 type HsvColor = { h: number; s: number; v: number };
-
-const addAlpha = (hex: string, alpha: number) => {
-  const bounded = Math.max(0, Math.min(1, alpha));
-  const suffix = Math.round(bounded * 255)
-    .toString(16)
-    .padStart(2, '0');
-  return `${hex}${suffix}`;
-};
 
 const clamp = (value: number, min: number, max: number) =>
   Math.max(min, Math.min(max, value));

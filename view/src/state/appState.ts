@@ -1,8 +1,6 @@
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
 import { ExerciseMetricKey } from '../domain/analytics';
 import {
-  AnalyticsMetricKey,
-  AnalyticsRangeKey,
   ErrorMessage,
   EventId,
   ExerciseName,
@@ -14,8 +12,6 @@ import {
   Tag,
   ScreenKey,
   SearchQuery,
-  asAnalyticsMetricKey,
-  asAnalyticsRangeKey,
   asExerciseName,
   asExerciseSlug,
   asLoggingMode,
@@ -143,6 +139,8 @@ export type RootState = {
   nav: { screen: ScreenKey; stack: ScreenKey[] };
   selectedDate: Date;
   events: WorkoutEvent[];
+  eventsRevision: number;
+  catalogRevision: number;
   indexes: EventIndexes;
   catalog: {
     entries: ExerciseCatalogEntry[];
@@ -192,10 +190,6 @@ export type RootState = {
     selectedTrendRmReps: number | null;
     editingEventId: EventId | null;
     status: { text: ToastText; tone: ToastTone } | null;
-  };
-  analytics: {
-    selectedRange: AnalyticsRangeKey;
-    selectedMetric: AnalyticsMetricKey;
   };
   preferences: {
     themeAccent: AccentKey;
@@ -250,8 +244,6 @@ export type Action =
   | { type: 'log/trendRm'; rmReps: number | null }
   | { type: 'log/editing'; eventId: EventId | null }
   | { type: 'log/status'; status: RootState['logging']['status'] }
-  | { type: 'analytics/range'; range: AnalyticsRangeKey }
-  | { type: 'analytics/metric'; metric: AnalyticsMetricKey }
   | { type: 'preferences/themeAccent'; accent: AccentKey }
   | { type: 'preferences/themeMode'; mode: ThemeMode }
   | { type: 'preferences/customAccent'; color: string | null }
@@ -280,6 +272,8 @@ export const createInitialState = (): RootState => {
     nav: { screen: asScreenKey('home'), stack: [asScreenKey('home')] },
     selectedDate: today,
     events: [],
+    eventsRevision: 0,
+    catalogRevision: 0,
     indexes: { byId: {}, byExercise: {} },
     catalog: { entries: [], favorites: [], custom: [] },
     browser: {
@@ -321,10 +315,6 @@ export const createInitialState = (): RootState => {
       selectedTrendRmReps: null,
       editingEventId: null,
       status: null,
-    },
-    analytics: {
-      selectedRange: asAnalyticsRangeKey('3m'),
-      selectedMetric: asAnalyticsMetricKey('volume'),
     },
     preferences: {
       themeAccent: 'blue',
@@ -387,6 +377,7 @@ export const reducer = (state: RootState, action: Action): RootState => {
       return {
         ...state,
         events: action.events,
+        eventsRevision: state.eventsRevision + 1,
         indexes: buildIndexes(action.events),
       };
 
@@ -396,6 +387,7 @@ export const reducer = (state: RootState, action: Action): RootState => {
       return {
         ...state,
         events: [...state.events, action.event],
+        eventsRevision: state.eventsRevision + 1,
         indexes: addToIndex(state.indexes, action.event),
       };
 
@@ -407,6 +399,7 @@ export const reducer = (state: RootState, action: Action): RootState => {
         events: state.events.map(e =>
           e.event_id === action.event.event_id ? action.event : e,
         ),
+        eventsRevision: state.eventsRevision + 1,
         indexes: updateInIndex(state.indexes, action.event, oldEvent),
       };
     }
@@ -415,21 +408,28 @@ export const reducer = (state: RootState, action: Action): RootState => {
       return {
         ...state,
         events: state.events.filter(e => e.event_id !== action.eventId),
+        eventsRevision: state.eventsRevision + 1,
         indexes: removeFromIndex(state.indexes, action.eventId),
       };
 
     case 'catalog/set':
       return {
         ...state,
+        catalogRevision: state.catalogRevision + 1,
         catalog: { ...state.catalog, entries: action.entries },
       };
     case 'catalog/favorites':
       return {
         ...state,
+        catalogRevision: state.catalogRevision + 1,
         catalog: { ...state.catalog, favorites: action.favorites },
       };
     case 'catalog/custom':
-      return { ...state, catalog: { ...state.catalog, custom: action.custom } };
+      return {
+        ...state,
+        catalogRevision: state.catalogRevision + 1,
+        catalog: { ...state.catalog, custom: action.custom },
+      };
     case 'browser/mode':
       return { ...state, browser: { ...state.browser, mode: action.mode } };
     case 'browser/returnMode':
@@ -516,16 +516,6 @@ export const reducer = (state: RootState, action: Action): RootState => {
       };
     case 'log/status':
       return { ...state, logging: { ...state.logging, status: action.status } };
-    case 'analytics/range':
-      return {
-        ...state,
-        analytics: { ...state.analytics, selectedRange: action.range },
-      };
-    case 'analytics/metric':
-      return {
-        ...state,
-        analytics: { ...state.analytics, selectedMetric: action.metric },
-      };
     case 'preferences/themeAccent':
       return {
         ...state,

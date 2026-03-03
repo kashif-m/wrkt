@@ -1,254 +1,18 @@
-use serde::{Deserialize, Serialize}; // Added Deserialize
 use std::collections::{HashMap, HashSet};
 use tracker_analytics::{
-    bucket_ts, Distribution, DistributionItem, Granularity, Heatmap, HeatmapPoint,
-    StreakCalculator, StreakResult, round_to_local_day, round_to_local_month,
+    bucket_ts, Distribution, Granularity, Heatmap, StreakCalculator, round_to_local_day,
+    round_to_local_month,
 };
 
 use crate::catalog_key::normalize_catalog_key;
-use crate::catalog::{LoggingMode, Modality};
 use crate::metrics::estimate_one_rm;
 
-#[derive(Deserialize)]
-pub struct AnalyticsInputEvent {
-    pub ts: i64,
-    pub payload: serde_json::Value,
-}
+mod event_metrics;
+mod types;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct VolumePoint {
-    pub label: String,
-    pub volume: f32,
-    pub count: i32,
-    pub bucket: i64,
-}
+pub use types::*;
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct PersonalRecord {
-    pub exercise: String,
-    pub one_rm: f32,
-    pub max_weight: f32,
-    pub max_reps: i32,
-    pub best_volume: f32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct AnalyticsSummary {
-    pub consistency: StreakResult,
-    pub heatmap: Vec<HeatmapPoint>,
-    pub muscle_split: Vec<DistributionItem>,
-    pub recent_volume: Vec<VolumePoint>,
-    pub prs: Vec<PersonalRecord>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkoutMetric {
-    Volume,
-    Sets,
-    Reps,
-    Duration,
-    Distance,
-    ActiveDuration,
-    LoadDistance,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkoutGroupBy {
-    Workout,
-    Week,
-    Month,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum WorkoutFilterKind {
-    None,
-    Exercise,
-    Muscle,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorkoutAnalyticsFilter {
-    pub kind: WorkoutFilterKind,
-    pub value: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorkoutAnalyticsQuery {
-    pub metric: WorkoutMetric,
-    pub group_by: WorkoutGroupBy,
-    pub filter: WorkoutAnalyticsFilter,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorkoutMetricPoint {
-    pub label: String,
-    pub value: f32,
-    pub count: i32,
-    pub bucket: i64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct WorkoutMetricsSeries {
-    pub metric: WorkoutMetric,
-    pub group_by: WorkoutGroupBy,
-    pub points: Vec<WorkoutMetricPoint>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum ExerciseMetric {
-    EstimatedOneRm,
-    MaxWeight,
-    PrByRm,
-    MaxReps,
-    MaxVolume,
-    WorkoutVolume,
-    WorkoutReps,
-    MaxDistance,
-    WorkoutDistance,
-    MaxActiveDuration,
-    WorkoutActiveDuration,
-    MaxLoadDistance,
-    WorkoutLoadDistance,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum ExerciseGroupBy {
-    Workout,
-    Week,
-    Month,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ExerciseSeriesQuery {
-    pub exercise: String,
-    pub metric: ExerciseMetric,
-    pub group_by: ExerciseGroupBy,
-    #[serde(default)]
-    pub rm_reps: Option<i32>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ExerciseSeriesPoint {
-    pub label: String,
-    pub value: f32,
-    pub count: i32,
-    pub bucket: i64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct ExerciseSeries {
-    pub exercise: String,
-    pub metric: ExerciseMetric,
-    pub group_by: ExerciseGroupBy,
-    pub points: Vec<ExerciseSeriesPoint>,
-}
-
-#[derive(Clone, Debug)]
-pub struct CatalogEntryLite {
-    pub muscle: String,
-    pub logging_mode: LoggingMode,
-    pub modality: Modality,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeDayQuery {
-    pub day_bucket: i64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeSetChunk {
-    pub description: String,
-    pub count: i32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeExerciseSummary {
-    pub exercise: String,
-    pub set_chunks: Vec<HomeSetChunk>,
-    pub total_sets: i32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeSectionSummary {
-    pub key: String,
-    pub label: String,
-    pub exercises: Vec<HomeExerciseSummary>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeDayTotals {
-    pub total_sets: i32,
-    pub total_exercises: i32,
-    pub average_sets_per_exercise: i32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct HomeDayResponse {
-    pub day_bucket: i64,
-    pub empty_state: bool,
-    pub totals: HomeDayTotals,
-    pub sections: Vec<HomeSectionSummary>,
-    pub muscle_split: Vec<DistributionItem>,
-    pub volume_split: Vec<DistributionItem>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CalendarMonthQuery {
-    pub month_bucket: i64,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CalendarMuscleCount {
-    pub group: String,
-    pub count: i32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct CalendarMonthResponse {
-    pub month_bucket: i64,
-    pub sessions: i32,
-    pub attendance_percent: f32,
-    pub is_future_month: bool,
-    pub top_muscles: Vec<CalendarMuscleCount>,
-    pub all_muscles: Vec<CalendarMuscleCount>,
-    pub pie_data: Vec<DistributionItem>,
-}
-
-fn resolve_catalog_entry<'a>(
-    event: &AnalyticsInputEvent,
-    exercise_name: &str,
-    catalog_map: &'a HashMap<String, CatalogEntryLite>,
-) -> Option<&'a CatalogEntryLite> {
-    let event_slug = event
-        .payload
-        .get("exercise_slug")
-        .and_then(|value| value.as_str());
-    if let Some(slug) = event_slug {
-        if let Some(entry) = catalog_map.get(slug) {
-            return Some(entry);
-        }
-        let normalized_slug = normalize_catalog_key(slug);
-        if !normalized_slug.is_empty() {
-            if let Some(entry) = catalog_map.get(&normalized_slug) {
-                return Some(entry);
-            }
-        }
-    }
-
-    if let Some(entry) = catalog_map.get(exercise_name) {
-        return Some(entry);
-    }
-    let normalized_name = normalize_catalog_key(exercise_name);
-    if normalized_name.is_empty() {
-        return None;
-    }
-    catalog_map.get(&normalized_name)
-}
+use event_metrics::{extract_event_metrics, modality_label, resolve_catalog_entry, EventMetricValues};
 
 pub fn compute_summary(
     events: &[AnalyticsInputEvent],
@@ -587,6 +351,30 @@ pub fn compute_home_day_analytics(
     }
 }
 
+pub fn compute_home_days_analytics(
+    events: &[AnalyticsInputEvent],
+    offset_minutes: i32,
+    catalog_map: &HashMap<String, CatalogEntryLite>,
+    query: &HomeDaysQuery,
+) -> HomeDaysResponse {
+    let mut seen = HashSet::new();
+    let mut days = Vec::new();
+    for day_bucket in &query.day_buckets {
+        if !seen.insert(*day_bucket) {
+            continue;
+        }
+        days.push(compute_home_day_analytics(
+            events,
+            offset_minutes,
+            catalog_map,
+            &HomeDayQuery {
+                day_bucket: *day_bucket,
+            },
+        ));
+    }
+    HomeDaysResponse { days }
+}
+
 fn current_timestamp_millis() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -850,51 +638,6 @@ pub fn compute_workout_metrics(
     }
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum BreakdownMetric {
-    Volume,
-    Sets,
-    Reps,
-    Distance,
-    ActiveDuration,
-    LoadDistance,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-#[serde(rename_all = "snake_case")]
-pub enum BreakdownGroupBy {
-    Muscle,
-    Exercise,
-    Category,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BreakdownQuery {
-    pub metric: BreakdownMetric,
-    pub group_by: BreakdownGroupBy,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BreakdownTotals {
-    pub workouts: i32,
-    pub sets: i32,
-    pub reps: i32,
-    pub volume: f32,
-    pub distance: f32,
-    pub active_duration: f32,
-    pub load_distance: f32,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BreakdownResponse {
-    pub metric: BreakdownMetric,
-    pub group_by: BreakdownGroupBy,
-    pub items: Vec<DistributionItem>,
-    pub totals: BreakdownTotals,
-    pub qa_unmapped_events: i32,
-}
-
 pub fn compute_breakdown(
     events: &[AnalyticsInputEvent],
     offset_minutes: i32,
@@ -1108,144 +851,10 @@ pub fn compute_exercise_series(
     }
 }
 
-fn modality_label(modality: &Modality) -> String {
-    match modality {
-        Modality::Strength => "strength",
-        Modality::Hypertrophy => "hypertrophy",
-        Modality::Conditioning => "conditioning",
-        Modality::Bodyweight => "bodyweight",
-        Modality::Mobility => "mobility",
-    }
-    .to_string()
-}
-
-#[derive(Default, Debug, Clone, Copy)]
-struct EventMetricValues {
-    volume: f32,
-    reps: i32,
-    weight: f32,
-    distance: f32,
-    active_duration: f32,
-    load_distance: f32,
-}
-
-fn extract_event_metrics(
-    event: &AnalyticsInputEvent,
-    exercise_name: &str,
-    catalog_map: &HashMap<String, CatalogEntryLite>,
-) -> EventMetricValues {
-    let weight = event
-        .payload
-        .get("weight")
-        .and_then(|v| v.as_f64())
-        .map(|v| v as f32)
-        .filter(|v| *v > 0.0);
-    let reps = event
-        .payload
-        .get("reps")
-        .and_then(|v| v.as_i64())
-        .map(|v| v as i32)
-        .filter(|v| *v > 0);
-    let duration = event
-        .payload
-        .get("duration")
-        .and_then(|v| v.as_f64())
-        .map(|v| v as f32)
-        .filter(|v| *v > 0.0);
-    let distance = event
-        .payload
-        .get("distance")
-        .and_then(|v| v.as_f64())
-        .map(|v| v as f32)
-        .filter(|v| *v > 0.0);
-
-    let resolved_logging_mode = resolve_catalog_entry(event, exercise_name, catalog_map)
-        .map(|entry| entry.logging_mode.clone())
-        .unwrap_or_else(|| infer_logging_mode(weight, reps, duration, distance));
-
-    let mut metrics = EventMetricValues {
-        reps: reps.unwrap_or(0),
-        ..EventMetricValues::default()
-    };
-
-    match resolved_logging_mode {
-        LoggingMode::RepsWeight => {
-            if let (Some(w), Some(r)) = (weight, reps) {
-                metrics.weight = w;
-                metrics.volume = w * r as f32;
-            }
-        }
-        LoggingMode::Reps => {}
-        LoggingMode::Time => {
-            metrics.active_duration = duration.unwrap_or(0.0);
-        }
-        LoggingMode::Distance => {
-            metrics.distance = distance.unwrap_or(0.0);
-        }
-        LoggingMode::TimeDistance => {
-            metrics.distance = distance.unwrap_or(0.0);
-            metrics.active_duration = duration.unwrap_or(0.0);
-        }
-        LoggingMode::DistanceWeight => {
-            metrics.distance = distance.unwrap_or(0.0);
-            if let (Some(d), Some(w)) = (distance, weight) {
-                metrics.weight = w;
-                metrics.load_distance = d * w;
-            }
-        }
-        LoggingMode::Mixed => {
-            if let (Some(w), Some(r)) = (weight, reps) {
-                metrics.weight = w;
-                metrics.volume = w * r as f32;
-            }
-            if let Some(d) = distance {
-                metrics.distance = d;
-                if let Some(w) = weight {
-                    metrics.weight = w;
-                }
-            }
-            if let Some(t) = duration {
-                metrics.active_duration = t;
-            }
-            if let (Some(d), Some(w)) = (distance, weight) {
-                metrics.load_distance = d * w;
-            }
-        }
-    }
-
-    metrics
-}
-
-fn infer_logging_mode(
-    weight: Option<f32>,
-    reps: Option<i32>,
-    duration: Option<f32>,
-    distance: Option<f32>,
-) -> LoggingMode {
-    if weight.is_some() && reps.is_some() {
-        return LoggingMode::RepsWeight;
-    }
-    if distance.is_some() && weight.is_some() {
-        return LoggingMode::DistanceWeight;
-    }
-    if distance.is_some() && duration.is_some() {
-        return LoggingMode::TimeDistance;
-    }
-    if reps.is_some() {
-        return LoggingMode::Reps;
-    }
-    if duration.is_some() {
-        return LoggingMode::Time;
-    }
-    if distance.is_some() {
-        return LoggingMode::Distance;
-    }
-    LoggingMode::Mixed
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::{LoggingMode, Modality};
     use serde_json::json;
     use std::collections::HashMap;
     use std::time::Instant;
@@ -1744,6 +1353,35 @@ mod tests {
         assert_eq!(response.sections[0].exercises[0].set_chunks.len(), 1);
         assert_eq!(response.sections[0].exercises[0].set_chunks[0].count, 2);
         assert_eq!(response.sections[1].key, "legs");
+    }
+
+    #[test]
+    fn home_days_analytics_batches_multiple_days_in_single_response() {
+        let base = 1_704_067_200_000; // 2024-01-01 UTC
+        let day_two = base + 86_400_000;
+        let events = vec![
+            make_event(base, "Bench Press", 8, 60.0),
+            make_event(day_two, "Back Squat", 5, 100.0),
+        ];
+
+        let mut catalog = HashMap::new();
+        catalog.insert("Bench Press".into(), strength_entry("chest"));
+        catalog.insert("Back Squat".into(), strength_entry("legs"));
+
+        let response = compute_home_days_analytics(
+            &events,
+            0,
+            &catalog,
+            &HomeDaysQuery {
+                day_buckets: vec![base, day_two, base],
+            },
+        );
+
+        assert_eq!(response.days.len(), 2);
+        assert_eq!(response.days[0].day_bucket, base);
+        assert_eq!(response.days[1].day_bucket, day_two);
+        assert_eq!(response.days[0].totals.total_sets, 1);
+        assert_eq!(response.days[1].totals.total_sets, 1);
     }
 
     #[test]

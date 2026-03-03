@@ -34,7 +34,6 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ColorHex,
-  ColorValue,
   LabelText,
   NumericInput,
   PlaceholderText,
@@ -44,11 +43,11 @@ import {
   asToastTone,
   unwrapToastTone,
   unwrapColorHex,
-  unwrapColorValue,
   unwrapLabelText,
   unwrapPlaceholderText,
   unwrapToastText,
 } from '../domain/types';
+import { addAlpha } from './color';
 
 export const ScreenContainer = ({
   children,
@@ -228,7 +227,7 @@ export const ToastBanner = ({
         borderRadius: radius.card,
         borderWidth: 1,
         borderColor: unwrapColorHex(color),
-        backgroundColor: unwrapColorValue(addAlpha(color, 0.18)),
+        backgroundColor: asColorValue(addAlpha(unwrapColorHex(color), 0.18)),
         marginBottom: spacing(1),
       }}
     >
@@ -593,13 +592,4 @@ const sheetHandle = {
   width: 40,
   height: 4,
   borderRadius: 999,
-};
-
-const addAlpha = (hex: ColorHex, alpha: number): ColorValue => {
-  const sanitized = unwrapColorHex(hex).replace('#', '');
-  if (sanitized.length !== 6) return asColorValue(unwrapColorHex(hex));
-  const r = parseInt(sanitized.slice(0, 2), 16);
-  const g = parseInt(sanitized.slice(2, 4), 16);
-  const b = parseInt(sanitized.slice(4, 6), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})` as ColorValue;
 };

@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import ScreenHeader from '../ui/ScreenHeader';
 import { SkiaHeatmap } from '../components/analytics/SkiaHeatmap';
-import { JsonObject, computeBreakdownAnalytics } from '../TrackerEngine';
+import { computeBreakdownAnalytics } from '../TrackerEngine';
 import {
   asLabelText,
   asMuscleGroup,
@@ -103,8 +103,17 @@ export const AnalyticsDashboard = ({
   embedded?: boolean;
   onOpenBreakdown?: () => void;
 }) => {
-  const { events, summary, loading, error, catalog, eventsByRange } =
-    useAnalyticsData();
+  const {
+    events,
+    eventsRevision,
+    catalogRevision,
+    summary,
+    loading,
+    error,
+    catalog,
+    eventsByRange,
+    eventsPayloadByRange,
+  } = useAnalyticsData();
   const { preferences } = useAppState();
   const themeKey = `${preferences.themeMode}:${preferences.themeAccent}:${
     preferences.customAccentHex ?? ''
@@ -176,18 +185,37 @@ export const AnalyticsDashboard = ({
       eventsByRange[focusWindow] ?? filterEventsByRange(events, focusWindow)
     );
   }, [events, eventsByRange, focusWindow]);
+  const focusEventPayload = useMemo(() => {
+    if (focusWindow === 'all') {
+      return eventsPayloadByRange.all ?? [];
+    }
+    return eventsPayloadByRange[focusWindow] ?? [];
+  }, [eventsPayloadByRange, focusWindow]);
 
   const focusBreakdown = useMemo(() => {
     if (!catalog || focusEvents.length === 0) return [];
     const offset = new Date().getTimezoneOffset();
     const response = computeBreakdownAnalytics(
-      focusEvents as unknown as JsonObject[],
+      focusEventPayload,
       -offset,
       catalog,
       { metric: 'volume', group_by: 'muscle' },
+      {
+        trace: 'trends/summary-focus',
+        cache: {
+          enabled: true,
+          eventsRevision,
+          catalogRevision,
+        },
+      },
     );
     return response.items.filter(item => item.value > 0);
-  }, [catalog, focusEvents]);
+  }, [
+    catalog,
+    catalogRevision,
+    eventsRevision,
+    focusEventPayload,
+  ]);
 
   const focusRows = focusBreakdown;
 

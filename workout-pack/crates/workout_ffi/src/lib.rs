@@ -1,41 +1,22 @@
 //! C ABI wrappers for Strata core APIs.
 
-use serde::Serialize;
-use serde_json::json;
 use std::collections::HashMap;
-use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use tracker_engine::{self, EngineError};
-use tracker_export::{export_generic_sqlite, import_generic_sqlite, GenericExportPayload};
-use tracker_ir::{NormalizedEvent, Query, TrackerDefinition};
 use workout_pack::{catalog, generate_suggestions, PlannerKind};
 
-#[repr(C)]
-pub struct FfiResult {
-    pub success: bool,
-    pub data: *mut c_char,
-}
+pub use tracker_ffi_core::FfiResult;
+use tracker_ffi_core::{
+    compile_from_ptr, cstr_to_str, handle, parse_events, to_engine_error_string,
+};
 
 #[no_mangle]
 pub extern "C" fn strata_free_string(ptr: *mut c_char) {
-    if ptr.is_null() {
-        return;
-    }
-    unsafe {
-        drop(CString::from_raw(ptr));
-    }
+    tracker_ffi_core::strata_free_string(ptr)
 }
 
 #[no_mangle]
 pub extern "C" fn strata_compile_tracker(dsl_ptr: *const c_char) -> FfiResult {
-    handle(|| {
-        let dsl = cstr_to_str(dsl_ptr)?;
-        let def = tracker_engine::compile_tracker(dsl).map_err(to_string)?;
-        Ok(json!({
-            "tracker_id": def.tracker_id().as_str(),
-            "dsl": def.dsl(),
-        }))
-    })
+    tracker_ffi_core::strata_compile_tracker(dsl_ptr)
 }
 
 #[no_mangle]
@@ -43,13 +24,7 @@ pub extern "C" fn strata_validate_event(
     dsl_ptr: *const c_char,
     event_json_ptr: *const c_char,
 ) -> FfiResult {
-    handle(|| {
-        let dsl = cstr_to_str(dsl_ptr)?;
-        let event_json = cstr_to_str(event_json_ptr)?;
-        let def = tracker_engine::compile_tracker(dsl).map_err(to_string)?;
-        let normalized = tracker_engine::validate_event(&def, event_json).map_err(to_string)?;
-        Ok(normalized)
-    })
+    tracker_ffi_core::strata_validate_event(dsl_ptr, event_json_ptr)
 }
 
 #[no_mangle]
@@ -58,13 +33,7 @@ pub extern "C" fn strata_compute(
     events_json_ptr: *const c_char,
     query_json_ptr: *const c_char,
 ) -> FfiResult {
-    handle(|| {
-        let def = compile_from_ptr(dsl_ptr)?;
-        let events = parse_events(events_json_ptr)?;
-        let query = parse_query(query_json_ptr)?;
-        let output = tracker_engine::compute(&def, &events, query).map_err(to_string)?;
-        Ok(output)
-    })
+    tracker_ffi_core::strata_compute(dsl_ptr, events_json_ptr, query_json_ptr)
 }
 
 #[no_mangle]
@@ -74,15 +43,7 @@ pub extern "C" fn strata_simulate(
     hypotheticals_ptr: *const c_char,
     query_json_ptr: *const c_char,
 ) -> FfiResult {
-    handle(|| {
-        let def = compile_from_ptr(dsl_ptr)?;
-        let base = parse_events(base_events_ptr)?;
-        let hypothetical = parse_events(hypotheticals_ptr)?;
-        let query = parse_query(query_json_ptr)?;
-        let output =
-            tracker_engine::simulate(&def, &base, &hypothetical, query).map_err(to_string)?;
-        Ok(output)
-    })
+    tracker_ffi_core::strata_simulate(dsl_ptr, base_events_ptr, hypotheticals_ptr, query_json_ptr)
 }
 
 #[no_mangle]
@@ -90,27 +51,12 @@ pub extern "C" fn strata_export_generic_sqlite(
     payload_json_ptr: *const c_char,
     output_path_ptr: *const c_char,
 ) -> FfiResult {
-    handle(|| {
-        let payload_json = cstr_to_str(payload_json_ptr)?;
-        let payload: GenericExportPayload =
-            serde_json::from_str(payload_json).map_err(|err| err.to_string())?;
-        let output_path = if output_path_ptr.is_null() {
-            None
-        } else {
-            Some(cstr_to_str(output_path_ptr)?)
-        };
-        let summary = export_generic_sqlite(&payload, output_path)?;
-        Ok(summary)
-    })
+    tracker_ffi_core::strata_export_generic_sqlite(payload_json_ptr, output_path_ptr)
 }
 
 #[no_mangle]
 pub extern "C" fn strata_import_generic_sqlite(input_path_ptr: *const c_char) -> FfiResult {
-    handle(|| {
-        let path = cstr_to_str(input_path_ptr)?;
-        let bundle = import_generic_sqlite(path)?;
-        Ok(bundle)
-    })
+    tracker_ffi_core::strata_import_generic_sqlite(input_path_ptr)
 }
 
 #[no_mangle]
@@ -123,30 +69,10 @@ pub extern "C" fn strata_generate_suggestions(
         let def = compile_from_ptr(dsl_ptr)?;
         let events = parse_events(events_ptr)?;
         let planner_kind = parse_planner_kind(planner_kind_ptr)?;
-        let suggestions = generate_suggestions(planner_kind, &def, &events).map_err(to_string)?;
+        let suggestions =
+            generate_suggestions(planner_kind, &def, &events).map_err(to_engine_error_string)?;
         Ok(suggestions)
     })
-}
-
-fn compile_from_ptr(ptr: *const c_char) -> Result<TrackerDefinition, String> {
-    let dsl = cstr_to_str(ptr)?;
-    tracker_engine::compile_tracker(dsl).map_err(to_string)
-}
-
-fn parse_events(ptr: *const c_char) -> Result<Vec<NormalizedEvent>, String> {
-    let events_json = cstr_to_str(ptr)?;
-    serde_json::from_str(events_json).map_err(|err| err.to_string())
-}
-
-fn parse_query(ptr: *const c_char) -> Result<Query, String> {
-    if ptr.is_null() {
-        return Ok(Query::default());
-    }
-    let json = cstr_to_str(ptr)?;
-    if json.trim().is_empty() {
-        return Ok(Query::default());
-    }
-    serde_json::from_str(json).or(Ok(Query::default()))
 }
 
 fn parse_planner_kind(ptr: *const c_char) -> Result<PlannerKind, String> {
@@ -432,6 +358,38 @@ pub extern "C" fn strata_compute_home_day_analytics(
 }
 
 #[no_mangle]
+pub extern "C" fn strata_compute_home_days_analytics(
+    events_json_ptr: *const c_char,
+    offset_minutes: i32,
+    catalog_json_ptr: *const c_char,
+    query_json_ptr: *const c_char,
+) -> FfiResult {
+    handle(|| {
+        let events_json = cstr_to_str(events_json_ptr)?;
+        let events: Vec<workout_pack::analytics::AnalyticsInputEvent> =
+            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+
+        let catalog_json = cstr_to_str(catalog_json_ptr)?;
+        let entries: Vec<workout_pack::ExerciseDefinition> =
+            serde_json::from_str(catalog_json).map_err(|e| e.to_string())?;
+
+        let query_json = cstr_to_str(query_json_ptr)?;
+        let query: workout_pack::analytics::HomeDaysQuery =
+            serde_json::from_str(query_json).map_err(|e| e.to_string())?;
+
+        let map = build_catalog_map(entries);
+
+        let response = workout_pack::analytics::compute_home_days_analytics(
+            &events,
+            offset_minutes,
+            &map,
+            &query,
+        );
+        Ok(response)
+    })
+}
+
+#[no_mangle]
 pub extern "C" fn strata_compute_calendar_month_analytics(
     events_json_ptr: *const c_char,
     offset_minutes: i32,
@@ -495,53 +453,4 @@ fn build_catalog_map(
         }
     }
     map
-}
-
-fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {
-    if ptr.is_null() {
-        return Err("null pointer".into());
-    }
-    unsafe { CStr::from_ptr(ptr) }
-        .to_str()
-        .map_err(|err| err.to_string())
-}
-
-fn handle<T>(op: impl FnOnce() -> Result<T, String>) -> FfiResult
-where
-    T: Serialize,
-{
-    match op() {
-        Ok(value) => success(value),
-        Err(err) => error(err),
-    }
-}
-
-fn success<T: Serialize>(value: T) -> FfiResult {
-    match serde_json::to_string(&value) {
-        Ok(json_string) => FfiResult {
-            success: true,
-            data: string_to_c(json_string),
-        },
-        Err(err) => error(err.to_string()),
-    }
-}
-
-fn error(message: String) -> FfiResult {
-    FfiResult {
-        success: false,
-        data: string_to_c(message),
-    }
-}
-
-fn string_to_c(value: String) -> *mut c_char {
-    match CString::new(value) {
-        Ok(cstring) => cstring.into_raw(),
-        Err(_) => CString::new("string contains null bytes")
-            .unwrap()
-            .into_raw(),
-    }
-}
-
-fn to_string(error: EngineError) -> String {
-    error.to_string()
 }

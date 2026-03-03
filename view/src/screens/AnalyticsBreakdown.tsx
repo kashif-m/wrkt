@@ -20,7 +20,7 @@ import {
   isBreakdownMetricRelevant,
   metricSignalsFromEvents,
 } from '../components/analytics/analyticsUtils';
-import { JsonObject, computeBreakdownAnalytics } from '../TrackerEngine';
+import { computeBreakdownAnalytics } from '../TrackerEngine';
 import {
   ColorHex,
   asDisplayLabel,
@@ -51,11 +51,20 @@ import {
 import { DonutChart, DonutSlice } from '../components/analytics/DonutChart';
 import { useAnalyticsData } from '../components/analytics/AnalyticsDataContext';
 import { useAppState } from '../state/appContext';
+import { toAnalyticsInputEvents } from '../components/analytics/analyticsPayload';
 
 const AnalyticsBreakdown = () => {
   const state = useAppState();
-  const { loading, error, catalog, eventsByRange, catalogLookup } =
-    useAnalyticsData();
+  const {
+    loading,
+    error,
+    catalog,
+    eventsByRange,
+    eventsPayloadByRange,
+    catalogLookup,
+    eventsRevision,
+    catalogRevision,
+  } = useAnalyticsData();
   const themeKey = `${state.preferences.themeMode}:${
     state.preferences.themeAccent
   }:${state.preferences.customAccentHex ?? ''}`;
@@ -95,6 +104,10 @@ const AnalyticsBreakdown = () => {
     () => eventsByRange[range] ?? [],
     [eventsByRange, range],
   );
+  const filteredPayload = useMemo(
+    () => eventsPayloadByRange[range] ?? [],
+    [eventsPayloadByRange, range],
+  );
 
   const categoryLookup = useMemo(() => {
     const map = new Map<string, string>();
@@ -113,24 +126,11 @@ const AnalyticsBreakdown = () => {
     if (!catalog || filteredEvents.length === 0) {
       return [];
     }
-    const offset = new Date().getTimezoneOffset();
     const signals = metricSignalsFromEvents(filteredEvents);
-    return breakdownMetricOptions.filter(option => {
-      if (!isBreakdownMetricRelevant(option.key, signals)) {
-        return false;
-      }
-      const result = computeBreakdownAnalytics(
-        filteredEvents as unknown as JsonObject[],
-        -offset,
-        catalog,
-        {
-          metric: option.key,
-          group_by: groupBy,
-        },
-      );
-      return result.items.some(item => item.value > 0);
-    });
-  }, [catalog, filteredEvents, groupBy]);
+    return breakdownMetricOptions.filter(option =>
+      isBreakdownMetricRelevant(option.key, signals),
+    );
+  }, [catalog, filteredEvents]);
 
   useEffect(() => {
     if (metricOptions.length === 0) return;
@@ -147,12 +147,28 @@ const AnalyticsBreakdown = () => {
       group_by: groupBy,
     };
     return computeBreakdownAnalytics(
-      filteredEvents as unknown as JsonObject[],
+      filteredPayload,
       -offset,
       catalog,
       query,
+      {
+        trace: 'trends/breakdown',
+        cache: {
+          enabled: true,
+          eventsRevision,
+          catalogRevision,
+        },
+      },
     );
-  }, [catalog, filteredEvents, groupBy, metric]);
+  }, [
+    catalog,
+    catalogRevision,
+    eventsRevision,
+    filteredEvents,
+    filteredPayload,
+    groupBy,
+    metric,
+  ]);
 
   useEffect(() => {
     setShowAllRows(false);
@@ -203,19 +219,30 @@ const AnalyticsBreakdown = () => {
     });
     if (!eventsForGroup.length) return null;
     const offset = new Date().getTimezoneOffset();
+    const inputEvents = toAnalyticsInputEvents(eventsForGroup);
     return computeBreakdownAnalytics(
-      eventsForGroup as unknown as JsonObject[],
+      inputEvents,
       -offset,
       catalog,
       {
         metric,
         group_by: groupBy,
       },
+      {
+        trace: 'trends/breakdown-selected-group',
+        cache: {
+          enabled: true,
+          eventsRevision,
+          catalogRevision,
+        },
+      },
     ).totals;
   }, [
     catalog,
+    catalogRevision,
     catalogLookup,
     categoryLookup,
+    eventsRevision,
     filteredEvents,
     groupBy,
     metric,
