@@ -17,6 +17,7 @@ import {
 } from '../../ui/theme';
 import { LabelText, asLabelText, unwrapLabelText } from '../../domain/types';
 import { useNavigation } from '@react-navigation/native';
+import { exerciseSearchScore } from '../../exercise/search';
 
 export type AnalyticsSelectOption<T extends string> = {
   key: T;
@@ -50,14 +51,23 @@ export const AnalyticsSelect = <T extends string>({
   );
   const filteredOptions = useMemo(() => {
     if (!searchable || !query.trim()) return options;
-    const needle = query.trim().toLowerCase();
-    return options.filter(option => {
-      const label = unwrapLabelText(option.label).toLowerCase();
-      const subtitle = option.subtitle
-        ? unwrapLabelText(option.subtitle).toLowerCase()
-        : '';
-      return label.includes(needle) || subtitle.includes(needle);
-    });
+    return options
+      .map(option => {
+        const label = unwrapLabelText(option.label);
+        const subtitle = option.subtitle
+          ? unwrapLabelText(option.subtitle)
+          : '';
+        const score = exerciseSearchScore(query, label, subtitle);
+        return { option, score };
+      })
+      .filter(entry => entry.score !== null)
+      .sort((a, b) => {
+        if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+        return unwrapLabelText(a.option.label).localeCompare(
+          unwrapLabelText(b.option.label),
+        );
+      })
+      .map(entry => entry.option);
   }, [options, query, searchable]);
 
   useEffect(() => {
@@ -151,11 +161,12 @@ export const AnalyticsSelect = <T extends string>({
         onClose={() => setOpen(false)}
         onCardLayout={setSheetHeight}
       >
-        <View style={{ gap: spacing(0.75), minHeight: 0 }}>
+        <View style={{ gap: spacing(1), minHeight: 0 }}>
           <View
             onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}
+            style={{ gap: spacing(0.75) }}
           >
-            <Text style={[typography.section, { marginBottom: spacing(0.5) }]}>
+            <Text style={typography.section}>
               {unwrapLabelText(title)}
             </Text>
             {searchable ? (
@@ -189,10 +200,11 @@ export const AnalyticsSelect = <T extends string>({
             style={{
               maxHeight: listMaxHeight ?? 320,
               minHeight: filteredOptions.length > 6 ? 160 : undefined,
+              marginTop: spacing(0.25),
             }}
             contentContainerStyle={{
               paddingBottom: spacing(3),
-              paddingHorizontal: analyticsUi.selectorRailPadding,
+              paddingHorizontal: 0,
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"

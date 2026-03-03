@@ -1026,11 +1026,14 @@ const describeLoggedSet = (event: WorkoutEvent) => {
   if (payload.weight && payload.reps) {
     return `${payload.weight} kg × ${payload.reps} reps`;
   }
-  if (payload.reps) {
-    return `${payload.reps} reps`;
+  if (payload.distance && payload.weight) {
+    return `${payload.distance} m × ${payload.weight} kg`;
   }
   if (payload.distance && payload.duration) {
     return `${payload.distance} m / ${formatDurationMinutes(payload.duration)}`;
+  }
+  if (payload.reps) {
+    return `${payload.reps} reps`;
   }
   if (payload.distance) {
     return `${payload.distance} m`;

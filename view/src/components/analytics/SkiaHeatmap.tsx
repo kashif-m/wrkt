@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import {
   Canvas,
   Group,
@@ -58,6 +58,9 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
   availableYears,
   onSelectYear,
 }) => {
+  const gridScrollRef = useRef<React.ComponentRef<typeof ScrollView> | null>(
+    null,
+  );
   const { cells, monthMarkers, totalWidth } = useMemo(() => {
     const levelByDate = new Map<string, number>();
     data.forEach(point => {
@@ -80,6 +83,7 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
     const columns = Math.max(1, Math.ceil(totalDays / 7));
 
     const grid: Array<{
+      key: string;
       x: number;
       y: number;
       opacity: number;
@@ -99,6 +103,7 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
       const opacity = !inYear ? 0.08 : level === 0 ? 0.18 : 0.3 + level * 0.17;
 
       grid.push({
+        key: toDateKey(date),
         x: LEFT_MARGIN + week * (CELL_SIZE + GAP),
         y: TOP_MARGIN + row * (CELL_SIZE + GAP),
         opacity,
@@ -107,12 +112,13 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
       });
     }
 
-    const markers: Array<{ label: string; x: number }> = [];
+    const markers: Array<{ key: string; label: string; x: number }> = [];
     for (let month = 0; month < 12; month += 1) {
       const monthStart = new Date(selectedYear, month, 1);
       if (monthStart.getTime() > yearEnd.getTime()) break;
       const week = Math.floor(daysBetween(gridStart, monthStart) / 7);
       markers.push({
+        key: `${selectedYear}-${month}`,
         label: MONTH_LABELS[month],
         x: LEFT_MARGIN + week * (CELL_SIZE + GAP),
       });
@@ -132,6 +138,11 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
   });
 
   const chartHeight = TOP_MARGIN + (CELL_SIZE + GAP) * ROWS;
+
+  useEffect(() => {
+    // Always reset viewport when year changes so users don't see stale offset artifacts.
+    gridScrollRef.current?.scrollTo({ x: 0, animated: false });
+  }, [selectedYear]);
 
   return (
     <View style={{ gap: spacing(0.75) }}>
@@ -180,11 +191,15 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
       </View>
       <View style={{ height: chartHeight }}>
         <ScrollView
+          ref={gridScrollRef}
           horizontal
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ width: totalWidth }}
         >
-          <Canvas style={{ width: totalWidth, height: chartHeight }}>
+          <Canvas
+            key={`heatmap-${selectedYear}`}
+            style={{ width: totalWidth, height: chartHeight }}
+          >
             <Group>
               {DAY_LABELS.map((label, index) => (
                 <SkiaText
@@ -199,7 +214,7 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
 
               {monthMarkers.map((marker, index) => (
                 <SkiaText
-                  key={`month-${index}`}
+                  key={marker.key}
                   x={marker.x}
                   y={14}
                   text={marker.label}
@@ -210,7 +225,7 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
 
               {cells.map((cell, index) => (
                 <RoundedRect
-                  key={`cell-${index}`}
+                  key={cell.key}
                   x={cell.x}
                   y={cell.y}
                   width={CELL_SIZE}

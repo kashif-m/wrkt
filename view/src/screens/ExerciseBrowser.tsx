@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   ListRenderItemInfo,
   ScrollView,
-  TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
@@ -43,8 +42,12 @@ import {
 import { getContrastTextColor, palette, spacing, radius } from '../ui/theme';
 import { addAlpha } from '../ui/color';
 import { muscleColorMap } from '../ui/muscleColors';
+import {
+  exerciseSearchScore,
+  normalizeSearchText,
+} from '../exercise/search';
 import ScreenHeader from '../ui/ScreenHeader';
-import { SectionHeading } from '../ui/components';
+import { BottomSheet, SectionHeading } from '../ui/components';
 import SearchIcon from '../assets/search.svg';
 import SettingsIcon from '../assets/settings.svg';
 import {
@@ -70,7 +73,7 @@ const ExerciseBrowserListScreen = () => {
     useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
   const catalog = state.catalog.entries;
   const favoriteSlugs = state.catalog.favorites;
-  const { selectedGroup, query, searchExpanded, menuOpen, activeTab } =
+  const { selectedGroup, query, searchExpanded, activeTab } =
     state.browser;
 
   useFocusEffect(
@@ -87,17 +90,34 @@ const ExerciseBrowserListScreen = () => {
   }, [catalog]);
 
   const filteredGroups = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeSearchText(query);
     if (!q) return muscleGroups;
-    return muscleGroups.filter(group => group.toLowerCase().includes(q));
+    return muscleGroups
+      .map(group => ({ group, score: exerciseSearchScore(q, group) }))
+      .filter(entry => entry.score !== null)
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .map(entry => entry.group);
   }, [muscleGroups, query]);
 
   const searchExercises = useMemo(() => {
-    const q = query.trim().toLowerCase();
+    const q = normalizeSearchText(query);
     if (!q) return [];
     return catalog
-      .filter(entry => entry.display_name.toLowerCase().includes(q))
-      .sort((a, b) => a.display_name.localeCompare(b.display_name));
+      .map(entry => ({
+        entry,
+        score: exerciseSearchScore(
+          q,
+          entry.display_name,
+          entry.primary_muscle_group,
+          entry.modality,
+        ),
+      }))
+      .filter(result => result.score !== null)
+      .sort((a, b) => {
+        if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+        return a.entry.display_name.localeCompare(b.entry.display_name);
+      })
+      .map(result => result.entry);
   }, [catalog, query]);
 
   const favoriteExercises = useMemo(
@@ -257,10 +277,13 @@ const ExerciseBrowserListScreen = () => {
               </TouchableOpacity>
             ) : null}
             <TouchableOpacity
-              onPress={() => dispatch({ type: 'browser/menu', open: true })}
+              onPress={() => {
+                dispatch({ type: 'browser/menu', open: false });
+                navigation.navigate('manage');
+              }}
               style={iconButton()}
               accessibilityRole="button"
-              accessibilityLabel={asLabelText('Open browser menu')}
+              accessibilityLabel={asLabelText('Manage exercises')}
             >
               <SettingsIcon width={16} height={16} color={palette.text} />
             </TouchableOpacity>
@@ -268,48 +291,7 @@ const ExerciseBrowserListScreen = () => {
         }
       />
 
-      {menuOpen && !searchExpanded && (
-        <TouchableWithoutFeedback
-          onPress={() => dispatch({ type: 'browser/menu', open: false })}
-        >
-          <View style={menuOverlay()}>
-            <View style={menuCard()}>
-              <TouchableOpacity
-                onPress={() => {
-                  dispatch({
-                    type: 'browser/tab',
-                    tab: activeTab === 'favorites' ? 'all' : 'favorites',
-                  });
-                  dispatch({ type: 'browser/menu', open: false });
-                }}
-                style={menuItem()}
-              >
-                <Text
-                  style={{ color: palette.text, fontWeight: '600' as const }}
-                >
-                  {activeTab === 'favorites' ? 'Show all' : 'Show favorites'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={() => {
-                  dispatch({ type: 'browser/menu', open: false });
-                  navigation.navigate('manage');
-                }}
-                style={menuItem()}
-              >
-                <Text
-                  style={{ color: palette.text, fontWeight: '600' as const }}
-                >
-                  Manage custom exercises
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </TouchableWithoutFeedback>
-      )}
-
       <ExerciseContextSheet
-        onManageNavigate={() => navigation.navigate('manage')}
         onFormNavigate={() => navigation.navigate('form')}
       />
 
@@ -527,10 +509,8 @@ const ExerciseBrowserListScreen = () => {
 };
 
 const ExerciseContextSheet = ({
-  onManageNavigate,
   onFormNavigate,
 }: {
-  onManageNavigate: () => void;
   onFormNavigate: () => void;
 }) => {
   const state = useAppState();
@@ -546,12 +526,11 @@ const ExerciseContextSheet = ({
   };
 
   return (
-    <TouchableWithoutFeedback
-      onPress={() => dispatch({ type: 'browser/context', context: null })}
+    <BottomSheet
+      visible={Boolean(contextEntry)}
+      onClose={() => dispatch({ type: 'browser/context', context: null })}
     >
-      <View style={sheetOverlay()}>
-        <TouchableWithoutFeedback>
-          <View style={sheetCard()}>
+      <View style={sheetCard()}>
             <View
               style={{
                 flexDirection: 'row',
@@ -605,13 +584,20 @@ const ExerciseContextSheet = ({
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => {
-                    onManageNavigate();
-                    dispatch({ type: 'browser/menu', open: false });
+                    dispatch({
+                      type: 'browser/form',
+                      entry: contextEntry.entry,
+                    });
+                    dispatch({
+                      type: 'browser/formDraft',
+                      draft: draftFromEntry(contextEntry.entry),
+                    });
+                    onFormNavigate();
                     dispatch({ type: 'browser/context', context: null });
                   }}
                   style={sheetAction()}
                 >
-                  <Text style={sheetActionLabel()}>Manage custom</Text>
+                  <Text style={sheetActionLabel()}>Edit exercise</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => {
@@ -701,10 +687,8 @@ const ExerciseContextSheet = ({
                 Cancel
               </Text>
             </TouchableOpacity>
-          </View>
-        </TouchableWithoutFeedback>
       </View>
-    </TouchableWithoutFeedback>
+    </BottomSheet>
   );
 };
 
@@ -713,7 +697,20 @@ const ExerciseBrowserManageScreen = () => {
   const dispatch = useAppDispatch();
   const navigation =
     useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
-  const customExercises = state.catalog.custom;
+  const allVisibleExercises = useMemo(
+    () =>
+      state.catalog.entries
+        .slice()
+        .sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    [state.catalog.entries],
+  );
+  const archivedCustom = useMemo(
+    () =>
+      state.catalog.custom
+        .filter(entry => entry.archived)
+        .sort((a, b) => a.display_name.localeCompare(b.display_name)),
+    [state.catalog.custom],
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -739,30 +736,52 @@ const ExerciseBrowserManageScreen = () => {
         onBack={() => navigation.goBack()}
       />
       <ExerciseContextSheet
-        onManageNavigate={() => navigation.navigate('manage')}
         onFormNavigate={() => navigation.navigate('form')}
       />
-      <ManageCustomExercises
-        active={customExercises
-          .filter(entry => !entry.archived)
-          .sort((a, b) => a.display_name.localeCompare(b.display_name))}
-        archived={customExercises
-          .filter(entry => entry.archived)
-          .sort((a, b) => a.display_name.localeCompare(b.display_name))}
-        searchQuery={state.browser.query}
-        onSearch={value =>
-          dispatch({ type: 'browser/query', query: asSearchQuery(value) })
-        }
-        onAdd={handleAdd}
-        onLongPress={(entry, archived) => {
-          dispatch({ type: 'browser/menu', open: false });
-          dispatch({ type: 'browser/search', expanded: false });
-          dispatch({
-            type: 'browser/context',
-            context: { entry, archived, custom: true },
-          });
-        }}
-      />
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ManageCustomExercises
+          entries={allVisibleExercises}
+          archivedCustom={archivedCustom}
+          searchQuery={state.browser.query}
+          onSearch={value =>
+            dispatch({ type: 'browser/query', query: asSearchQuery(value) })
+          }
+          onSelectEntry={(entry, archived) => {
+            dispatch({
+              type: 'browser/context',
+              context: {
+                entry,
+                archived,
+                custom: entry.source === asExerciseSource('custom'),
+              },
+            });
+          }}
+        />
+        <View style={{ padding: spacing(2) }}>
+          <TouchableOpacity
+            onPress={handleAdd}
+            style={[
+              primaryButton(),
+              {
+                borderColor: palette.primary,
+                backgroundColor: palette.primary,
+              },
+            ]}
+          >
+            <Text
+              style={{
+                color: getContrastTextColor(palette.primary),
+                fontWeight: '700' as const,
+              }}
+            >
+              + Add Exercise
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </KeyboardAvoidingView>
     </View>
   );
 };
@@ -814,7 +833,7 @@ const ExerciseBrowserFormScreen = () => {
             await actions.saveCustomExercise(
               {
                 ...values,
-                source: asExerciseSource('custom'),
+                source: formEditing?.source ?? asExerciseSource('custom'),
                 archived: formEditing?.archived,
               },
               formEditing?.slug,
@@ -930,7 +949,8 @@ const iconButton = () => ({
 const searchContainer = () => ({
   flex: 1,
   paddingHorizontal: spacing(2),
-  paddingVertical: spacing(1.5),
+  paddingTop: spacing(1.5),
+  paddingBottom: spacing(1),
   borderBottomWidth: 1,
   borderColor: palette.border,
   zIndex: 3,
@@ -995,6 +1015,20 @@ const listSurface = () => ({
   backgroundColor: palette.surface,
   paddingHorizontal: spacing(0.75),
   paddingBottom: spacing(0.5),
+});
+
+const manageSearchWrap = () => ({
+  paddingHorizontal: spacing(2),
+  paddingTop: spacing(1.5),
+  paddingBottom: spacing(1),
+});
+
+const manageListSurface = () => ({
+  flex: 1,
+  marginHorizontal: spacing(2),
+  borderRadius: radius.card,
+  backgroundColor: palette.surface,
+  paddingHorizontal: spacing(0.75),
 });
 
 const listDivider = () => ({
@@ -1336,27 +1370,56 @@ const ExerciseForm = ({
 };
 
 const ManageCustomExercises = ({
-  active,
-  archived,
+  entries,
+  archivedCustom,
   searchQuery,
   onSearch,
-  onAdd,
-  onLongPress,
+  onSelectEntry,
 }: {
-  active: ExerciseCatalogEntry[];
-  archived: ExerciseCatalogEntry[];
+  entries: ExerciseCatalogEntry[];
+  archivedCustom: ExerciseCatalogEntry[];
   searchQuery: SearchQuery;
   onSearch: (value: string) => void;
-  onAdd: () => void;
-  onLongPress: (entry: ExerciseCatalogEntry, archived: boolean) => void;
+  onSelectEntry: (entry: ExerciseCatalogEntry, archived: boolean) => void;
 }) => {
-  const query = searchQuery.trim().toLowerCase();
+  const query = normalizeSearchText(searchQuery);
   const activeFiltered = query
-    ? active.filter(entry => entry.display_name.toLowerCase().includes(query))
-    : active;
+    ? entries
+        .map(entry => ({
+          entry,
+          score: exerciseSearchScore(
+            query,
+            entry.display_name,
+            entry.primary_muscle_group,
+            entry.modality,
+            entry.source,
+          ),
+        }))
+        .filter(result => result.score !== null)
+        .sort((a, b) => {
+          if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+          return a.entry.display_name.localeCompare(b.entry.display_name);
+        })
+        .map(result => result.entry)
+    : entries;
   const archivedFiltered = query
-    ? archived.filter(entry => entry.display_name.toLowerCase().includes(query))
-    : archived;
+    ? archivedCustom
+        .map(entry => ({
+          entry,
+          score: exerciseSearchScore(
+            query,
+            entry.display_name,
+            entry.primary_muscle_group,
+            entry.modality,
+          ),
+        }))
+        .filter(result => result.score !== null)
+        .sort((a, b) => {
+          if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+          return a.entry.display_name.localeCompare(b.entry.display_name);
+        })
+        .map(result => result.entry)
+    : archivedCustom;
 
   type ManageListItem =
     | { type: 'header'; key: string; label: string }
@@ -1368,27 +1431,21 @@ const ManageCustomExercises = ({
       };
 
   const listItems = useMemo<ManageListItem[]>(() => {
-    const items: ManageListItem[] = [
-      { type: 'header', key: 'active', label: 'Active' },
-    ];
-    if (activeFiltered.length === 0) {
+    const items: ManageListItem[] = [];
+    activeFiltered.forEach(entry => {
+      items.push({
+        type: 'entry',
+        key: `active-${entry.slug}`,
+        entry,
+        archived: false,
+      });
+    });
+    if (archivedFiltered.length > 0) {
       items.push({
         type: 'header',
-        key: 'active-empty',
-        label: 'No custom exercises yet.',
+        key: 'archived',
+        label: 'Archived custom',
       });
-    } else {
-      activeFiltered.forEach(entry => {
-        items.push({
-          type: 'entry',
-          key: `active-${entry.slug}`,
-          entry,
-          archived: false,
-        });
-      });
-    }
-    if (archivedFiltered.length > 0) {
-      items.push({ type: 'header', key: 'archived', label: 'Archived' });
       archivedFiltered.forEach(entry => {
         items.push({
           type: 'entry',
@@ -1403,85 +1460,81 @@ const ManageCustomExercises = ({
 
   const renderItem = ({ item }: ListRenderItemInfo<ManageListItem>) => {
     if (item.type === 'header') {
-      const isEmpty = item.key === 'active-empty';
+      const isEmpty = item.key.endsWith('-empty');
       return (
-        <Text style={isEmpty ? { color: palette.mutedText } : sectionLabel()}>
+        <Text
+          style={[
+            isEmpty ? { color: palette.mutedText } : sectionLabel(),
+            { paddingHorizontal: spacing(0.5), paddingTop: spacing(0.75) },
+          ]}
+        >
           {item.label}
         </Text>
       );
     }
 
+    const sourceLabel = item.archived
+      ? 'Archived'
+      : item.entry.source === asExerciseSource('default')
+        ? 'Default'
+        : 'Custom';
+    const subtitle = `${sourceLabel} • ${formatLabel(
+      item.entry.primary_muscle_group,
+    )}`;
+
     return (
       <TouchableOpacity
-        onPress={() => onLongPress(item.entry, item.archived)}
-        onLongPress={() => onLongPress(item.entry, item.archived)}
-        style={manageRow()}
+        onPress={() => onSelectEntry(item.entry, item.archived)}
+        style={rowStyle()}
       >
-        <View>
-          <Text style={{ color: palette.text, fontWeight: '600' as const }}>
-            {item.entry.display_name}
-          </Text>
-          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-            {item.archived
-              ? 'Archived'
-              : formatLabel(item.entry.primary_muscle_group)}
-          </Text>
+        <View style={{ flex: 1, gap: spacing(0.25) }}>
+          <Text style={rowText()}>{item.entry.display_name}</Text>
+          <Text style={rowMeta()}>{subtitle}</Text>
         </View>
-        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-          Long-press
-        </Text>
       </TouchableOpacity>
     );
   };
 
   return (
-    <FlatList
-      data={listItems}
-      keyExtractor={item => item.key}
-      renderItem={renderItem}
-      keyboardShouldPersistTaps="handled"
-      contentContainerStyle={{ padding: spacing(2), gap: spacing(2) }}
-      ListHeaderComponent={
-        <View style={{ gap: spacing(2) }}>
-          <TouchableOpacity
-            onPress={onAdd}
-            style={[
-              primaryButton(),
-              {
-                borderColor: palette.primary,
-                backgroundColor: palette.primary,
-              },
-            ]}
-          >
-            <Text
-              style={{
-                color: getContrastTextColor(palette.primary),
-                fontWeight: '700' as const,
-              }}
-            >
-              + Add Exercise
+    <View style={{ flex: 1 }}>
+      <View style={manageSearchWrap()}>
+        <TextInput
+          value={searchQuery}
+          onChangeText={onSearch}
+          placeholder="Search exercises"
+          placeholderTextColor={palette.mutedText}
+          style={searchInput()}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+      </View>
+      <View style={manageListSurface()}>
+        <FlatList
+          data={listItems}
+          keyExtractor={item => item.key}
+          renderItem={renderItem}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={{ paddingBottom: spacing(8) }}
+          ItemSeparatorComponent={() => <View style={listDivider()} />}
+          ListHeaderComponent={
+            <Text style={[sectionLabel(), { paddingHorizontal: spacing(0.5) }]}>
+              All exercises
             </Text>
-          </TouchableOpacity>
-          <View>
-            <Text style={formLabel()}>Search</Text>
-            <TextInput
-              value={searchQuery}
-              onChangeText={onSearch}
-              placeholder="Search exercises"
-              placeholderTextColor={palette.mutedText}
-              style={formInput()}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </View>
-        </View>
-      }
-      ItemSeparatorComponent={() => <View style={{ height: spacing(1) }} />}
-      initialNumToRender={20}
-      maxToRenderPerBatch={24}
-      windowSize={8}
-      removeClippedSubviews
-    />
+          }
+          ListEmptyComponent={
+            <Text style={{ color: palette.mutedText, paddingHorizontal: spacing(0.5) }}>
+              No matching exercises.
+            </Text>
+          }
+          initialNumToRender={20}
+          maxToRenderPerBatch={24}
+          windowSize={8}
+          removeClippedSubviews
+        />
+      </View>
+    </View>
   );
 };
 
@@ -1563,57 +1616,6 @@ const sectionLabel = () => ({
   fontSize: 12,
   textTransform: 'uppercase' as const,
   letterSpacing: 1,
-});
-
-const manageRow = () => ({
-  borderWidth: 1,
-  borderColor: palette.border,
-  borderRadius: radius.card,
-  padding: spacing(1.25),
-  flexDirection: 'row' as const,
-  justifyContent: 'space-between' as const,
-  alignItems: 'center' as const,
-});
-
-const menuOverlay = () => ({
-  position: 'absolute' as const,
-  top: spacing(7),
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(15,23,42,0.55)',
-  zIndex: 2,
-});
-
-const sheetOverlay = () => ({
-  position: 'absolute' as const,
-  top: 0,
-  left: 0,
-  right: 0,
-  bottom: 0,
-  backgroundColor: 'rgba(15,23,42,0.55)',
-  alignItems: 'center' as const,
-  justifyContent: 'flex-end' as const,
-  padding: spacing(2),
-  zIndex: 4,
-});
-
-const menuCard = () => ({
-  marginTop: spacing(2),
-  marginHorizontal: spacing(2),
-  alignSelf: 'flex-end' as const,
-  width: 220,
-  borderRadius: radius.card,
-  backgroundColor: palette.surface,
-  borderWidth: 1,
-  borderColor: palette.border,
-  paddingVertical: spacing(1),
-  gap: spacing(0.5),
-});
-
-const menuItem = () => ({
-  paddingHorizontal: spacing(1.5),
-  paddingVertical: spacing(0.75),
 });
 
 const sheetCard = () => ({

@@ -35,6 +35,7 @@ export type BrowserTab = 'all' | 'favorites';
 export type SessionTab = 'Track' | 'History' | 'Trends';
 export type TrendRangeKey = '1w' | '2w' | '1m' | '3m' | '6m' | '1y' | 'all';
 export type HomeSplitMode = 'muscle' | 'volume';
+export type SummaryConsistencyWindow = 'this_month' | 'last_30_days';
 
 export type LoggingFields = {
   reps: NumericInput;
@@ -196,6 +197,7 @@ export type RootState = {
     themeMode: ThemeMode;
     customAccentHex: string | null;
     homeSplitMode: HomeSplitMode;
+    summaryConsistencyWindow: SummaryConsistencyWindow;
   };
   suggestions: {
     planner: PlannerKind;
@@ -248,6 +250,10 @@ export type Action =
   | { type: 'preferences/themeMode'; mode: ThemeMode }
   | { type: 'preferences/customAccent'; color: string | null }
   | { type: 'preferences/homeSplitMode'; mode: HomeSplitMode }
+  | {
+      type: 'preferences/summaryConsistencyWindow';
+      mode: SummaryConsistencyWindow;
+    }
   | { type: 'suggestions/planner'; planner: PlannerKind }
   | { type: 'suggestions/loading'; loading: boolean }
   | { type: 'suggestions/items'; items: PlanSuggestion[] }
@@ -321,6 +327,7 @@ export const createInitialState = (): RootState => {
       themeMode: 'dark',
       customAccentHex: null,
       homeSplitMode: 'muscle',
+      summaryConsistencyWindow: 'this_month',
     },
     suggestions: {
       planner: asPlannerKind('strength'),
@@ -546,6 +553,14 @@ export const reducer = (state: RootState, action: Action): RootState => {
         preferences: {
           ...state.preferences,
           homeSplitMode: action.mode,
+        },
+      };
+    case 'preferences/summaryConsistencyWindow':
+      return {
+        ...state,
+        preferences: {
+          ...state.preferences,
+          summaryConsistencyWindow: action.mode,
         },
       };
     case 'suggestions/planner':

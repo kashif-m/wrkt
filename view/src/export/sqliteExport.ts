@@ -56,7 +56,6 @@ export const exportAndShareSqlite = async (
   await Share.share({
     title: 'WRKT export',
     url: `file://${outputPath}`,
-    message: outputPath,
   });
 
   return { output_path: outputPath };

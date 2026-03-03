@@ -5,7 +5,16 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Animated,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+  useWindowDimensions,
+} from 'react-native';
 import { DonutChart } from '../components/analytics/DonutChart';
 import { computeHomeDaysAnalytics, JsonObject } from '../TrackerEngine';
 import {
@@ -403,6 +412,15 @@ const HomeDayContent = ({
   styles: ReturnType<typeof createStyles>;
 }) => {
   const [splitMenuOpen, setSplitMenuOpen] = useState(false);
+  const [splitAnchor, setSplitAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
+  const splitMenuAnim = useRef(new Animated.Value(0)).current;
+  const splitTriggerRef = useRef<View | null>(null);
+  const window = useWindowDimensions();
   const splitLabel = splitMode === 'muscle' ? 'Muscle Split' : 'Volume Split';
   const splitLegend =
     splitMode === 'muscle' ? model.musclePieData : model.volumePieData;
@@ -412,6 +430,40 @@ const HomeDayContent = ({
   useEffect(() => {
     setSplitMenuOpen(false);
   }, [date, splitMode]);
+
+  useEffect(() => {
+    Animated.timing(splitMenuAnim, {
+      toValue: splitMenuOpen ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [splitMenuAnim, splitMenuOpen]);
+
+  const openSplitMenu = useCallback(() => {
+    splitTriggerRef.current?.measureInWindow((x, y, width, height) => {
+      setSplitAnchor({ x, y, width, height });
+      setSplitMenuOpen(true);
+    });
+  }, []);
+
+  const toggleSplitMenu = useCallback(() => {
+    if (splitMenuOpen) {
+      setSplitMenuOpen(false);
+      return;
+    }
+    openSplitMenu();
+  }, [openSplitMenu, splitMenuOpen]);
+
+  const splitMenuWidth = 154;
+  const splitMenuTop =
+    (splitAnchor?.y ?? spacing(6)) + (splitAnchor?.height ?? 0) + spacing(0.5);
+  const splitMenuLeft = Math.max(
+    spacing(1),
+    Math.min(
+      (splitAnchor?.x ?? spacing(2)) + (splitAnchor?.width ?? 0) - splitMenuWidth,
+      window.width - splitMenuWidth - spacing(1),
+    ),
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -432,65 +484,33 @@ const HomeDayContent = ({
               ) : null}
               <View style={{ flex: 1, gap: spacing(1) }}>
                 <View style={styles.splitHeader}>
-                  <TouchableOpacity
-                    onPress={() => setSplitMenuOpen(current => !current)}
-                    style={styles.splitLabelRow}
-                    accessibilityRole="button"
-                    accessibilityLabel="Change split mode"
+                  <View
+                    ref={splitTriggerRef}
+                    collapsable={false}
+                    style={styles.splitDropdownAnchor}
                   >
-                    <Text style={styles.splitHeaderLabel}>{splitLabel}</Text>
-                    <View style={styles.splitDropdownTrigger}>
-                      <ChevronRightIcon
-                        width={14}
-                        height={14}
-                        color={palette.mutedText}
-                        style={{
-                          transform: [
-                            { rotate: splitMenuOpen ? '270deg' : '90deg' },
-                          ],
-                        }}
-                      />
-                    </View>
-                  </TouchableOpacity>
-                </View>
-                {splitMenuOpen ? (
-                  <View style={styles.splitInlineDropdown}>
                     <TouchableOpacity
-                      onPress={() => {
-                        onSplitModeChange('muscle');
-                        setSplitMenuOpen(false);
-                      }}
-                      style={styles.splitInlineOption}
+                      onPress={toggleSplitMenu}
+                      style={styles.splitLabelRow}
+                      accessibilityRole="button"
+                      accessibilityLabel="Change split mode"
                     >
-                      <Text
-                        style={[
-                          styles.splitInlineOptionText,
-                          splitMode === 'muscle' &&
-                            styles.splitInlineOptionTextActive,
-                        ]}
-                      >
-                        Muscle Split
-                      </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      onPress={() => {
-                        onSplitModeChange('volume');
-                        setSplitMenuOpen(false);
-                      }}
-                      style={styles.splitInlineOption}
-                    >
-                      <Text
-                        style={[
-                          styles.splitInlineOptionText,
-                          splitMode === 'volume' &&
-                            styles.splitInlineOptionTextActive,
-                        ]}
-                      >
-                        Volume Split
-                      </Text>
+                      <Text style={styles.splitHeaderLabel}>{splitLabel}</Text>
+                      <View style={styles.splitDropdownTrigger}>
+                        <ChevronRightIcon
+                          width={14}
+                          height={14}
+                          color={palette.mutedText}
+                          style={{
+                            transform: [
+                              { rotate: splitMenuOpen ? '270deg' : '90deg' },
+                            ],
+                          }}
+                        />
+                      </View>
                     </TouchableOpacity>
                   </View>
-                ) : null}
+                </View>
                 {hasSplitData ? (
                   <View style={{ gap: spacing(0.5) }}>
                     {splitLegend.map(chip => (
@@ -650,6 +670,75 @@ const HomeDayContent = ({
           </Card>
         )}
       </ScrollView>
+      <Modal
+        visible={splitMenuOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setSplitMenuOpen(false)}
+      >
+        <Pressable
+          style={styles.dropdownBackdrop}
+          onPress={() => setSplitMenuOpen(false)}
+        />
+        <Animated.View
+          style={[
+            styles.splitInlineDropdown,
+            {
+              width: splitMenuWidth,
+              left: splitMenuLeft,
+              top: splitMenuTop,
+              opacity: splitMenuAnim,
+              transform: [
+                {
+                  translateY: splitMenuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-6, 0],
+                  }),
+                },
+                {
+                  scale: splitMenuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => {
+              onSplitModeChange('muscle');
+              setSplitMenuOpen(false);
+            }}
+            style={styles.splitInlineOption}
+          >
+            <Text
+              style={[
+                styles.splitInlineOptionText,
+                splitMode === 'muscle' && styles.splitInlineOptionTextActive,
+              ]}
+            >
+              Muscle Split
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              onSplitModeChange('volume');
+              setSplitMenuOpen(false);
+            }}
+            style={styles.splitInlineOption}
+          >
+            <Text
+              style={[
+                styles.splitInlineOptionText,
+                splitMode === 'volume' && styles.splitInlineOptionTextActive,
+              ]}
+            >
+              Volume Split
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </Modal>
     </View>
   );
 };
@@ -770,6 +859,9 @@ const createStyles = () => ({
     justifyContent: 'space-between' as const,
     gap: spacing(1),
   },
+  splitDropdownAnchor: {
+    alignSelf: 'flex-start' as const,
+  },
   splitLabelRow: {
     flexDirection: 'row' as const,
     alignItems: 'center' as const,
@@ -791,9 +883,11 @@ const createStyles = () => ({
     justifyContent: 'center' as const,
   },
   splitInlineDropdown: {
+    position: 'absolute' as const,
     backgroundColor: palette.mutedSurface,
     borderRadius: radius.card,
     overflow: 'hidden' as const,
+    zIndex: 120,
   },
   splitInlineOption: {
     minHeight: 32,
@@ -808,6 +902,13 @@ const createStyles = () => ({
   },
   splitInlineOptionTextActive: {
     color: palette.primary,
+  },
+  dropdownBackdrop: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   splitEmptyHint: {
     color: palette.mutedText,

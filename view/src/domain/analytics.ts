@@ -97,6 +97,7 @@ export interface BreakdownResponse {
 export type ExerciseMetricKey =
   | 'estimated_one_rm'
   | 'max_weight'
+  | 'workout_weight'
   | 'max_reps'
   | 'max_volume'
   | 'workout_volume'

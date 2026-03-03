@@ -96,6 +96,7 @@ pub struct WorkoutMetricsSeries {
 pub enum ExerciseMetric {
     EstimatedOneRm,
     MaxWeight,
+    WorkoutWeight,
     PrByRm,
     MaxReps,
     MaxVolume,

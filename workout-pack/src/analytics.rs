@@ -185,8 +185,12 @@ fn describe_home_set(metrics: EventMetricValues) -> String {
             metrics.reps
         );
     }
-    if metrics.reps > 0 {
-        return format!("{} reps", metrics.reps);
+    if metrics.distance > 0.0 && metrics.weight > 0.0 {
+        return format!(
+            "{} m × {} kg",
+            format_trimmed_number(metrics.distance, 2),
+            format_trimmed_number(metrics.weight, 2)
+        );
     }
     if metrics.distance > 0.0 && metrics.active_duration > 0.0 {
         return format!(
@@ -194,6 +198,9 @@ fn describe_home_set(metrics: EventMetricValues) -> String {
             format_trimmed_number(metrics.distance, 2),
             format_duration_minutes(metrics.active_duration)
         );
+    }
+    if metrics.reps > 0 {
+        return format!("{} reps", metrics.reps);
     }
     if metrics.distance > 0.0 {
         return format!("{} m", format_trimmed_number(metrics.distance, 2));
@@ -724,6 +731,7 @@ pub fn compute_breakdown(
 #[derive(Default, Debug, Clone)]
 struct ExerciseBucketStats {
     count: i32,
+    sum_weight: f32,
     sum_reps: i32,
     sum_volume: f32,
     sum_distance: f32,
@@ -771,6 +779,7 @@ pub fn compute_exercise_series(
             }
         }
         if metrics.weight > 0.0 {
+            stats.sum_weight += metrics.weight;
             if metrics.weight > stats.max_weight {
                 stats.max_weight = metrics.weight;
             }
@@ -818,6 +827,7 @@ pub fn compute_exercise_series(
             let value = match query.metric {
                 ExerciseMetric::EstimatedOneRm => stats.max_1rm,
                 ExerciseMetric::MaxWeight => stats.max_weight,
+                ExerciseMetric::WorkoutWeight => stats.sum_weight,
                 ExerciseMetric::PrByRm => stats.max_weight_for_rm,
                 ExerciseMetric::MaxReps => stats.max_reps as f32,
                 ExerciseMetric::MaxVolume => stats.max_volume,
@@ -1295,6 +1305,34 @@ mod tests {
         );
         assert_eq!(carry_load_distance_total.points.len(), 1);
         assert!((carry_load_distance_total.points[0].value - 2_200.0).abs() < 0.001);
+
+        let carry_max_weight = compute_exercise_series(
+            &events,
+            0,
+            &catalog,
+            &ExerciseSeriesQuery {
+                exercise: "Farmer Carry".to_string(),
+                metric: ExerciseMetric::MaxWeight,
+                group_by: ExerciseGroupBy::Workout,
+                rm_reps: None,
+            },
+        );
+        assert_eq!(carry_max_weight.points.len(), 1);
+        assert!((carry_max_weight.points[0].value - 50.0).abs() < 0.001);
+
+        let carry_total_weight = compute_exercise_series(
+            &events,
+            0,
+            &catalog,
+            &ExerciseSeriesQuery {
+                exercise: "Farmer Carry".to_string(),
+                metric: ExerciseMetric::WorkoutWeight,
+                group_by: ExerciseGroupBy::Workout,
+                rm_reps: None,
+            },
+        );
+        assert_eq!(carry_total_weight.points.len(), 1);
+        assert!((carry_total_weight.points[0].value - 90.0).abs() < 0.001);
     }
 
     #[test]

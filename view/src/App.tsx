@@ -73,6 +73,7 @@ import {
   listCustomExercises,
   loadFavoriteExercises,
   deleteCustomExercise,
+  removeDefaultOverride,
   saveCustomExercise as persistCustomExercise,
   setCustomExerciseArchived,
   setExerciseHidden,
@@ -436,6 +437,10 @@ const AppInner = () => {
           type: 'preferences/homeSplitMode',
           mode: settings.homeSplitMode,
         });
+        dispatch({
+          type: 'preferences/summaryConsistencyWindow',
+          mode: settings.summaryConsistencyWindow,
+        });
         await refreshFromStorage();
         await refreshCatalog();
         setSettingsHydrated(true);
@@ -455,11 +460,13 @@ const AppInner = () => {
       themeMode: state.preferences.themeMode,
       customAccentHex: state.preferences.customAccentHex,
       homeSplitMode: state.preferences.homeSplitMode,
+      summaryConsistencyWindow: state.preferences.summaryConsistencyWindow,
     });
   }, [
     settingsHydrated,
     state.preferences.customAccentHex,
     state.preferences.homeSplitMode,
+    state.preferences.summaryConsistencyWindow,
     state.preferences.themeAccent,
     state.preferences.themeMode,
   ]);
@@ -945,6 +952,7 @@ const AppInner = () => {
         if (entry.source === asExerciseSource('custom')) {
           await deleteCustomExercise(entry.slug);
         } else {
+          await removeDefaultOverride(entry.slug);
           await setExerciseHidden(entry.slug, true);
         }
         dispatch({

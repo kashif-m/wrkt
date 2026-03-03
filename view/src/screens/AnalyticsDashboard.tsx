@@ -12,6 +12,10 @@ import {
   StyleSheet,
   ActivityIndicator,
   TouchableOpacity,
+  Animated,
+  Modal,
+  Pressable,
+  useWindowDimensions,
 } from 'react-native';
 import ScreenHeader from '../ui/ScreenHeader';
 import { SkiaHeatmap } from '../components/analytics/SkiaHeatmap';
@@ -32,7 +36,8 @@ import {
 import { filterEventsByRange } from '../components/analytics/analyticsUtils';
 import { useAnalyticsData } from '../components/analytics/AnalyticsDataContext';
 import { WorkoutEvent } from '../workoutFlows';
-import { useAppState } from '../state/appContext';
+import { useAppDispatch, useAppState } from '../state/appContext';
+import { SummaryConsistencyWindow } from '../state/appState';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,12 +51,12 @@ const focusWindowOptions: ReadonlyArray<AnalyticsRangeKey> = [
   'all',
 ];
 
-type CurrentMonthStats = {
-  sessionsSoFar: number;
+type ConsistencyStats = {
+  sessions: number;
   sessionPercent: number;
-  restDaysSoFar: number;
+  restDays: number;
   restPercent: number;
-  elapsedDaysThisMonth: number;
+  elapsedDays: number;
 };
 
 const startOfDay = (value: number): number => {
@@ -68,31 +73,40 @@ const startOfMonth = (value: number): number => {
   return date.getTime();
 };
 
-const computeCurrentMonthStats = (
+const computeConsistencyStats = (
   events: WorkoutEvent[],
-): CurrentMonthStats => {
+  mode: SummaryConsistencyWindow,
+): ConsistencyStats => {
   const now = Date.now();
   const todayStart = startOfDay(now);
-  const monthStart = startOfMonth(now);
-  const elapsedDaysThisMonth =
-    Math.floor((todayStart - monthStart) / DAY_MS) + 1;
   const daySet = new Set<number>();
   events.forEach(event => {
-    if (event.ts < monthStart || event.ts > todayStart + DAY_MS - 1) return;
+    if (event.ts > todayStart + DAY_MS - 1) return;
     daySet.add(startOfDay(event.ts));
   });
-  const sessionsSoFar = daySet.size;
-  const restDaysSoFar = Math.max(0, elapsedDaysThisMonth - sessionsSoFar);
-  const sessionPercent =
-    elapsedDaysThisMonth > 0 ? (sessionsSoFar / elapsedDaysThisMonth) * 100 : 0;
-  const restPercent =
-    elapsedDaysThisMonth > 0 ? (restDaysSoFar / elapsedDaysThisMonth) * 100 : 0;
+  const hasTodaySession = daySet.has(todayStart);
+
+  const periodEnd = hasTodaySession ? todayStart : todayStart - DAY_MS;
+  const periodStart =
+    mode === 'this_month' ? startOfMonth(todayStart) : periodEnd - 29 * DAY_MS;
+
+  const elapsedDays =
+    periodEnd >= periodStart
+      ? Math.floor((periodEnd - periodStart) / DAY_MS) + 1
+      : 0;
+  const sessions = Array.from(daySet).filter(
+    day => day >= periodStart && day <= periodEnd,
+  ).length;
+  const restDays = Math.max(0, elapsedDays - sessions);
+  const sessionPercent = elapsedDays > 0 ? (sessions / elapsedDays) * 100 : 0;
+  const restPercent = elapsedDays > 0 ? (restDays / elapsedDays) * 100 : 0;
+
   return {
-    sessionsSoFar,
+    sessions,
     sessionPercent,
-    restDaysSoFar,
+    restDays,
     restPercent,
-    elapsedDaysThisMonth,
+    elapsedDays,
   };
 };
 
@@ -103,6 +117,7 @@ export const AnalyticsDashboard = ({
   embedded?: boolean;
   onOpenBreakdown?: () => void;
 }) => {
+  const dispatch = useAppDispatch();
   const {
     events,
     eventsRevision,
@@ -121,11 +136,21 @@ export const AnalyticsDashboard = ({
   const styles = useMemo(() => createStyles(), [themeKey]);
 
   const [focusWindow, setFocusWindow] = useState<AnalyticsRangeKey>('3m');
+  const [consistencyMenuOpen, setConsistencyMenuOpen] = useState(false);
+  const [consistencyAnchor, setConsistencyAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [selectedHeatmapYear, setSelectedHeatmapYear] = useState<number | null>(
     null,
   );
   const [interactionLocked, setInteractionLocked] = useState(false);
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const consistencyMenuAnim = useRef(new Animated.Value(0)).current;
+  const consistencyTriggerRef = useRef<View | null>(null);
+  const window = useWindowDimensions();
 
   const handleInteractionLockChange = useCallback((locked: boolean) => {
     if (unlockTimerRef.current) {
@@ -149,9 +174,52 @@ export const AnalyticsDashboard = ({
     [],
   );
 
-  const currentMonthStats = useMemo(
-    () => computeCurrentMonthStats(events),
-    [events],
+  const consistencyWindow = preferences.summaryConsistencyWindow;
+  const consistencyStats = useMemo(
+    () => computeConsistencyStats(events, consistencyWindow),
+    [consistencyWindow, events],
+  );
+
+  useEffect(() => {
+    setConsistencyMenuOpen(false);
+  }, [consistencyWindow]);
+
+  useEffect(() => {
+    Animated.timing(consistencyMenuAnim, {
+      toValue: consistencyMenuOpen ? 1 : 0,
+      duration: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [consistencyMenuAnim, consistencyMenuOpen]);
+
+  const openConsistencyMenu = useCallback(() => {
+    consistencyTriggerRef.current?.measureInWindow((x, y, width, height) => {
+      setConsistencyAnchor({ x, y, width, height });
+      setConsistencyMenuOpen(true);
+    });
+  }, []);
+
+  const toggleConsistencyMenu = useCallback(() => {
+    if (consistencyMenuOpen) {
+      setConsistencyMenuOpen(false);
+      return;
+    }
+    openConsistencyMenu();
+  }, [consistencyMenuOpen, openConsistencyMenu]);
+
+  const consistencyMenuWidth = 150;
+  const consistencyMenuTop =
+    (consistencyAnchor?.y ?? spacing(6)) +
+    (consistencyAnchor?.height ?? 0) +
+    spacing(0.5);
+  const consistencyMenuLeft = Math.max(
+    spacing(1),
+    Math.min(
+      (consistencyAnchor?.x ?? spacing(2)) +
+        (consistencyAnchor?.width ?? 0) -
+        consistencyMenuWidth,
+      window.width - consistencyMenuWidth - spacing(1),
+    ),
   );
 
   const heatmapYears = useMemo(() => {
@@ -266,26 +334,76 @@ export const AnalyticsDashboard = ({
       contentContainerStyle={styles.scrollContent}
       scrollEnabled={!interactionLocked}
     >
-      <View style={styles.card}>
+      <Animated.View
+        style={[
+          styles.card,
+          {
+            transform: [
+              {
+                scale: consistencyMenuAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1, 1.01],
+                }),
+              },
+            ],
+          },
+        ]}
+      >
         <View style={styles.cardHeader}>
-          <Text style={styles.cardTitle}>Consistency / month</Text>
+          <Text style={styles.cardTitle}>
+            {consistencyWindow === 'this_month'
+              ? 'Consistency (this month)'
+              : 'Consistency (last 30 days)'}
+          </Text>
+          <View
+            ref={consistencyTriggerRef}
+            collapsable={false}
+            style={styles.consistencyDropdownWrap}
+          >
+            <TouchableOpacity
+              onPress={toggleConsistencyMenu}
+              style={styles.consistencyDropdownTrigger}
+            >
+              <Text style={styles.consistencyDropdownTriggerText}>
+                {consistencyMenuOpen ? '▴' : '▾'}
+              </Text>
+            </TouchableOpacity>
+          </View>
         </View>
         <View style={styles.statRow}>
           <StatBox
             styles={styles}
             label="Sessions"
-            value={currentMonthStats.sessionsSoFar}
-            caption={`${formatPercent(currentMonthStats.sessionPercent)} of ${
-              currentMonthStats.elapsedDaysThisMonth
-            } days so far`}
+            value={consistencyStats.sessions}
+            percentLabel={
+              consistencyWindow === 'last_30_days'
+                ? formatPercent(consistencyStats.sessionPercent)
+                : null
+            }
+            caption={
+              consistencyWindow === 'this_month'
+                ? `${formatPercent(consistencyStats.sessionPercent)} of ${
+                    consistencyStats.elapsedDays
+                  } days so far`
+                : null
+            }
           />
           <StatBox
             styles={styles}
             label="Rest days"
-            value={currentMonthStats.restDaysSoFar}
-            caption={`${formatPercent(currentMonthStats.restPercent)} of ${
-              currentMonthStats.elapsedDaysThisMonth
-            } days so far`}
+            value={consistencyStats.restDays}
+            percentLabel={
+              consistencyWindow === 'last_30_days'
+                ? formatPercent(consistencyStats.restPercent)
+                : null
+            }
+            caption={
+              consistencyWindow === 'this_month'
+                ? `${formatPercent(consistencyStats.restPercent)} of ${
+                    consistencyStats.elapsedDays
+                  } days so far`
+                : null
+            }
           />
         </View>
         <View style={styles.chartContainer}>
@@ -298,7 +416,7 @@ export const AnalyticsDashboard = ({
             />
           ) : null}
         </View>
-      </View>
+      </Animated.View>
 
       <View style={styles.card}>
         <View style={styles.cardHeaderTall}>
@@ -347,13 +465,175 @@ export const AnalyticsDashboard = ({
   );
 
   if (embedded) {
-    return content;
+    return (
+      <>
+        {content}
+        <Modal
+          visible={consistencyMenuOpen}
+          transparent
+          animationType="none"
+          onRequestClose={() => setConsistencyMenuOpen(false)}
+        >
+          <Pressable
+            style={styles.dropdownBackdrop}
+            onPress={() => setConsistencyMenuOpen(false)}
+          />
+          <Animated.View
+            style={[
+              styles.consistencyDropdownMenu,
+              {
+                width: consistencyMenuWidth,
+                left: consistencyMenuLeft,
+                top: consistencyMenuTop,
+                opacity: consistencyMenuAnim,
+                transform: [
+                  {
+                    translateY: consistencyMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [-6, 0],
+                    }),
+                  },
+                  {
+                    scale: consistencyMenuAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: [0.96, 1],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          >
+            <TouchableOpacity
+              onPress={() => {
+                dispatch({
+                  type: 'preferences/summaryConsistencyWindow',
+                  mode: 'this_month',
+                });
+                setConsistencyMenuOpen(false);
+              }}
+              style={styles.consistencyDropdownOption}
+            >
+              <Text
+                style={[
+                  styles.consistencyDropdownOptionText,
+                  consistencyWindow === 'this_month'
+                    ? styles.consistencyDropdownOptionTextActive
+                    : null,
+                ]}
+              >
+                This month
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                dispatch({
+                  type: 'preferences/summaryConsistencyWindow',
+                  mode: 'last_30_days',
+                });
+                setConsistencyMenuOpen(false);
+              }}
+              style={styles.consistencyDropdownOption}
+            >
+              <Text
+                style={[
+                  styles.consistencyDropdownOptionText,
+                  consistencyWindow === 'last_30_days'
+                    ? styles.consistencyDropdownOptionTextActive
+                    : null,
+                ]}
+              >
+                Last 30 days
+              </Text>
+            </TouchableOpacity>
+          </Animated.View>
+        </Modal>
+      </>
+    );
   }
 
   return (
     <View style={styles.container}>
       <ScreenHeader title={asLabelText('Insights')} />
       {content}
+      <Modal
+        visible={consistencyMenuOpen}
+        transparent
+        animationType="none"
+        onRequestClose={() => setConsistencyMenuOpen(false)}
+      >
+        <Pressable
+          style={styles.dropdownBackdrop}
+          onPress={() => setConsistencyMenuOpen(false)}
+        />
+        <Animated.View
+          style={[
+            styles.consistencyDropdownMenu,
+            {
+              width: consistencyMenuWidth,
+              left: consistencyMenuLeft,
+              top: consistencyMenuTop,
+              opacity: consistencyMenuAnim,
+              transform: [
+                {
+                  translateY: consistencyMenuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [-6, 0],
+                  }),
+                },
+                {
+                  scale: consistencyMenuAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.96, 1],
+                  }),
+                },
+              ],
+            },
+          ]}
+        >
+          <TouchableOpacity
+            onPress={() => {
+              dispatch({
+                type: 'preferences/summaryConsistencyWindow',
+                mode: 'this_month',
+              });
+              setConsistencyMenuOpen(false);
+            }}
+            style={styles.consistencyDropdownOption}
+          >
+            <Text
+              style={[
+                styles.consistencyDropdownOptionText,
+                consistencyWindow === 'this_month'
+                  ? styles.consistencyDropdownOptionTextActive
+                  : null,
+              ]}
+            >
+              This month
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={() => {
+              dispatch({
+                type: 'preferences/summaryConsistencyWindow',
+                mode: 'last_30_days',
+              });
+              setConsistencyMenuOpen(false);
+            }}
+            style={styles.consistencyDropdownOption}
+          >
+            <Text
+              style={[
+                styles.consistencyDropdownOptionText,
+                consistencyWindow === 'last_30_days'
+                  ? styles.consistencyDropdownOptionTextActive
+                  : null,
+              ]}
+            >
+              Last 30 days
+            </Text>
+          </TouchableOpacity>
+        </Animated.View>
+      </Modal>
     </View>
   );
 };
@@ -362,16 +642,25 @@ const StatBox = ({
   styles,
   label,
   value,
+  percentLabel,
   caption,
 }: {
   styles: ReturnType<typeof createStyles>;
   label: string;
   value: string | number;
+  percentLabel?: string | null;
   caption?: string | null;
 }) => (
   <View style={styles.statBox}>
     <Text style={styles.statValue}>{value}</Text>
-    <Text style={styles.statLabel}>{label}</Text>
+    {percentLabel ? (
+      <View style={styles.statLabelInlineRow}>
+        <Text style={styles.statLabel}>{label}</Text>
+        <Text style={styles.statPercent}>{percentLabel}</Text>
+      </View>
+    ) : (
+      <Text style={styles.statLabel}>{label}</Text>
+    )}
     {caption ? <Text style={styles.statCaption}>{caption}</Text> : null}
   </View>
 );
@@ -436,8 +725,9 @@ const createStyles = () =>
     cardHeader: {
       flexDirection: 'row',
       justifyContent: 'space-between',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       marginBottom: spacing(1.5),
+      gap: spacing(1),
     },
     cardHeaderTall: {
       flexDirection: 'row',
@@ -455,6 +745,43 @@ const createStyles = () =>
     scopeRow: {
       marginTop: spacing(0.5),
     },
+    consistencyDropdownTrigger: {
+      borderRadius: radius.pill,
+      paddingVertical: spacing(0.4),
+      paddingHorizontal: spacing(1),
+      backgroundColor: palette.mutedSurface,
+    },
+    consistencyDropdownTriggerText: {
+      color: palette.mutedText,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    consistencyDropdownWrap: {
+      alignItems: 'flex-end',
+    },
+    consistencyDropdownMenu: {
+      position: 'absolute',
+      borderRadius: radius.card,
+      backgroundColor: palette.mutedSurface,
+      padding: spacing(0.4),
+      zIndex: 120,
+    },
+    consistencyDropdownOption: {
+      paddingVertical: spacing(0.5),
+      paddingHorizontal: spacing(0.8),
+      borderRadius: radius.card,
+    },
+    consistencyDropdownOptionText: {
+      color: palette.text,
+      fontSize: 12,
+      fontWeight: '600',
+    },
+    consistencyDropdownOptionTextActive: {
+      color: palette.primary,
+    },
+    dropdownBackdrop: {
+      ...StyleSheet.absoluteFillObject,
+    },
     statRow: {
       flexDirection: 'row',
       gap: spacing(2.5),
@@ -463,6 +790,11 @@ const createStyles = () =>
     statBox: {
       flex: 1,
     },
+    statLabelInlineRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing(0.5),
+    },
     statValue: {
       fontSize: 24,
       fontWeight: '800',
@@ -470,6 +802,11 @@ const createStyles = () =>
     },
     statLabel: {
       ...typography.label,
+    },
+    statPercent: {
+      color: palette.mutedText,
+      fontSize: 12,
+      fontWeight: '600',
     },
     statCaption: {
       color: palette.mutedText,

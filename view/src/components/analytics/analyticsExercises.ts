@@ -10,6 +10,7 @@ export type ExerciseMetricOption = {
 export const exerciseMetricOptions: ReadonlyArray<ExerciseMetricOption> = [
   { key: 'estimated_one_rm', label: asLabelText('Estimated 1RM'), unit: 'kg' },
   { key: 'max_weight', label: asLabelText('Max weight'), unit: 'kg' },
+  { key: 'workout_weight', label: asLabelText('Total weight'), unit: 'kg' },
   { key: 'pr_by_rm', label: asLabelText('PR by RM'), unit: 'kg' },
   { key: 'max_reps', label: asLabelText('Max reps'), unit: 'reps' },
   { key: 'max_volume', label: asLabelText('Max volume'), unit: 'vol' },
@@ -82,6 +83,8 @@ const metricKeysForMode = (
       ];
     case 'distance_weight':
       return [
+        'max_weight',
+        'workout_weight',
         'max_load_distance',
         'workout_load_distance',
         'max_distance',
@@ -111,6 +114,8 @@ const metricKeysFromSignals = (
   }
   if (signals.hasDistance && signals.hasWeight) {
     keys.push(
+      'max_weight',
+      'workout_weight',
       'max_load_distance',
       'workout_load_distance',
       'max_distance',

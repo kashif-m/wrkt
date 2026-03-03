@@ -165,6 +165,7 @@ const HorizontalSwipePager = ({
               { duration: 200 },
               finished => {
                 if (finished) {
+                  isAnimating.value = false;
                   runOnJS(onCommit)(direction);
                 } else {
                   translateX.value = centerOffset.value;

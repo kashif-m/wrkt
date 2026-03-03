@@ -201,20 +201,24 @@ const AnalyticsBreakdown = () => {
 
   const selectedGroupTotals = useMemo(() => {
     if (!catalog || !selectedLabel) return null;
-    const labelKey = selectedLabel.toLowerCase();
+    const labelKey = normalizeBreakdownKey(selectedLabel);
     const eventsForGroup = filteredEvents.filter(event => {
       const exercise = event.payload?.exercise;
       if (typeof exercise !== 'string') return false;
       if (groupBy === 'exercise') {
-        return exercise.toLowerCase() === labelKey;
+        return normalizeBreakdownKey(exercise) === labelKey;
       }
       if (groupBy === 'muscle') {
         const muscle = catalogLookup.get(exercise);
-        return typeof muscle === 'string' && muscle.toLowerCase() === labelKey;
+        return (
+          typeof muscle === 'string' &&
+          normalizeBreakdownKey(muscle) === labelKey
+        );
       }
       const category = categoryLookup.get(exercise);
       return (
-        typeof category === 'string' && category.toLowerCase() === labelKey
+        typeof category === 'string' &&
+        normalizeBreakdownKey(category) === labelKey
       );
     });
     if (!eventsForGroup.length) return null;
@@ -568,6 +572,9 @@ const formatBreakdownLabel = (
     )
     .join(' ');
 };
+
+const normalizeBreakdownKey = (value: string): string =>
+  value.trim().toLowerCase().replace(/[\s_]+/g, ' ');
 
 const colorForBreakdownItem = (
   item: DistributionItem,

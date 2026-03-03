@@ -9,7 +9,7 @@ import { WorkoutEvent } from '../workoutFlows';
 import { asJsonString, asStorageKey } from '../domain/types';
 import { minutesToSeconds } from '../ui/formatters';
 import { AccentKey, ThemeMode, themeModeOptions } from '../ui/theme';
-import { HomeSplitMode } from './appState';
+import { HomeSplitMode, SummaryConsistencyWindow } from './appState';
 
 const STORAGE_KEY = asStorageKey('strata.workout.events');
 const SETTINGS_KEY = asStorageKey('strata.settings');
@@ -27,6 +27,7 @@ type PersistedSettings = {
   themeMode: ThemeMode;
   customAccentHex: string | null;
   homeSplitMode: HomeSplitMode;
+  summaryConsistencyWindow: SummaryConsistencyWindow;
 };
 
 const DEFAULT_SETTINGS: PersistedSettings = {
@@ -34,6 +35,7 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   themeMode: 'dark',
   customAccentHex: null,
   homeSplitMode: 'muscle',
+  summaryConsistencyWindow: 'this_month',
 };
 
 const themeModeSet = new Set<ThemeMode>(
@@ -79,11 +81,16 @@ export const loadSettings = async (): Promise<PersistedSettings> => {
         : null;
     const homeSplitMode =
       parsed.homeSplitMode === 'volume' ? 'volume' : 'muscle';
+    const summaryConsistencyWindow =
+      parsed.summaryConsistencyWindow === 'last_30_days'
+        ? 'last_30_days'
+        : 'this_month';
     return {
       themeAccent,
       themeMode,
       customAccentHex,
       homeSplitMode,
+      summaryConsistencyWindow,
     };
   } catch (error) {
     console.warn('[persistence] Failed to load settings', error);

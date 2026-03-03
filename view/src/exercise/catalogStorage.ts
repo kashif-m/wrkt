@@ -26,6 +26,7 @@ import {
 } from '../domain/types';
 
 const CUSTOM_EXERCISES_KEY = 'strata.workout.customExercises';
+const DEFAULT_OVERRIDES_KEY = 'strata.workout.defaultOverrides';
 const FAVORITES_KEY = 'strata.workout.favoriteExercises';
 const HIDDEN_EXERCISES_KEY = 'strata.workout.hiddenExercises';
 
@@ -66,6 +67,25 @@ const readCustomExercises = async (): Promise<ExerciseCatalogEntry[]> => {
 
 const writeCustomExercises = async (items: ExerciseCatalogEntry[]) => {
   await AsyncStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify(items));
+};
+
+const readDefaultOverrides = async (): Promise<BaseExerciseCatalogEntry[]> => {
+  const raw = await AsyncStorage.getItem(DEFAULT_OVERRIDES_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as JsonArray;
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(entry => normalizeEntry(entry as JsonObject))
+      .filter(entry => entry.slug.length > 0 && entry.display_name.length > 0);
+  } catch (error) {
+    console.warn('Failed to parse default overrides', error);
+    return [];
+  }
+};
+
+const writeDefaultOverrides = async (items: BaseExerciseCatalogEntry[]) => {
+  await AsyncStorage.setItem(DEFAULT_OVERRIDES_KEY, JSON.stringify(items));
 };
 
 const readFavoriteSlugs = async (): Promise<ExerciseSlug[]> => {
@@ -177,18 +197,26 @@ export const fetchMergedCatalog = async (): Promise<ExerciseCatalogEntry[]> => {
   // console.debug('Fetched catalog from Rust', baseData); // REMOVED: heavy logging
   const base = parseCatalog(baseData);
   const custom = await readCustomExercises();
+  const overrides = await readDefaultOverrides();
+  const overrideMap = new Map(overrides.map(entry => [String(entry.slug), entry]));
   const hidden = await readHiddenSlugs();
   const hiddenSet = new Set(hidden.map(slug => String(slug)));
   console.debug('Merged default and custom catalog', {
     baseCount: base.length,
     customCount: custom.length,
   });
+  const baseApplied = base
+    .filter(entry => !hiddenSet.has(String(entry.slug)))
+    .map(entry => {
+      const override = overrideMap.get(String(entry.slug));
+      const next = override ?? entry;
+      return { ...next, source: asExerciseSource('default') };
+    });
   const merged = [
-    ...base
-      .filter(entry => !hiddenSet.has(String(entry.slug)))
-      .map(entry => ({ ...entry, source: asExerciseSource('default') })),
+    ...baseApplied,
     ...custom
       .filter(entry => !entry.archived)
+      .filter(entry => !overrideMap.has(String(entry.slug)))
       .map(entry => ({ ...entry, source: asExerciseSource('custom') })),
   ];
   return merged;
@@ -207,16 +235,34 @@ export const listCustomExercises = async (includeArchived = true) => {
 };
 
 export const saveCustomExercise = async (
-  entry: BaseExerciseCatalogEntry,
+  entry: BaseExerciseCatalogEntry | ExerciseCatalogEntry,
   options?: { originalSlug?: ExerciseSlug },
 ) => {
   const validated = normalizeEntry(
     await validateExercise(entry as unknown as JsonObject),
   );
-  const slug = slugify(validated.slug ?? validated.display_name);
-  const existing = await readCustomExercises();
+  const requestedSource =
+    'source' in entry && entry.source === asExerciseSource('default')
+      ? asExerciseSource('default')
+      : asExerciseSource('custom');
   const targetSlug =
     options?.originalSlug ?? asExerciseSlug(slugify(validated.slug));
+
+  if (requestedSource === asExerciseSource('default')) {
+    const existing = await readDefaultOverrides();
+    const merged: BaseExerciseCatalogEntry[] = [
+      ...existing.filter(item => item.slug !== targetSlug),
+      {
+        ...validated,
+        slug: targetSlug,
+      },
+    ];
+    await writeDefaultOverrides(merged);
+    return merged;
+  }
+
+  const slug = slugify(validated.slug ?? validated.display_name);
+  const existing = await readCustomExercises();
   const remaining = existing.filter(item => item.slug !== targetSlug);
   if (remaining.some(item => item.slug === asExerciseSlug(slug))) {
     throw new Error('Exercise already exists');
@@ -254,6 +300,13 @@ export const deleteCustomExercise = async (slug: ExerciseSlug) => {
   const existing = await readCustomExercises();
   const next = existing.filter(entry => entry.slug !== slug);
   await writeCustomExercises(next);
+  return next;
+};
+
+export const removeDefaultOverride = async (slug: ExerciseSlug) => {
+  const existing = await readDefaultOverrides();
+  const next = existing.filter(entry => entry.slug !== slug);
+  await writeDefaultOverrides(next);
   return next;
 };
 
