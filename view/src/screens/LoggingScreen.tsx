@@ -9,7 +9,6 @@ import {
   Dimensions,
   Keyboard,
   KeyboardEvent,
-  LayoutChangeEvent,
   Platform,
   Pressable,
   SectionList,
@@ -22,21 +21,15 @@ import {
 import PagerView from 'react-native-pager-view';
 import { useFocusEffect } from '@react-navigation/native';
 import Animated, {
-  useEvent,
-  useHandler,
-  SharedValue,
-  interpolateColor,
-  useAnimatedStyle,
   useSharedValue,
+  useAnimatedStyle,
   withDelay,
   withTiming,
 } from 'react-native-reanimated';
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, PrimaryButton, BodyText } from '../ui/components';
 import {
-  analyticsUi,
   cardShadowStyle,
-  getContrastTextColor,
   palette,
   radius,
   spacing,
@@ -81,10 +74,8 @@ import {
   minutesToSeconds,
   secondsToMinutes,
 } from '../ui/formatters';
-import type {
-  PagerViewOnPageScrollEventData,
-  PagerViewOnPageSelectedEvent,
-} from 'react-native-pager-view';
+import PagerTabsRail from '../ui/pager/PagerTabsRail';
+import { usePagerTabsController } from '../ui/pager/usePagerTabsController';
 
 const sessionTabs = ['Track', 'History', 'Trends'] as const;
 const sessionTabLabels: Record<SessionTab, string> = {
@@ -93,35 +84,10 @@ const sessionTabLabels: Record<SessionTab, string> = {
   Trends: 'Trends',
 };
 export type SessionTab = (typeof sessionTabs)[number];
-
-const AnimatedPagerView = Animated.createAnimatedComponent(PagerView);
-
-type PagerScrollEvent = PagerViewOnPageScrollEventData & {
-  eventName: string;
-};
-
-const usePagerScrollHandler = (
-  handlers: {
-    onPageScroll?: (
-      event: PagerViewOnPageScrollEventData,
-      context: Record<string, unknown>,
-    ) => void;
-  },
-  dependencies?: Array<unknown>,
-) => {
-  const { context, doDependenciesDiffer } = useHandler(handlers, dependencies);
-  return useEvent<PagerScrollEvent>(
-    event => {
-      'worklet';
-      const { onPageScroll } = handlers;
-      if (onPageScroll && event.eventName.endsWith('onPageScroll')) {
-        onPageScroll(event, context);
-      }
-    },
-    ['onPageScroll'],
-    doDependenciesDiffer,
-  );
-};
+const sessionTabDefinitions = sessionTabs.map(tab => ({
+  key: tab,
+  label: sessionTabLabels[tab],
+}));
 
 const INITIAL_FIELDS: LoggingFields = {
   reps: asNumericInput(''),
@@ -235,13 +201,16 @@ const LoggingScreen = () => {
   );
   const fields = state.logging.fields;
   const sessionTab = state.logging.tab;
-  const sessionTabIndex = Math.max(sessionTabs.indexOf(sessionTab), 0);
-  const sessionPagerRef = useRef<PagerView | null>(null);
-  const sessionPagerIndexRef = useRef(sessionTabIndex);
-  const sessionRequestedIndexRef = useRef(sessionTabIndex);
-  const sessionTabPressAnimating = useSharedValue(0);
-  const sessionTabProgress = useSharedValue(sessionTabIndex);
-  const [sessionRailWidth, setSessionRailWidth] = useState(0);
+  const sessionTabController = usePagerTabsController({
+    tabs: sessionTabs,
+    selectedTab: sessionTab,
+    onTabChange: nextTab => {
+      if (state.logging.editingEventId) {
+        dispatch({ type: 'log/editing', eventId: null });
+      }
+      dispatch({ type: 'log/tab', tab: nextTab });
+    },
+  });
   const [historyViewportHeight, setHistoryViewportHeight] = useState(0);
   const selectedTrendRange = state.logging.selectedTrendRange;
   const selectedTrendMetric = state.logging.selectedTrendMetric;
@@ -253,10 +222,7 @@ const LoggingScreen = () => {
   const [interactionLocked, setInteractionLocked] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const themeKey = `${state.preferences.themeMode}:${
-    state.preferences.themeAccent
-  }:${state.preferences.customAccentHex ?? ''}`;
-  const styles = useMemo(() => createStyles(), [themeKey]);
+  const styles = createStyles();
 
   const handleInteractionLockChange = useCallback((locked: boolean) => {
     if (unlockTimerRef.current) {
@@ -315,10 +281,6 @@ const LoggingScreen = () => {
   }, []);
 
   useEffect(() => {
-    sessionTabProgress.value = sessionTabIndex;
-  }, [sessionTabIndex, sessionTabProgress]);
-
-  useEffect(() => {
     if (editingEventId) {
       updateCtaProgress.value = withTiming(1, { duration: 180 });
       deleteCtaProgress.value = withDelay(70, withTiming(1, { duration: 180 }));
@@ -327,82 +289,8 @@ const LoggingScreen = () => {
     updateCtaProgress.value = withTiming(0, { duration: 120 });
     deleteCtaProgress.value = withTiming(0, { duration: 100 });
   }, [deleteCtaProgress, editingEventId, updateCtaProgress]);
-
-  useEffect(() => {
-    const pager = sessionPagerRef.current;
-    sessionRequestedIndexRef.current = sessionTabIndex;
-    if (!pager) return;
-    if (sessionPagerIndexRef.current === sessionTabIndex) return;
-    pager.setPageWithoutAnimation(sessionTabIndex);
-    sessionPagerIndexRef.current = sessionTabIndex;
-  }, [sessionTabIndex]);
-
-  const handleSessionTabSelect = useCallback(
-    (tab: SessionTab) => {
-      if (tab === sessionTab) return;
-      const nextIndex = sessionTabs.indexOf(tab);
-      if (nextIndex < 0) return;
-      if (editingEventId) {
-        dispatch({ type: 'log/editing', eventId: null });
-      }
-      sessionRequestedIndexRef.current = nextIndex;
-      sessionTabPressAnimating.value = 1;
-      sessionTabProgress.value = withTiming(nextIndex, {
-        duration: analyticsUi.tabTapAnimationMs,
-      });
-      sessionPagerRef.current?.setPage(nextIndex);
-      sessionPagerIndexRef.current = nextIndex;
-    },
-    [dispatch, editingEventId, sessionTab, sessionTabPressAnimating, sessionTabProgress],
-  );
-
-  const handleSessionPagerSelected = useCallback(
-    (event: PagerViewOnPageSelectedEvent) => {
-      const nextIndex = event.nativeEvent.position;
-      const nextTab = sessionTabs[nextIndex];
-      if (!nextTab) return;
-      if (
-        sessionTabPressAnimating.value === 1 &&
-        nextIndex !== sessionRequestedIndexRef.current
-      ) {
-        return;
-      }
-      sessionRequestedIndexRef.current = nextIndex;
-      sessionTabPressAnimating.value = 0;
-      sessionTabProgress.value = nextIndex;
-      sessionPagerIndexRef.current = nextIndex;
-      if (editingEventId) {
-        dispatch({ type: 'log/editing', eventId: null });
-      }
-      if (nextTab !== sessionTab) {
-        dispatch({ type: 'log/tab', tab: nextTab });
-      }
-    },
-    [dispatch, editingEventId, sessionTab, sessionTabPressAnimating, sessionTabProgress],
-  );
-
-  const handleSessionPagerScroll = usePagerScrollHandler(
-    {
-      onPageScroll: event => {
-        'worklet';
-        if (sessionTabPressAnimating.value === 1) return;
-        sessionTabProgress.value = event.position + event.offset;
-      },
-    },
-    [sessionTabPressAnimating, sessionTabProgress],
-  );
-
-  const handleSessionRailLayout = useCallback(
-    (event: LayoutChangeEvent) => {
-      const nextWidth = event.nativeEvent.layout.width;
-      if (nextWidth > 0 && nextWidth !== sessionRailWidth) {
-        setSessionRailWidth(nextWidth);
-      }
-    },
-    [sessionRailWidth],
-  );
   const handleHistoryPageLayout = useCallback(
-    (event: LayoutChangeEvent) => {
+    (event: { nativeEvent: { layout: { height: number } } }) => {
       const nextHeight = event.nativeEvent.layout.height;
       if (nextHeight > 0 && Math.abs(nextHeight - historyViewportHeight) > 1) {
         setHistoryViewportHeight(nextHeight);
@@ -719,22 +607,16 @@ const LoggingScreen = () => {
     nextFields[key] = asNumericInput(next === 0 ? '' : next.toString());
     dispatch({ type: 'log/fields', fields: nextFields });
   };
+  const handleSessionTabPress = useCallback(
+    (tab: SessionTab) => {
+      if (editingEventId) {
+        dispatch({ type: 'log/editing', eventId: null });
+      }
+      sessionTabController.onTabPress(tab);
+    },
+    [dispatch, editingEventId, sessionTabController],
+  );
 
-  const sessionTabGap = analyticsUi.selectorRailGap;
-  const sessionRailPadding = analyticsUi.selectorRailPadding;
-  const sessionSegmentWidth =
-    sessionRailWidth > 0
-      ? (Math.max(0, sessionRailWidth - sessionRailPadding * 2) -
-          sessionTabGap * (sessionTabs.length - 1)) /
-        sessionTabs.length
-      : 0;
-  const sessionIndicatorStyle = useAnimatedStyle(() => ({
-    transform: [
-      { translateX: sessionTabProgress.value * (sessionSegmentWidth + sessionTabGap) },
-    ],
-  }));
-  const sessionInactiveText = palette.mutedText;
-  const sessionActiveText = getContrastTextColor(palette.primary);
   const updateCtaStyle = useAnimatedStyle(() => ({
     opacity: updateCtaProgress.value,
     transform: [{ translateY: (1 - updateCtaProgress.value) * 8 }],
@@ -769,52 +651,23 @@ const LoggingScreen = () => {
         </ScrollView>
       ) : (
         <View style={{ flex: 1 }}>
-            <View style={styles.sessionRailWrap}>
-              <View
-                onLayout={handleSessionRailLayout}
-                style={styles.sessionRail}
-              >
-                {sessionSegmentWidth > 0 ? (
-                  <Animated.View
-                    pointerEvents="none"
-                    style={[
-                      styles.sessionIndicator,
-                      { width: sessionSegmentWidth },
-                      sessionIndicatorStyle,
-                    ]}
-                  />
-                ) : null}
-                {sessionTabs.map((tab, index) => (
-                  <Pressable
-                    key={tab}
-                    onPress={() => handleSessionTabSelect(tab)}
-                    accessibilityRole="tab"
-                    accessibilityState={{ selected: sessionTab === tab }}
-                    style={styles.sessionTabButton}
-                  >
-                    <SlidingTabText
-                      label={sessionTabLabels[tab]}
-                      index={index}
-                      progress={sessionTabProgress}
-                      inactiveTextColor={sessionInactiveText}
-                      activeTextColor={sessionActiveText}
-                    />
-                  </Pressable>
-                ))}
-              </View>
-            </View>
+          <PagerTabsRail
+            tabs={sessionTabDefinitions}
+            activeKey={sessionTab}
+            progress={sessionTabController.progress}
+            onSelect={handleSessionTabPress}
+            containerStyle={styles.sessionRailWrap}
+          />
 
-            <AnimatedPagerView
-              ref={(value: PagerView | null) => {
-                sessionPagerRef.current = value;
-              }}
+            <PagerView
+              ref={sessionTabController.pagerRef}
               style={{ flex: 1 }}
-              initialPage={sessionTabIndex}
+              initialPage={sessionTabController.selectedIndex}
               offscreenPageLimit={3}
               scrollEnabled={!interactionLocked}
               overdrag={false}
-              onPageSelected={handleSessionPagerSelected}
-              onPageScroll={handleSessionPagerScroll as never}
+              onPageSelected={sessionTabController.onPageSelected}
+              onPageScroll={sessionTabController.onPageScroll}
             >
               <View key="Track" style={styles.sessionPage}>
                 <View style={styles.sessionPage}>
@@ -870,7 +723,6 @@ const LoggingScreen = () => {
                             label={definition.label}
                             unit={definition.unit}
                             value={fields[definition.key]}
-                            step={definition.step}
                             onIncrement={() => {
                               setFieldValue(definition.key, definition.step);
                             }}
@@ -1140,41 +992,10 @@ const LoggingScreen = () => {
                   />
                 </ScrollView>
               </View>
-            </AnimatedPagerView>
+            </PagerView>
         </View>
       )}
     </View>
-  );
-};
-
-const SlidingTabText = ({
-  label,
-  index,
-  progress,
-  inactiveTextColor,
-  activeTextColor,
-}: {
-  label: string;
-  index: number;
-  progress: SharedValue<number>;
-  inactiveTextColor: string;
-  activeTextColor: string;
-}) => {
-  const textStyle = useAnimatedStyle(() => {
-    const distance = Math.abs(progress.value - index);
-    const mix = Math.max(0, Math.min(1, 1 - distance / 0.6));
-    return {
-      color: interpolateColor(
-        mix,
-        [0, 1],
-        [inactiveTextColor, activeTextColor],
-      ) as string,
-    };
-  });
-  return (
-    <Animated.Text style={[{ fontSize: 12, fontWeight: '600' as const }, textStyle]}>
-      {label}
-    </Animated.Text>
   );
 };
 
@@ -1184,35 +1005,11 @@ const createStyles = () => ({
     marginTop: spacing(1),
     marginBottom: 0,
   },
-  sessionRail: {
-    flexDirection: 'row' as const,
-    gap: analyticsUi.selectorRailGap,
-    borderRadius: radius.pill,
-    backgroundColor: palette.mutedSurface,
-    padding: analyticsUi.selectorRailPadding,
-    overflow: 'hidden' as const,
-  },
   sessionContentCard: {
     backgroundColor: palette.surface,
     borderWidth: 0,
     borderColor: 'transparent',
     ...cardShadowStyle,
-  },
-  sessionIndicator: {
-    position: 'absolute' as const,
-    left: analyticsUi.selectorRailPadding,
-    top: analyticsUi.selectorRailPadding,
-    bottom: analyticsUi.selectorRailPadding,
-    borderRadius: radius.pill,
-    backgroundColor: palette.primary,
-  },
-  sessionTabButton: {
-    flex: 1,
-    minHeight: analyticsUi.controlHeight,
-    borderRadius: radius.pill,
-    paddingVertical: analyticsUi.controlPaddingY,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
   },
   sessionPage: {
     flex: 1,
@@ -1277,7 +1074,6 @@ const Stepper = ({
   label,
   unit,
   value,
-  step,
   onIncrement,
   onDecrement,
   onChange,
@@ -1285,7 +1081,6 @@ const Stepper = ({
   label: DisplayLabel;
   unit?: DisplayLabel;
   value: NumericInput;
-  step: number;
   onIncrement: () => void;
   onDecrement: () => void;
   onChange: (value: NumericInput) => void;

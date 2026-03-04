@@ -1,10 +1,9 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { NativeSyntheticEvent, View } from 'react-native';
-import { useSharedValue, withTiming } from 'react-native-reanimated';
+import React, { useCallback, useState } from 'react';
+import { View } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import ScreenHeader from '../ui/ScreenHeader';
 import { asLabelText } from '../domain/types';
-import { analyticsUi, palette } from '../ui/theme';
+import { palette } from '../ui/theme';
 import { useAppState } from '../state/appContext';
 import {
   AnalyticsTabs,
@@ -15,6 +14,7 @@ import AnalyticsWorkouts from './AnalyticsWorkouts';
 import AnalyticsBreakdown from './AnalyticsBreakdown';
 import AnalyticsExercises from './AnalyticsExercises';
 import { AnalyticsDataProvider } from '../components/analytics/AnalyticsDataContext';
+import { usePagerTabsController } from '../ui/pager/usePagerTabsController';
 
 const ANALYTICS_TABS: AnalyticsTabKey[] = [
   'summary',
@@ -23,68 +23,32 @@ const ANALYTICS_TABS: AnalyticsTabKey[] = [
   'exercises',
 ];
 
-type PagerPageSelectedEvent = NativeSyntheticEvent<{ position: number }>;
-type PagerPageScrollEvent = NativeSyntheticEvent<{
-  position: number;
-  offset: number;
-}>;
+const createStyles = () => ({
+  root: {
+    flex: 1,
+    backgroundColor: palette.background,
+  },
+  pager: {
+    flex: 1,
+  },
+  page: {
+    flex: 1,
+  },
+});
 
 const AnalyticsHub = () => {
   const { preferences } = useAppState();
   const [tab, setTab] = useState<AnalyticsTabKey>('summary');
-  const nativePagerRef = useRef<PagerView | null>(null);
-  const tabPressAnimatingRef = useRef(false);
-  const tabIndex = Math.max(ANALYTICS_TABS.indexOf(tab), 0);
-  const tabRequestedIndexRef = useRef(tabIndex);
-  const tabScrollProgress = useSharedValue(tabIndex);
+  const pagerController = usePagerTabsController({
+    tabs: ANALYTICS_TABS,
+    selectedTab: tab,
+    onTabChange: setTab,
+  });
 
   const themeKey = `${preferences.themeMode}:${preferences.themeAccent}:${
     preferences.customAccentHex ?? ''
   }`;
-
-  const handleTabSelect = useCallback(
-    (nextTab: AnalyticsTabKey) => {
-      if (nextTab === tab) return;
-      const nextIndex = ANALYTICS_TABS.indexOf(nextTab);
-      if (nextIndex < 0) return;
-      const pager = nativePagerRef.current;
-      if (!pager) return;
-      tabPressAnimatingRef.current = true;
-      tabRequestedIndexRef.current = nextIndex;
-      tabScrollProgress.value = withTiming(nextIndex, {
-        duration: analyticsUi.tabTapAnimationMs,
-      });
-      pager.setPage(nextIndex);
-    },
-    [tab, tabScrollProgress],
-  );
-
-  const handleNativePageSelected = useCallback(
-    (event: PagerPageSelectedEvent) => {
-      const position = event.nativeEvent.position;
-      if (tabPressAnimatingRef.current && position !== tabRequestedIndexRef.current) {
-        nativePagerRef.current?.setPage(tabRequestedIndexRef.current);
-        return;
-      }
-      tabRequestedIndexRef.current = position;
-      tabPressAnimatingRef.current = false;
-      tabScrollProgress.value = position;
-      const next = ANALYTICS_TABS[position];
-      if (next && next !== tab) {
-        setTab(next);
-      }
-    },
-    [tab, tabScrollProgress],
-  );
-
-  const handleNativePageScroll = useCallback(
-    (event: PagerPageScrollEvent) => {
-      if (tabPressAnimatingRef.current) return;
-      const { position, offset } = event.nativeEvent;
-      tabScrollProgress.value = position + offset;
-    },
-    [tabScrollProgress],
-  );
+  const styles = createStyles();
 
   const renderTab = useCallback(
     (key: AnalyticsTabKey) => {
@@ -92,7 +56,7 @@ const AnalyticsHub = () => {
         return (
           <AnalyticsDashboard
             embedded
-            onOpenBreakdown={() => handleTabSelect('breakdown')}
+            onOpenBreakdown={() => pagerController.onTabPress('breakdown')}
           />
         );
       }
@@ -100,36 +64,31 @@ const AnalyticsHub = () => {
       if (key === 'breakdown') return <AnalyticsBreakdown />;
       return <AnalyticsExercises />;
     },
-    [handleTabSelect],
+    [pagerController],
   );
 
   return (
-    <View
-      key={themeKey}
-      style={{ flex: 1, backgroundColor: palette.background }}
-    >
+    <View key={themeKey} style={styles.root}>
       <ScreenHeader
         title={asLabelText('Insights')}
         subtitle={asLabelText('Training analytics')}
       />
       <AnalyticsTabs
         selected={tab}
-        onSelect={handleTabSelect}
-        scrollProgress={tabScrollProgress}
+        onSelect={pagerController.onTabPress}
+        scrollProgress={pagerController.progress}
       />
       <AnalyticsDataProvider>
         <PagerView
-          ref={(value: PagerView | null) => {
-            nativePagerRef.current = value;
-          }}
-          style={{ flex: 1 }}
-          initialPage={0}
+          ref={pagerController.pagerRef}
+          style={styles.pager}
+          initialPage={pagerController.selectedIndex}
           overdrag={false}
-          onPageSelected={handleNativePageSelected}
-          onPageScroll={handleNativePageScroll}
+          onPageSelected={pagerController.onPageSelected}
+          onPageScroll={pagerController.onPageScroll}
         >
           {ANALYTICS_TABS.map(tabKey => (
-            <View key={tabKey} style={{ flex: 1 }}>
+            <View key={tabKey} style={styles.page}>
               {renderTab(tabKey)}
             </View>
           ))}

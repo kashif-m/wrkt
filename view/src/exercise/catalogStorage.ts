@@ -173,36 +173,30 @@ const normalizeEntry = (entry: JsonObject): BaseExerciseCatalogEntry => {
 const parseCatalog = (
   data: JsonArray | JsonText | undefined,
 ): Array<BaseExerciseCatalogEntry> => {
-  console.log(
-    'parseCatalog: raw payload type',
-    typeof data,
-    Array.isArray(data) ? data.length : undefined,
-  );
-  let normalizedPayload: JsonArray | undefined = undefined;
+  let normalizedPayload: JsonArray | undefined;
   if (typeof data === 'string') {
     try {
       normalizedPayload = JSON.parse(data) as JsonArray;
     } catch (error) {
-      console.warn('parseCatalog: failed to parse string payload', error);
+      console.warn('Failed to parse catalog payload', error);
       normalizedPayload = undefined;
     }
   } else if (Array.isArray(data)) {
     normalizedPayload = data;
   }
   if (!Array.isArray(normalizedPayload)) {
-    console.warn('parseCatalog: expected array but got', data);
+    console.warn('Catalog payload is not an array');
     return [];
   }
   const normalized = normalizedPayload
     .map(entry => normalizeEntry(entry as JsonObject))
     .filter(entry => entry.slug.length > 0 && entry.display_name.length > 0);
-  console.log('parseCatalog: normalized entries', normalized.length);
   return normalized;
 };
 
 export const fetchMergedCatalog = async (): Promise<ExerciseCatalogEntry[]> => {
   const snapshot = await fetchManageCatalogEntries();
-  return snapshot.active.map(({ archiveSource, ...entry }) => entry);
+  return snapshot.active.map(({ archiveSource: _archiveSource, ...entry }) => entry);
 };
 
 export const fetchManageCatalogEntries =
@@ -219,10 +213,6 @@ export const fetchManageCatalogEntries =
   );
   const hidden = await readHiddenSlugs();
   const hiddenSet = new Set(hidden.map(slug => String(slug)));
-  console.debug('Merged default and custom catalog', {
-    baseCount: base.length,
-    customCount: custom.length,
-  });
 
   const defaultsVisible: ManageCatalogEntry[] = [];
   const defaultsArchived: ManageCatalogEntry[] = [];

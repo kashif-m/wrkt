@@ -157,8 +157,8 @@ export type RootState = {
     menuOpen: boolean;
     contextEntry: {
       entry: ExerciseCatalogEntry;
-      archived?: boolean;
-      custom?: boolean;
+      archived: boolean;
+      custom: boolean;
       archiveSource?: 'hidden_default' | 'archived_custom';
     } | null;
     activeTab: BrowserTab;

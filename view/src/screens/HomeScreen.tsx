@@ -104,10 +104,7 @@ const HomeScreen = () => {
     Record<string, boolean>
   >({});
   const homeSplitMode = state.preferences.homeSplitMode;
-  const themeKey = `${state.preferences.themeMode}:${
-    state.preferences.themeAccent
-  }:${state.preferences.customAccentHex ?? ''}`;
-  const styles = useMemo(() => createStyles(), [themeKey]);
+  const styles = createStyles();
   const { events } = state;
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;

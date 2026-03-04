@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -9,16 +9,9 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  NativeSyntheticEvent,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
-import Reanimated, {
-  SharedValue,
-  interpolateColor,
-  useAnimatedStyle,
-  useSharedValue,
-  withTiming,
-} from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   createNativeStackNavigator,
@@ -54,7 +47,6 @@ import {
   asTag,
 } from '../domain/types';
 import {
-  analyticsUi,
   cardShadowStyle,
   getContrastTextColor,
   palette,
@@ -71,7 +63,11 @@ import ScreenHeader from '../ui/ScreenHeader';
 import { BottomSheet, SectionHeading } from '../ui/components';
 import SearchIcon from '../assets/search.svg';
 import SettingsIcon from '../assets/settings.svg';
+import PagerTabsRail from '../ui/pager/PagerTabsRail';
+import { usePagerTabsController } from '../ui/pager/usePagerTabsController';
+import { useMeasuredCardHeight } from '../ui/lists/useMeasuredCardHeight';
 import {
+  AppDispatch,
   useAppActions,
   useAppDispatch,
   useAppState,
@@ -85,6 +81,78 @@ type BrowserStackParamList = {
 };
 
 const BrowserStack = createNativeStackNavigator<BrowserStackParamList>();
+const exerciseListTabs = ['all', 'favorites'] as const;
+type ExerciseListTab = (typeof exerciseListTabs)[number];
+const exerciseListTabDefinitions: ReadonlyArray<{
+  key: ExerciseListTab;
+  label: string;
+}> = [
+  { key: 'all', label: 'All' },
+  { key: 'favorites', label: 'Favorites' },
+];
+const manageTabs = ['active', 'archived'] as const;
+type ManageTab = (typeof manageTabs)[number];
+const manageTabDefinitions: ReadonlyArray<{
+  key: ManageTab;
+  label: string;
+}> = [
+  { key: 'active', label: 'Active' },
+  { key: 'archived', label: 'Archived' },
+];
+
+const estimateExerciseListHeight = ({
+  rowCount,
+  groupCount,
+}: {
+  rowCount: number;
+  groupCount: number;
+}) => {
+  const headerHeight = groupCount > 0 ? 96 : 46;
+  const rowHeight = 72;
+  const emptyHeight = 44;
+  const separators = Math.max(0, rowCount - 1);
+  return (
+    headerHeight +
+    (rowCount > 0 ? rowCount * rowHeight + separators : emptyHeight) +
+    spacing(2.5)
+  );
+};
+
+const estimateManageListHeight = (rowCount: number) => {
+  const rowHeight = 72;
+  const emptyHeight = 52;
+  const separators = Math.max(0, rowCount - 1);
+  return (rowCount > 0 ? rowCount * rowHeight + separators : emptyHeight) + spacing(2);
+};
+
+type ExerciseContextEntry = NonNullable<RootState['browser']['contextEntry']>;
+
+const buildExerciseContextEntry = (
+  entry: ExerciseCatalogEntry,
+  options?: {
+    archived?: boolean;
+    archiveSource?: ExerciseContextEntry['archiveSource'];
+  },
+): ExerciseContextEntry => ({
+  entry,
+  archived: Boolean(options?.archived),
+  custom: entry.source === asExerciseSource('custom'),
+  archiveSource: options?.archiveSource,
+});
+
+const openExerciseContext = (
+  dispatch: AppDispatch,
+  entry: ExerciseCatalogEntry,
+  options?: {
+    archived?: boolean;
+    archiveSource?: ExerciseContextEntry['archiveSource'];
+  },
+) => {
+  dispatch({
+    type: 'browser/context',
+    context: buildExerciseContextEntry(entry, options),
+  });
+};
 
 const ExerciseBrowserListScreen = () => {
   const state = useAppState();
@@ -96,35 +164,19 @@ const ExerciseBrowserListScreen = () => {
   const favoriteSlugs = state.catalog.favorites;
   const { selectedGroup, query, searchExpanded, activeTab } =
     state.browser;
-  const listPagerRef = useRef<PagerView | null>(null);
-  const listPagerIndexRef = useRef(activeTab === 'all' ? 0 : 1);
-  const listRequestedIndexRef = useRef(activeTab === 'all' ? 0 : 1);
-  const listTabPressAnimatingRef = useRef(false);
-  const listTabProgress = useSharedValue(activeTab === 'all' ? 0 : 1);
-  const [searchViewportHeight, setSearchViewportHeight] = useState(0);
-  const [searchContentHeight, setSearchContentHeight] = useState(0);
-  const searchCardHeight = useSharedValue(0);
-  const [allViewportHeight, setAllViewportHeight] = useState(0);
-  const [allContentHeight, setAllContentHeight] = useState(0);
-  const [favoritesViewportHeight, setFavoritesViewportHeight] = useState(0);
-  const [favoritesContentHeight, setFavoritesContentHeight] = useState(0);
+  const listTabController = usePagerTabsController({
+    tabs: exerciseListTabs,
+    selectedTab: activeTab,
+    onTabChange: nextTab => {
+      dispatch({ type: 'browser/tab', tab: nextTab });
+    },
+  });
 
   useFocusEffect(
     useCallback(() => {
       dispatch({ type: 'browser/mode', mode: 'groups' });
     }, [dispatch]),
   );
-
-  useEffect(() => {
-    const targetIndex = activeTab === 'all' ? 0 : 1;
-    listRequestedIndexRef.current = targetIndex;
-    listTabProgress.value = targetIndex;
-    const pager = listPagerRef.current;
-    if (!pager) return;
-    if (listPagerIndexRef.current === targetIndex) return;
-    pager.setPageWithoutAnimation(targetIndex);
-    listPagerIndexRef.current = targetIndex;
-  }, [activeTab, listTabProgress]);
 
   const searchExercises = useMemo(() => {
     const q = normalizeSearchText(query);
@@ -237,60 +289,32 @@ const ExerciseBrowserListScreen = () => {
     if (!selectedGroup) return asLabelText(tabLabel);
     return asLabelText(`${tabLabel} • ${formatLabel(selectedGroup)}`);
   }, [activeTab, selectedGroup]);
-  const searchListHeight = useMemo(() => {
-    if (searchViewportHeight <= 0 || searchContentHeight <= 0) return 0;
-    return Math.min(searchContentHeight, searchViewportHeight);
-  }, [searchContentHeight, searchViewportHeight]);
-  const searchListScrollEnabled =
-    searchViewportHeight > 0 && searchContentHeight > searchViewportHeight;
-  const allListHeight = useMemo(() => {
-    const headerHeight = allFilteredGroups.length > 0 ? 96 : 46;
-    const rowHeight = 72;
-    const emptyHeight = 44;
-    const separators = Math.max(0, allVisibleExercises.length - 1);
-    const estimatedContentHeight =
-      headerHeight +
-      (allVisibleExercises.length > 0
-        ? allVisibleExercises.length * rowHeight + separators
-        : emptyHeight) +
-      spacing(2.5);
-    if (allViewportHeight <= 0) return estimatedContentHeight;
-    const measuredHeight =
-      allContentHeight > 0 ? allContentHeight : estimatedContentHeight;
-    return Math.min(measuredHeight, allViewportHeight);
-  }, [
-    allContentHeight,
-    allViewportHeight,
-    allVisibleExercises.length,
-    allFilteredGroups.length,
-  ]);
-  const favoritesListHeight = useMemo(() => {
-    const headerHeight = favoriteFilteredGroups.length > 0 ? 96 : 46;
-    const rowHeight = 72;
-    const emptyHeight = 44;
-    const separators = Math.max(0, favoriteVisibleExercises.length - 1);
-    const estimatedContentHeight =
-      headerHeight +
-      (favoriteVisibleExercises.length > 0
-        ? favoriteVisibleExercises.length * rowHeight + separators
-        : emptyHeight) +
-      spacing(2.5);
-    if (favoritesViewportHeight <= 0) return estimatedContentHeight;
-    const measuredHeight =
-      favoritesContentHeight > 0
-        ? favoritesContentHeight
-        : estimatedContentHeight;
-    return Math.min(measuredHeight, favoritesViewportHeight);
-  }, [
-    favoriteVisibleExercises.length,
-    favoritesContentHeight,
-    favoritesViewportHeight,
-    favoriteFilteredGroups.length,
-  ]);
-  const allListScrollEnabled =
-    allViewportHeight > 0 && allContentHeight > allViewportHeight;
-  const favoritesListScrollEnabled =
-    favoritesViewportHeight > 0 && favoritesContentHeight > favoritesViewportHeight;
+  const searchEstimatedHeight = useMemo(
+    () =>
+      estimateExerciseListHeight({
+        rowCount: searchExercises.length,
+        groupCount: filteredSearchGroups.length,
+      }),
+    [filteredSearchGroups.length, searchExercises.length],
+  );
+  const searchCardMeasure = useMeasuredCardHeight({
+    estimatedContentHeight: searchEstimatedHeight,
+    collapsed: !searchExpanded || query.trim().length === 0,
+    animated: true,
+    animationDurationMs: 200,
+  });
+  const allCardMeasure = useMeasuredCardHeight({
+    estimatedContentHeight: estimateExerciseListHeight({
+      rowCount: allVisibleExercises.length,
+      groupCount: allFilteredGroups.length,
+    }),
+  });
+  const favoritesCardMeasure = useMeasuredCardHeight({
+    estimatedContentHeight: estimateExerciseListHeight({
+      rowCount: favoriteVisibleExercises.length,
+      groupCount: favoriteFilteredGroups.length,
+    }),
+  });
 
   useEffect(() => {
     if (!selectedGroup) return;
@@ -302,68 +326,10 @@ const ExerciseBrowserListScreen = () => {
     }
   }, [dispatch, selectedGroup, tabExercises]);
 
-  useEffect(() => {
-    if (!searchExpanded || query.trim().length === 0 || searchListHeight <= 0) {
-      searchCardHeight.value = 0;
-      return;
-    }
-    searchCardHeight.value = withTiming(searchListHeight, { duration: 200 });
-  }, [query, searchCardHeight, searchExpanded, searchListHeight]);
-
-  const searchCardStyle = useAnimatedStyle(() => {
-    if (searchCardHeight.value <= 0) {
-      return {};
-    }
-    return { height: searchCardHeight.value };
-  });
-
   const collapseSearch = () => {
     dispatch({ type: 'browser/search', expanded: false });
     dispatch({ type: 'browser/query', query: asSearchQuery('') });
   };
-
-  const handleListTabSelect = useCallback(
-    (tab: 'all' | 'favorites') => {
-      if (tab === activeTab) return;
-      const nextIndex = tab === 'all' ? 0 : 1;
-      listTabPressAnimatingRef.current = true;
-      listRequestedIndexRef.current = nextIndex;
-      listTabProgress.value = withTiming(nextIndex, {
-        duration: analyticsUi.tabTapAnimationMs,
-      });
-      listPagerRef.current?.setPage(nextIndex);
-      listPagerIndexRef.current = nextIndex;
-    },
-    [activeTab, listTabProgress],
-  );
-
-  const handleListPageSelected = useCallback(
-    (event: NativeSyntheticEvent<{ position: number }>) => {
-      const position = event.nativeEvent.position;
-      if (listTabPressAnimatingRef.current && position !== listRequestedIndexRef.current) {
-        listPagerRef.current?.setPage(listRequestedIndexRef.current);
-        return;
-      }
-      const nextTab = position === 0 ? 'all' : 'favorites';
-      listTabPressAnimatingRef.current = false;
-      listRequestedIndexRef.current = position;
-      listTabProgress.value = position;
-      listPagerIndexRef.current = position;
-      if (nextTab !== activeTab) {
-        dispatch({ type: 'browser/tab', tab: nextTab });
-      }
-    },
-    [activeTab, dispatch, listTabProgress],
-  );
-
-  const handleListPageScroll = useCallback(
-    (event: NativeSyntheticEvent<{ position: number; offset: number }>) => {
-      if (listTabPressAnimatingRef.current) return;
-      const { position, offset } = event.nativeEvent;
-      listTabProgress.value = position + offset;
-    },
-    [listTabProgress],
-  );
 
   const renderGroupTag = (group: MuscleGroup) => {
     const groupColor = muscleColorMap[group] ?? palette.primary;
@@ -418,7 +384,7 @@ const ExerciseBrowserListScreen = () => {
       onLongPress={() => {
         dispatch({ type: 'browser/menu', open: false });
         dispatch({ type: 'browser/search', expanded: false });
-        dispatch({ type: 'browser/context', context: { entry: item } });
+        openExerciseContext(dispatch, item);
       }}
       style={rowStyle()}
     >
@@ -443,6 +409,10 @@ const ExerciseBrowserListScreen = () => {
         {favoriteSlugs.includes(item.slug) ? '★' : ''}
       </Text>
     </TouchableOpacity>
+  );
+  const listDividerComponent = useCallback(
+    () => <View style={listDivider()} />,
+    [],
   );
 
   const showSearch = true;
@@ -560,18 +530,13 @@ const ExerciseBrowserListScreen = () => {
             ) : (
               <View
                 style={{ flex: 1 }}
-                onLayout={event => {
-                  const next = event.nativeEvent.layout.height;
-                  if (next > 0 && Math.abs(next - searchViewportHeight) > 1) {
-                    setSearchViewportHeight(next);
-                  }
-                }}
+                onLayout={searchCardMeasure.onViewportLayout}
               >
-                <Reanimated.View
+                <Animated.View
                   style={[
                     listSurface(),
                     { marginTop: spacing(1.25) },
-                    searchCardStyle,
+                    searchCardMeasure.heightStyle,
                   ]}
                 >
                   <FlatList<ExerciseCatalogEntry>
@@ -582,20 +547,16 @@ const ExerciseBrowserListScreen = () => {
                     keyboardDismissMode="interactive"
                     automaticallyAdjustKeyboardInsets
                     style={{ flex: 1 }}
-                    scrollEnabled={searchListScrollEnabled}
+                    scrollEnabled={searchCardMeasure.scrollEnabled}
                     contentContainerStyle={[
                       {
                         paddingHorizontal: spacing(1.25),
                         paddingTop: spacing(0.5),
                         paddingBottom: spacing(2),
                       },
-                      !searchListScrollEnabled ? { flexGrow: 0 } : null,
+                      !searchCardMeasure.scrollEnabled ? { flexGrow: 0 } : null,
                     ]}
-                    onContentSizeChange={(_width, height) => {
-                      if (height > 0 && Math.abs(height - searchContentHeight) > 1) {
-                        setSearchContentHeight(height);
-                      }
-                    }}
+                    onContentSizeChange={searchCardMeasure.onContentSizeChange}
                     ListHeaderComponent={
                       <View style={listHeaderWrap()}>
                         <View style={groupSectionWrap()}>
@@ -621,13 +582,13 @@ const ExerciseBrowserListScreen = () => {
                         No exercises found.
                       </Text>
                     }
-                    ItemSeparatorComponent={() => <View style={listDivider()} />}
+                    ItemSeparatorComponent={listDividerComponent}
                     initialNumToRender={18}
                     maxToRenderPerBatch={20}
                     windowSize={8}
                     removeClippedSubviews
                   />
-                </Reanimated.View>
+                </Animated.View>
               </View>
             )}
           </View>
@@ -635,52 +596,42 @@ const ExerciseBrowserListScreen = () => {
         {!searchExpanded && (
           <>
             <PagerTabsRail
-              tabs={[
-                { key: 'all', label: 'All' },
-                { key: 'favorites', label: 'Favorites' },
-              ]}
+              tabs={exerciseListTabDefinitions}
               activeKey={activeTab}
-              progress={listTabProgress}
-              onSelect={key => handleListTabSelect(key as 'all' | 'favorites')}
+              progress={listTabController.progress}
+              onSelect={key =>
+                listTabController.onTabPress(key as ExerciseListTab)
+              }
             />
             <PagerView
-              ref={listPagerRef}
+              ref={listTabController.pagerRef}
               style={{ flex: 1 }}
-              initialPage={activeTab === 'all' ? 0 : 1}
+              initialPage={listTabController.selectedIndex}
               overdrag={false}
-              onPageSelected={handleListPageSelected}
-              onPageScroll={handleListPageScroll}
+              onPageSelected={listTabController.onPageSelected}
+              onPageScroll={listTabController.onPageScroll}
             >
               <View
                 key="all"
                 style={{ flex: 1 }}
-                onLayout={event => {
-                  const next = event.nativeEvent.layout.height;
-                  if (next > 0 && Math.abs(next - allViewportHeight) > 1) {
-                    setAllViewportHeight(next);
-                  }
-                }}
+                onLayout={allCardMeasure.onViewportLayout}
               >
-                <View style={[listSurface(), allListHeight ? { height: allListHeight } : null]}>
+                <View style={[listSurface(), allCardMeasure.heightStyle]}>
                   <FlatList<ExerciseCatalogEntry>
                     data={allVisibleExercises}
                     keyExtractor={item => item.slug}
                     renderItem={renderExerciseRow}
                     style={{ flex: 1 }}
-                    scrollEnabled={allListScrollEnabled}
+                    scrollEnabled={allCardMeasure.scrollEnabled}
                     contentContainerStyle={[
                       {
                         paddingHorizontal: spacing(1.25),
                         paddingTop: spacing(0.5),
                         paddingBottom: spacing(2),
                       },
-                      !allListScrollEnabled ? { flexGrow: 0 } : null,
+                      !allCardMeasure.scrollEnabled ? { flexGrow: 0 } : null,
                     ]}
-                    onContentSizeChange={(_width, height) => {
-                      if (height > 0 && Math.abs(height - allContentHeight) > 1) {
-                        setAllContentHeight(height);
-                      }
-                    }}
+                    onContentSizeChange={allCardMeasure.onContentSizeChange}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="interactive"
                     automaticallyAdjustKeyboardInsets
@@ -698,7 +649,7 @@ const ExerciseBrowserListScreen = () => {
                           : 'No exercises available.'}
                       </Text>
                     }
-                    ItemSeparatorComponent={() => <View style={listDivider()} />}
+                    ItemSeparatorComponent={listDividerComponent}
                     initialNumToRender={20}
                     maxToRenderPerBatch={20}
                     windowSize={7}
@@ -709,41 +660,24 @@ const ExerciseBrowserListScreen = () => {
               <View
                 key="favorites"
                 style={{ flex: 1 }}
-                onLayout={event => {
-                  const next = event.nativeEvent.layout.height;
-                  if (
-                    next > 0 &&
-                    Math.abs(next - favoritesViewportHeight) > 1
-                  ) {
-                    setFavoritesViewportHeight(next);
-                  }
-                }}
+                onLayout={favoritesCardMeasure.onViewportLayout}
               >
-                <View
-                  style={[
-                    listSurface(),
-                    favoritesListHeight ? { height: favoritesListHeight } : null,
-                  ]}
-                >
+                <View style={[listSurface(), favoritesCardMeasure.heightStyle]}>
                   <FlatList<ExerciseCatalogEntry>
                     data={favoriteVisibleExercises}
                     keyExtractor={item => item.slug}
                     renderItem={renderExerciseRow}
                     style={{ flex: 1 }}
-                    scrollEnabled={favoritesListScrollEnabled}
+                    scrollEnabled={favoritesCardMeasure.scrollEnabled}
                     contentContainerStyle={[
                       {
                         paddingHorizontal: spacing(1.25),
                         paddingTop: spacing(0.5),
                         paddingBottom: spacing(2),
                       },
-                      !favoritesListScrollEnabled ? { flexGrow: 0 } : null,
+                      !favoritesCardMeasure.scrollEnabled ? { flexGrow: 0 } : null,
                     ]}
-                    onContentSizeChange={(_width, height) => {
-                      if (height > 0 && Math.abs(height - favoritesContentHeight) > 1) {
-                        setFavoritesContentHeight(height);
-                      }
-                    }}
+                    onContentSizeChange={favoritesCardMeasure.onContentSizeChange}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="interactive"
                     automaticallyAdjustKeyboardInsets
@@ -761,7 +695,7 @@ const ExerciseBrowserListScreen = () => {
                           : 'Mark favorites to see them here.'}
                       </Text>
                     }
-                    ItemSeparatorComponent={() => <View style={listDivider()} />}
+                    ItemSeparatorComponent={listDividerComponent}
                     initialNumToRender={20}
                     maxToRenderPerBatch={20}
                     windowSize={7}
@@ -820,155 +754,156 @@ const ExerciseContextSheet = ({
   const favoriteSlugs = state.catalog.favorites;
   const contextEntry = state.browser.contextEntry;
   if (!contextEntry) return null;
-  const isArchived = Boolean(contextEntry.archived);
+  const isArchived = contextEntry.archived;
+  const isFavorite = favoriteSlugs.includes(contextEntry.entry.slug);
 
-  const handleFavoriteToggle = async (slug: ExerciseSlug) => {
-    const isFavorite = favoriteSlugs.includes(slug);
-    await actions.toggleFavorite(slug, !isFavorite);
+  const closeContext = () =>
+    dispatch({ type: 'browser/context', context: null });
+
+  const handleFavoriteToggle = async () => {
+    await actions.toggleFavorite(contextEntry.entry.slug, !isFavorite);
   };
+
+  const handleArchiveToggle = async () => {
+    const nextArchived = !isArchived;
+    if (contextEntry.custom) {
+      await actions.archiveCustomExercise(contextEntry.entry.slug, nextArchived);
+      return;
+    }
+    if (nextArchived && isFavorite) {
+      await actions.toggleFavorite(contextEntry.entry.slug, false);
+    }
+    await setExerciseHidden(contextEntry.entry.slug, nextArchived);
+    await actions.refreshAll();
+  };
+
+  type SheetActionDescriptor = {
+    key: string;
+    label: string;
+    tone?: 'default' | 'danger' | 'muted';
+    hidden?: boolean;
+    onPress: () => void | Promise<void>;
+  };
+
+  const actionDescriptors: SheetActionDescriptor[] = [
+    {
+      key: 'select',
+      label: 'Select exercise',
+      hidden: isArchived,
+      onPress: () =>
+        actions.openLogForExercise(
+          contextEntry.entry.display_name,
+          state.selectedDate,
+          'Track',
+        ),
+    },
+    {
+      key: 'edit',
+      label: 'Edit exercise',
+      onPress: () => {
+        dispatch({
+          type: 'browser/form',
+          entry: contextEntry.entry,
+        });
+        dispatch({
+          type: 'browser/formDraft',
+          draft: draftFromEntry(contextEntry.entry),
+        });
+        onFormNavigate();
+      },
+    },
+    {
+      key: 'favorite',
+      label: isFavorite ? 'Remove favorite' : 'Add to favorites',
+      hidden: isArchived,
+      onPress: handleFavoriteToggle,
+    },
+    {
+      key: 'archive',
+      label: isArchived ? 'Restore exercise' : 'Archive exercise',
+      onPress: handleArchiveToggle,
+    },
+    {
+      key: 'delete',
+      label: 'Delete exercise',
+      tone: 'danger',
+      onPress: () => actions.deleteExercise(contextEntry.entry),
+    },
+    {
+      key: 'cancel',
+      label: 'Cancel',
+      tone: 'muted',
+      onPress: closeContext,
+    },
+  ];
 
   return (
     <BottomSheet
       visible={Boolean(contextEntry)}
-      onClose={() => dispatch({ type: 'browser/context', context: null })}
+      onClose={closeContext}
     >
       <View style={sheetCard()}>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}
-            >
-                <Text
-                  style={{
-                    color: palette.text,
-                    fontWeight: '700' as const,
-                    fontSize: 16,
-                  }}
-                >
-                  {contextEntry.entry.display_name}
-                </Text>
-              {!isArchived ? (
-                <TouchableOpacity
-                  onPress={() => handleFavoriteToggle(contextEntry.entry.slug)}
-                >
-                  <Text
-                    style={{
-                      color: favoriteSlugs.includes(contextEntry.entry.slug)
-                        ? palette.primary
-                        : palette.mutedText,
-                      fontSize: 18,
-                    }}
-                  >
-                    {favoriteSlugs.includes(contextEntry.entry.slug)
-                      ? '★'
-                      : '☆'}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-
-            {!isArchived ? (
-              <TouchableOpacity
-                onPress={() => {
-                  actions.openLogForExercise(
-                    contextEntry.entry.display_name,
-                    state.selectedDate,
-                    'Track',
-                  );
-                  dispatch({ type: 'browser/context', context: null });
-                }}
-                style={sheetAction()}
-              >
-                <Text style={sheetActionLabel()}>Select exercise</Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              onPress={() => {
-                dispatch({
-                  type: 'browser/form',
-                  entry: contextEntry.entry,
-                });
-                dispatch({
-                  type: 'browser/formDraft',
-                  draft: draftFromEntry(contextEntry.entry),
-                });
-                onFormNavigate();
-                dispatch({ type: 'browser/context', context: null });
-              }}
-              style={sheetAction()}
-            >
-              <Text style={sheetActionLabel()}>Edit exercise</Text>
-            </TouchableOpacity>
-            {!isArchived ? (
-              <TouchableOpacity
-                onPress={() => {
-                  handleFavoriteToggle(contextEntry.entry.slug);
-                  dispatch({ type: 'browser/context', context: null });
-                }}
-                style={sheetAction()}
-              >
-                <Text style={sheetActionLabel()}>
-                  {favoriteSlugs.includes(contextEntry.entry.slug)
-                    ? 'Remove favorite'
-                    : 'Add to favorites'}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-            <TouchableOpacity
-              onPress={async () => {
-                if (contextEntry.custom) {
-                  await actions.archiveCustomExercise(
-                    contextEntry.entry.slug,
-                    !contextEntry.archived,
-                  );
-                } else {
-                  if (!contextEntry.archived && favoriteSlugs.includes(contextEntry.entry.slug)) {
-                    await actions.toggleFavorite(contextEntry.entry.slug, false);
-                  }
-                  await setExerciseHidden(
-                    contextEntry.entry.slug,
-                    !contextEntry.archived,
-                  );
-                  await actions.refreshAll();
-                }
-                dispatch({ type: 'browser/context', context: null });
-              }}
-              style={sheetAction()}
-            >
-              <Text style={sheetActionLabel()}>
-                {contextEntry.archived ? 'Restore exercise' : 'Archive exercise'}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={async () => {
-                await actions.deleteExercise(contextEntry.entry);
-                dispatch({ type: 'browser/context', context: null });
-              }}
-              style={sheetAction()}
-            >
-              <Text style={[sheetActionLabel(), { color: palette.danger }]}>
-                Delete exercise
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              onPress={() =>
-                dispatch({ type: 'browser/context', context: null })
-              }
-              style={[sheetAction(), { marginTop: spacing(0.5) }]}
-            >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+          }}
+        >
+          <Text
+            style={{
+              color: palette.text,
+              fontWeight: '700' as const,
+              fontSize: 16,
+            }}
+          >
+            {contextEntry.entry.display_name}
+          </Text>
+          {!isArchived ? (
+            <TouchableOpacity onPress={handleFavoriteToggle}>
               <Text
                 style={{
-                  color: palette.mutedText,
-                  fontWeight: '600' as const,
-                  textAlign: 'center',
+                  color: isFavorite ? palette.primary : palette.mutedText,
+                  fontSize: 18,
                 }}
               >
-                Cancel
+                {isFavorite ? '★' : '☆'}
               </Text>
             </TouchableOpacity>
+          ) : null}
+        </View>
+        {actionDescriptors
+          .filter(action => !action.hidden)
+          .map(action => (
+            <TouchableOpacity
+              key={action.key}
+              onPress={async () => {
+                await action.onPress();
+                if (action.key !== 'cancel') {
+                  closeContext();
+                }
+              }}
+              style={[
+                sheetAction(),
+                action.tone === 'muted' ? { marginTop: spacing(0.5) } : null,
+              ]}
+            >
+              <Text
+                style={[
+                  sheetActionLabel(),
+                  action.tone === 'danger' ? { color: palette.danger } : null,
+                  action.tone === 'muted'
+                    ? {
+                        color: palette.mutedText,
+                        textAlign: 'center',
+                      }
+                    : null,
+                ]}
+              >
+                {action.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
       </View>
     </BottomSheet>
   );
@@ -999,16 +934,22 @@ const ExerciseBrowserManageScreen = () => {
     });
   }, []);
 
+  const refreshManageEntriesSafe = useCallback(() => {
+    refreshManageEntries().catch(error => {
+      console.warn('Failed to refresh manage exercise entries', error);
+    });
+  }, [refreshManageEntries]);
+
   useFocusEffect(
     useCallback(() => {
       dispatch({ type: 'browser/mode', mode: 'manage' });
-      void refreshManageEntries();
-    }, [dispatch, refreshManageEntries]),
+      refreshManageEntriesSafe();
+    }, [dispatch, refreshManageEntriesSafe]),
   );
 
   useEffect(() => {
-    void refreshManageEntries();
-  }, [refreshManageEntries, state.catalogRevision]);
+    refreshManageEntriesSafe();
+  }, [refreshManageEntriesSafe, state.catalogRevision]);
 
   const handleAdd = () => {
     dispatch({ type: 'browser/form', entry: null });
@@ -1042,14 +983,9 @@ const ExerciseBrowserManageScreen = () => {
             dispatch({ type: 'browser/query', query: asSearchQuery(value) })
           }
           onSelectEntry={(entry, archived, archiveSource) => {
-            dispatch({
-              type: 'browser/context',
-              context: {
-                entry,
-                archived,
-                custom: entry.source === asExerciseSource('custom'),
-                archiveSource,
-              },
+            openExerciseContext(dispatch, entry, {
+              archived,
+              archiveSource,
             });
           }}
         />
@@ -1188,100 +1124,6 @@ const ExerciseListHeader = ({
   </View>
 );
 
-const PagerTabText = ({
-  label,
-  index,
-  progress,
-  inactiveTextColor,
-  activeTextColor,
-  textStyle,
-}: {
-  label: string;
-  index: number;
-  progress: SharedValue<number>;
-  inactiveTextColor: string;
-  activeTextColor: string;
-  textStyle: ReturnType<typeof tabLabel>;
-}) => {
-  const animatedStyle = useAnimatedStyle(() => {
-    const distance = Math.abs(progress.value - index);
-    const mix = Math.max(0, Math.min(1, 1 - distance / 0.6));
-    return {
-      color: interpolateColor(
-        mix,
-        [0, 1],
-        [inactiveTextColor, activeTextColor],
-      ) as string,
-    };
-  });
-  return <Reanimated.Text style={[textStyle, animatedStyle]}>{label}</Reanimated.Text>;
-};
-
-const PagerTabsRail = ({
-  tabs,
-  activeKey,
-  progress,
-  onSelect,
-}: {
-  tabs: ReadonlyArray<{ key: string; label: string }>;
-  activeKey: string;
-  progress: SharedValue<number>;
-  onSelect: (key: string) => void;
-}) => {
-  const [railWidth, setRailWidth] = useState(0);
-  const gap = analyticsUi.selectorRailGap;
-  const railPadding = analyticsUi.selectorRailPadding;
-  const inactiveTextColor = palette.mutedText;
-  const activeTextColor = getContrastTextColor(palette.primary);
-  const segmentWidth = useMemo(() => {
-    if (railWidth <= 0) return 0;
-    const contentWidth = Math.max(0, railWidth - railPadding * 2);
-    return (contentWidth - gap * (tabs.length - 1)) / tabs.length;
-  }, [gap, railPadding, railWidth, tabs.length]);
-
-  const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: progress.value * (segmentWidth + gap) }],
-  }));
-
-  const onRailLayout = (event: { nativeEvent: { layout: { width: number } } }) => {
-    const next = event.nativeEvent.layout.width;
-    if (next > 0 && next !== railWidth) {
-      setRailWidth(next);
-    }
-  };
-
-  return (
-    <View style={tabRow()}>
-      <View onLayout={onRailLayout} style={tabRail()}>
-        {segmentWidth > 0 ? (
-          <Reanimated.View
-            pointerEvents="none"
-            style={[tabIndicator(segmentWidth), indicatorStyle]}
-          />
-        ) : null}
-        {tabs.map((tab, index) => (
-          <TouchableOpacity
-            key={tab.key}
-            onPress={() => onSelect(tab.key)}
-            accessibilityRole="tab"
-            accessibilityState={{ selected: activeKey === tab.key }}
-            style={tabButton()}
-          >
-            <PagerTabText
-              label={tab.label}
-              index={index}
-              progress={progress}
-              inactiveTextColor={inactiveTextColor}
-              activeTextColor={activeTextColor}
-              textStyle={tabLabel()}
-            />
-          </TouchableOpacity>
-        ))}
-      </View>
-    </View>
-  );
-};
-
 const formatLabel = (
   label: ExerciseName | MuscleGroup | SearchQuery | Modality | LoggingMode,
 ) =>
@@ -1375,46 +1217,6 @@ const searchInput = () => ({
   paddingHorizontal: spacing(1.5),
   color: palette.text,
   backgroundColor: palette.mutedSurface,
-});
-
-const tabRow = () => ({
-  paddingHorizontal: spacing(2),
-  marginTop: spacing(0.75),
-  marginBottom: spacing(1.25),
-});
-
-const tabRail = () => ({
-  borderRadius: radius.pill,
-  backgroundColor: palette.mutedSurface,
-  padding: analyticsUi.selectorRailPadding,
-  flexDirection: 'row' as const,
-  gap: analyticsUi.selectorRailGap,
-  overflow: 'hidden' as const,
-});
-
-const tabButton = () => ({
-  flex: 1,
-  borderRadius: radius.pill,
-  minHeight: analyticsUi.controlHeight,
-  paddingVertical: analyticsUi.controlPaddingY,
-  alignItems: 'center' as const,
-  justifyContent: 'center' as const,
-  backgroundColor: 'transparent',
-});
-
-const tabIndicator = (segmentWidth: number) => ({
-  position: 'absolute' as const,
-  left: analyticsUi.selectorRailPadding,
-  top: analyticsUi.selectorRailPadding,
-  bottom: analyticsUi.selectorRailPadding,
-  width: segmentWidth,
-  borderRadius: radius.pill,
-  backgroundColor: palette.primary,
-});
-
-const tabLabel = () => ({
-  fontSize: 12,
-  fontWeight: '600' as const,
 });
 
 const rowStyle = () => ({
@@ -1818,16 +1620,13 @@ const ManageCustomExercises = ({
     archiveSource?: 'hidden_default' | 'archived_custom',
   ) => void;
 }) => {
-  const pagerRef = useRef<PagerView | null>(null);
-  const tabRequestedIndexRef = useRef(0);
-  const tabPressAnimatingRef = useRef(false);
-  const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
-  const tabProgress = useSharedValue(0);
-  const [activeViewportHeight, setActiveViewportHeight] = useState(0);
-  const [activeContentHeight, setActiveContentHeight] = useState(0);
-  const [archivedViewportHeight, setArchivedViewportHeight] = useState(0);
-  const [archivedContentHeight, setArchivedContentHeight] = useState(0);
+  const [activeTab, setActiveTab] = useState<ManageTab>('active');
   const query = normalizeSearchText(searchQuery);
+  const tabController = usePagerTabsController({
+    tabs: manageTabs,
+    selectedTab: activeTab,
+    onTabChange: setActiveTab,
+  });
 
   const activeFiltered = useMemo(
     () =>
@@ -1876,78 +1675,16 @@ const ManageCustomExercises = ({
     [archivedEntries, query],
   );
 
-  const handleTabChange = useCallback(
-    (next: 'active' | 'archived') => {
-      const index = next === 'active' ? 0 : 1;
-      tabPressAnimatingRef.current = true;
-      tabRequestedIndexRef.current = index;
-      tabProgress.value = withTiming(index, {
-        duration: analyticsUi.tabTapAnimationMs,
-      });
-      pagerRef.current?.setPage(index);
-    },
-    [tabProgress],
+  const activeListMeasure = useMeasuredCardHeight({
+    estimatedContentHeight: estimateManageListHeight(activeFiltered.length),
+  });
+  const archivedListMeasure = useMeasuredCardHeight({
+    estimatedContentHeight: estimateManageListHeight(archivedFiltered.length),
+  });
+  const listDividerComponent = useCallback(
+    () => <View style={listDivider()} />,
+    [],
   );
-
-  const handlePageSelected = useCallback(
-    (event: NativeSyntheticEvent<{ position: number }>) => {
-      const position = event.nativeEvent.position;
-      if (tabPressAnimatingRef.current && position !== tabRequestedIndexRef.current) {
-        pagerRef.current?.setPage(tabRequestedIndexRef.current);
-        return;
-      }
-      tabPressAnimatingRef.current = false;
-      tabRequestedIndexRef.current = position;
-      tabProgress.value = position;
-      setActiveTab(position === 0 ? 'active' : 'archived');
-    },
-    [tabProgress],
-  );
-
-  const handlePageScroll = useCallback(
-    (event: NativeSyntheticEvent<{ position: number; offset: number }>) => {
-      if (tabPressAnimatingRef.current) return;
-      const { position, offset } = event.nativeEvent;
-      tabProgress.value = position + offset;
-    },
-    [tabProgress],
-  );
-
-  const activeListHeight = useMemo(() => {
-    const rowHeight = 72;
-    const emptyHeight = 52;
-    const separators = Math.max(0, activeFiltered.length - 1);
-    const estimatedContentHeight =
-      (activeFiltered.length > 0
-        ? activeFiltered.length * rowHeight + separators
-        : emptyHeight) + spacing(2);
-    if (activeViewportHeight <= 0) return estimatedContentHeight;
-    const measuredHeight =
-      activeContentHeight > 0 ? activeContentHeight : estimatedContentHeight;
-    return Math.min(measuredHeight, activeViewportHeight);
-  }, [activeContentHeight, activeFiltered.length, activeViewportHeight]);
-
-  const archivedListHeight = useMemo(() => {
-    const rowHeight = 72;
-    const emptyHeight = 52;
-    const separators = Math.max(0, archivedFiltered.length - 1);
-    const estimatedContentHeight =
-      (archivedFiltered.length > 0
-        ? archivedFiltered.length * rowHeight + separators
-        : emptyHeight) + spacing(2);
-    if (archivedViewportHeight <= 0) return estimatedContentHeight;
-    const measuredHeight =
-      archivedContentHeight > 0
-        ? archivedContentHeight
-        : estimatedContentHeight;
-    return Math.min(measuredHeight, archivedViewportHeight);
-  }, [archivedContentHeight, archivedFiltered.length, archivedViewportHeight]);
-
-  const activeScrollEnabled =
-    activeViewportHeight > 0 && activeContentHeight > activeViewportHeight;
-  const archivedScrollEnabled =
-    archivedViewportHeight > 0 &&
-    archivedContentHeight > archivedViewportHeight;
 
   const renderManageRow = useCallback(
     ({
@@ -1999,33 +1736,25 @@ const ManageCustomExercises = ({
         />
       </View>
       <PagerTabsRail
-        tabs={[
-          { key: 'active', label: 'Active' },
-          { key: 'archived', label: 'Archived' },
-        ]}
+        tabs={manageTabDefinitions}
         activeKey={activeTab}
-        progress={tabProgress}
-        onSelect={key => handleTabChange(key as 'active' | 'archived')}
+        progress={tabController.progress}
+        onSelect={key => tabController.onTabPress(key as ManageTab)}
       />
       <PagerView
-        ref={pagerRef}
+        ref={tabController.pagerRef}
         style={{ flex: 1 }}
-        initialPage={0}
+        initialPage={tabController.selectedIndex}
         overdrag={false}
-        onPageSelected={handlePageSelected}
-        onPageScroll={handlePageScroll}
+        onPageSelected={tabController.onPageSelected}
+        onPageScroll={tabController.onPageScroll}
       >
         <View
           key="active"
           style={{ flex: 1 }}
-          onLayout={event => {
-            const next = event.nativeEvent.layout.height;
-            if (next > 0 && Math.abs(next - activeViewportHeight) > 1) {
-              setActiveViewportHeight(next);
-            }
-          }}
+          onLayout={activeListMeasure.onViewportLayout}
         >
-          <View style={[manageListSurface(), activeListHeight ? { height: activeListHeight } : null]}>
+          <View style={[manageListSurface(), activeListMeasure.heightStyle]}>
             <FlatList
               data={activeFiltered}
               keyExtractor={item => `active-${item.slug}`}
@@ -2035,21 +1764,17 @@ const ManageCustomExercises = ({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               automaticallyAdjustKeyboardInsets
-              scrollEnabled={activeScrollEnabled}
+              scrollEnabled={activeListMeasure.scrollEnabled}
               contentContainerStyle={[
                 {
                   paddingHorizontal: spacing(1.25),
                   paddingTop: spacing(0.75),
                   paddingBottom: spacing(2),
                 },
-                !activeScrollEnabled ? { flexGrow: 0 } : null,
+                !activeListMeasure.scrollEnabled ? { flexGrow: 0 } : null,
               ]}
-              onContentSizeChange={(_width, height) => {
-                if (height > 0 && Math.abs(height - activeContentHeight) > 1) {
-                  setActiveContentHeight(height);
-                }
-              }}
-              ItemSeparatorComponent={() => <View style={listDivider()} />}
+              onContentSizeChange={activeListMeasure.onContentSizeChange}
+              ItemSeparatorComponent={listDividerComponent}
               ListEmptyComponent={
                 <Text
                   style={{
@@ -2073,19 +1798,9 @@ const ManageCustomExercises = ({
         <View
           key="archived"
           style={{ flex: 1 }}
-          onLayout={event => {
-            const next = event.nativeEvent.layout.height;
-            if (next > 0 && Math.abs(next - archivedViewportHeight) > 1) {
-              setArchivedViewportHeight(next);
-            }
-          }}
+          onLayout={archivedListMeasure.onViewportLayout}
         >
-          <View
-            style={[
-              manageListSurface(),
-              archivedListHeight ? { height: archivedListHeight } : null,
-            ]}
-          >
+          <View style={[manageListSurface(), archivedListMeasure.heightStyle]}>
             <FlatList
               data={archivedFiltered}
               keyExtractor={item => `archived-${item.slug}`}
@@ -2095,21 +1810,17 @@ const ManageCustomExercises = ({
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="interactive"
               automaticallyAdjustKeyboardInsets
-              scrollEnabled={archivedScrollEnabled}
+              scrollEnabled={archivedListMeasure.scrollEnabled}
               contentContainerStyle={[
                 {
                   paddingHorizontal: spacing(1.25),
                   paddingTop: spacing(0.75),
                   paddingBottom: spacing(2),
                 },
-                !archivedScrollEnabled ? { flexGrow: 0 } : null,
+                !archivedListMeasure.scrollEnabled ? { flexGrow: 0 } : null,
               ]}
-              onContentSizeChange={(_width, height) => {
-                if (height > 0 && Math.abs(height - archivedContentHeight) > 1) {
-                  setArchivedContentHeight(height);
-                }
-              }}
-              ItemSeparatorComponent={() => <View style={listDivider()} />}
+              onContentSizeChange={archivedListMeasure.onContentSizeChange}
+              ItemSeparatorComponent={listDividerComponent}
               ListEmptyComponent={
                 <Text
                   style={{
@@ -2206,13 +1917,6 @@ const chipAddButton = () => ({
   paddingHorizontal: spacing(1.5),
   alignItems: 'center' as const,
   justifyContent: 'center' as const,
-});
-
-const sectionLabel = () => ({
-  color: palette.mutedText,
-  fontSize: 12,
-  textTransform: 'uppercase' as const,
-  letterSpacing: 1,
 });
 
 const sheetCard = () => ({
