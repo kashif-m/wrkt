@@ -1,7 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, Text, TouchableOpacity, View } from 'react-native';
 import { SkiaTrendChart, TrendPoint } from './SkiaTrendChart';
-import { palette, spacing, typography } from '../../ui/theme';
+import { cardShadowStyle, palette, spacing, typography } from '../../ui/theme';
 import { AnalyticsRangeKey } from './analyticsRanges';
 
 export const AnalyticsChartModal = ({
@@ -43,6 +43,7 @@ export const AnalyticsChartModal = ({
         style={{
           backgroundColor: palette.surface,
           borderRadius: 16,
+          ...cardShadowStyle,
           padding: spacing(2),
           gap: spacing(1.5),
         }}

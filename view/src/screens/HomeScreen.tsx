@@ -7,6 +7,8 @@ import React, {
 } from 'react';
 import {
   Animated,
+  FlatList,
+  ListRenderItemInfo,
   Modal,
   Pressable,
   ScrollView,
@@ -44,9 +46,6 @@ import {
   asMuscleGroup,
   asScreenKey,
 } from '../domain/types';
-import HorizontalSwipePager, {
-  SwipeDirection,
-} from '../ui/HorizontalSwipePager';
 import { toAnalyticsInputEvents } from '../components/analytics/analyticsPayload';
 
 type HomeDayModel = {
@@ -93,6 +92,10 @@ type HomeDayModel = {
   averageSets: number;
 };
 
+const HOME_PAGER_TOTAL_PAGES = 20001;
+const HOME_PAGER_CENTER_INDEX = Math.floor(HOME_PAGER_TOTAL_PAGES / 2);
+const DAY_MS = 24 * 60 * 60 * 1000;
+
 const HomeScreen = () => {
   const state = useAppState();
   const dispatch = useAppDispatch();
@@ -117,27 +120,29 @@ const HomeScreen = () => {
     () => catalog as unknown as JsonObject[],
     [catalog],
   );
-  const pageDatesRef = useRef<[Date, Date, Date]>([
-    new Date(selectedDate.getTime() - 24 * 60 * 60 * 1000),
-    selectedDate,
-    new Date(selectedDate.getTime() + 24 * 60 * 60 * 1000),
-  ]);
-  const [pageDates, setPageDates] = useState<[Date, Date, Date]>(
-    pageDatesRef.current,
+  const viewport = useWindowDimensions();
+  const listRef = useRef<FlatList<number> | null>(null);
+  const isProgrammaticScrollRef = useRef(false);
+  const baseDateRef = useRef(new Date(selectedDate));
+  const baseDayBucketRef = useRef(
+    roundToLocalDay(selectedDate.getTime(), offsetMinutes),
   );
-  const [resetKey, setResetKey] = useState(0);
-  const [overrideCenterDate, setOverrideCenterDate] = useState<Date | null>(
-    null,
+  const [currentIndex, setCurrentIndex] = useState(HOME_PAGER_CENTER_INDEX);
+  const [windowCenterIndex, setWindowCenterIndex] = useState(
+    HOME_PAGER_CENTER_INDEX,
   );
-  const pendingCommitRef = useRef<SwipeDirection | null>(null);
+  const lastWindowCenterIndexRef = useRef(HOME_PAGER_CENTER_INDEX);
+  const [pageWidth, setPageWidth] = useState(
+    () => Math.max(viewport.width, 1),
+  );
+  const pageIndices = useMemo(
+    () => Array.from({ length: HOME_PAGER_TOTAL_PAGES }, (_unused, index) => index),
+    [],
+  );
 
   useEffect(() => {
     setExpandedExercises({});
   }, [selectedDate]);
-
-  useEffect(() => {
-    pageDatesRef.current = pageDates;
-  }, [pageDates]);
 
   const buildDayModel = useCallback(
     (date: Date, analytics?: HomeDayResponse): HomeDayModel => {
@@ -178,50 +183,73 @@ const HomeScreen = () => {
     [offsetMinutes],
   );
 
-  const shiftDate = useCallback((date: Date, delta: number) => {
-    const next = new Date(date);
-    next.setDate(next.getDate() + delta);
-    return next;
+  const dayBucketForIndex = useCallback(
+    (index: number) =>
+      baseDayBucketRef.current +
+      (index - HOME_PAGER_CENTER_INDEX) * DAY_MS,
+    [],
+  );
+
+  const dateForIndex = useCallback((index: number) => {
+    const date = new Date(baseDateRef.current);
+    date.setDate(date.getDate() + (index - HOME_PAGER_CENTER_INDEX));
+    return date;
   }, []);
 
-  const buildPageDates = useCallback(
-    (center: Date): [Date, Date, Date] => [
-      shiftDate(center, -1),
-      center,
-      shiftDate(center, 1),
-    ],
-    [shiftDate],
+  const indexForDayBucket = useCallback(
+    (dayBucket: number) =>
+      HOME_PAGER_CENTER_INDEX +
+      Math.round((dayBucket - baseDayBucketRef.current) / DAY_MS),
+    [],
   );
 
   useEffect(() => {
-    const selectedBucket = roundToLocalDay(selectedDate.getTime());
-    if (overrideCenterDate) {
-      const centerBucket = roundToLocalDay(pageDatesRef.current[1].getTime());
-      if (!pendingCommitRef.current || selectedBucket !== centerBucket) {
-        pendingCommitRef.current = null;
-        setOverrideCenterDate(null);
-        const nextDates = buildPageDates(selectedDate);
-        pageDatesRef.current = nextDates;
-        setPageDates(nextDates);
-        setResetKey(value => value + 1);
-      }
-      return;
-    }
-    const centerBucket = roundToLocalDay(pageDatesRef.current[1].getTime());
-    if (selectedBucket !== centerBucket) {
-      const nextDates = buildPageDates(selectedDate);
-      pageDatesRef.current = nextDates;
-      setPageDates(nextDates);
-    }
-  }, [buildPageDates, overrideCenterDate, selectedDate]);
+    if (viewport.width <= 0) return;
+    if (Math.abs(viewport.width - pageWidth) <= 1) return;
+    setPageWidth(viewport.width);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({ index: currentIndex, animated: false });
+    });
+  }, [currentIndex, pageWidth, viewport.width]);
 
-  const prevDate = pageDates[0];
-  const nextDate = pageDates[2];
-  const currentDate = overrideCenterDate ?? pageDates[1];
+  useEffect(() => {
+    const selectedBucket = roundToLocalDay(selectedDate.getTime(), offsetMinutes);
+    let targetIndex = indexForDayBucket(selectedBucket);
+    if (targetIndex < 0 || targetIndex >= HOME_PAGER_TOTAL_PAGES) {
+      // Re-anchor when selected date moves outside the seeded index range.
+      baseDateRef.current = new Date(selectedDate);
+      baseDayBucketRef.current = selectedBucket;
+      targetIndex = HOME_PAGER_CENTER_INDEX;
+    }
+    if (targetIndex !== currentIndex) {
+      isProgrammaticScrollRef.current = true;
+      setCurrentIndex(targetIndex);
+      setWindowCenterIndex(targetIndex);
+      lastWindowCenterIndexRef.current = targetIndex;
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToIndex({ index: targetIndex, animated: false });
+      });
+    }
+  }, [currentIndex, indexForDayBucket, offsetMinutes, selectedDate]);
+
   const visibleBuckets = useMemo(
-    () =>
-      pageDates.map(date => roundToLocalDay(date.getTime(), offsetMinutes)),
-    [offsetMinutes, pageDates],
+    () => {
+      const buckets: number[] = [];
+      const startIndex = Math.max(
+        0,
+        Math.min(currentIndex, windowCenterIndex) - 6,
+      );
+      const endIndex = Math.min(
+        HOME_PAGER_TOTAL_PAGES - 1,
+        Math.max(currentIndex, windowCenterIndex) + 6,
+      );
+      for (let index = startIndex; index <= endIndex; index += 1) {
+        if (index < 0 || index >= HOME_PAGER_TOTAL_PAGES) continue;
+        buckets.push(dayBucketForIndex(index));
+      }
+      return buckets;
+    },
+    [currentIndex, dayBucketForIndex, windowCenterIndex],
   );
   const batchedDays = useMemo<HomeDaysResponse>(() => {
     if (!catalogPayload || visibleBuckets.length === 0) {
@@ -258,68 +286,115 @@ const HomeScreen = () => {
     });
     return map;
   }, [batchedDays.days]);
-  const currentModel = useMemo(
-    () =>
-      buildDayModel(
-        currentDate,
-        homeByBucket.get(roundToLocalDay(currentDate.getTime(), offsetMinutes)),
-      ),
-    [buildDayModel, currentDate, homeByBucket, offsetMinutes],
-  );
-  const prevModel = useMemo(
-    () =>
-      buildDayModel(
-        prevDate,
-        homeByBucket.get(roundToLocalDay(prevDate.getTime(), offsetMinutes)),
-      ),
-    [buildDayModel, homeByBucket, offsetMinutes, prevDate],
-  );
-  const nextModel = useMemo(
-    () =>
-      buildDayModel(
-        nextDate,
-        homeByBucket.get(roundToLocalDay(nextDate.getTime(), offsetMinutes)),
-      ),
-    [buildDayModel, homeByBucket, nextDate, offsetMinutes],
-  );
-
-  const rotateDates = useCallback(
-    (
-      dates: [Date, Date, Date],
-      direction: SwipeDirection,
-    ): [Date, Date, Date] => {
-      if (direction === 1) {
-        const nextCenter = dates[2];
-        return [dates[1], nextCenter, shiftDate(nextCenter, 1)];
-      }
-      const prevCenter = dates[0];
-      return [shiftDate(prevCenter, -1), prevCenter, dates[1]];
+  const getModelForIndex = useCallback(
+    (index: number) => {
+      const date = dateForIndex(index);
+      return buildDayModel(date, homeByBucket.get(dayBucketForIndex(index)));
     },
-    [shiftDate],
+    [buildDayModel, dateForIndex, dayBucketForIndex, homeByBucket],
   );
 
-  const handleCommit = useCallback((direction: SwipeDirection) => {
-    if (pendingCommitRef.current) return;
-    const targetDate =
-      direction === 1 ? pageDatesRef.current[2] : pageDatesRef.current[0];
-    pendingCommitRef.current = direction;
-    setOverrideCenterDate(targetDate);
-    setResetKey(value => value + 1);
-  }, []);
+  const currentModel = useMemo(
+    () => getModelForIndex(currentIndex),
+    [currentIndex, getModelForIndex],
+  );
 
-  const handleReset = useCallback(() => {
-    const direction = pendingCommitRef.current;
-    if (!direction) {
-      setOverrideCenterDate(null);
-      return;
-    }
-    const nextDates = rotateDates(pageDatesRef.current, direction);
-    pageDatesRef.current = nextDates;
-    setPageDates(nextDates);
-    actions.setSelectedDate(nextDates[1]);
-    pendingCommitRef.current = null;
-    setOverrideCenterDate(null);
-  }, [actions, rotateDates]);
+  const handleMomentumScrollEnd = useCallback(
+    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+      const width = Math.max(pageWidth, 1);
+      const nextIndex = Math.max(
+        0,
+        Math.min(
+          HOME_PAGER_TOTAL_PAGES - 1,
+          Math.round(event.nativeEvent.contentOffset.x / width),
+        ),
+      );
+      if (nextIndex === currentIndex) {
+        isProgrammaticScrollRef.current = false;
+        return;
+      }
+      setCurrentIndex(nextIndex);
+      setWindowCenterIndex(nextIndex);
+      lastWindowCenterIndexRef.current = nextIndex;
+      if (isProgrammaticScrollRef.current) {
+        isProgrammaticScrollRef.current = false;
+        return;
+      }
+      actions.setSelectedDate(dateForIndex(nextIndex));
+    },
+    [actions, currentIndex, dateForIndex, pageWidth],
+  );
+
+  const handleListScroll = useCallback(
+    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+      const width = Math.max(pageWidth, 1);
+      const nextIndex = Math.max(
+        0,
+        Math.min(
+          HOME_PAGER_TOTAL_PAGES - 1,
+          Math.round(event.nativeEvent.contentOffset.x / width),
+        ),
+      );
+      if (nextIndex === lastWindowCenterIndexRef.current) {
+        return;
+      }
+      lastWindowCenterIndexRef.current = nextIndex;
+      setWindowCenterIndex(nextIndex);
+    },
+    [pageWidth],
+  );
+
+  const handleListLayout = useCallback(
+    (event: { nativeEvent: { layout: { width: number } } }) => {
+      const nextWidth = Math.max(event.nativeEvent.layout.width, 1);
+      if (Math.abs(nextWidth - pageWidth) <= 1) return;
+      setPageWidth(nextWidth);
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToIndex({ index: currentIndex, animated: false });
+      });
+    },
+    [currentIndex, pageWidth],
+  );
+
+  const getItemLayout = useCallback(
+    (_unused: ArrayLike<number> | null | undefined, index: number) => ({
+      length: pageWidth,
+      offset: pageWidth * index,
+      index,
+    }),
+    [pageWidth],
+  );
+
+  const renderPage = useCallback(
+    ({ item: index }: ListRenderItemInfo<number>) => {
+      const model = getModelForIndex(index);
+      return (
+        <View style={{ width: pageWidth, flex: 1 }}>
+          <HomeDayContent
+            model={model}
+            date={model.date}
+            expandedExercises={expandedExercises}
+            setExpandedExercises={setExpandedExercises}
+            onOpenLog={actions.openLogForExercise}
+            splitMode={homeSplitMode}
+            onSplitModeChange={mode =>
+              dispatch({ type: 'preferences/homeSplitMode', mode })
+            }
+            styles={styles}
+          />
+        </View>
+      );
+    },
+    [
+      actions.openLogForExercise,
+      dispatch,
+      expandedExercises,
+      getModelForIndex,
+      homeSplitMode,
+      pageWidth,
+      styles,
+    ],
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -353,33 +428,34 @@ const HomeScreen = () => {
         </View>
       </View>
 
-      <HorizontalSwipePager
-        currentKey={pageDates[1].getTime()}
-        onCommit={handleCommit}
-        onReset={handleReset}
-        resetKey={resetKey}
-        edgeThreshold={24}
-        commitThreshold={0.25}
-        renderPage={offset => {
-          const model =
-            offset === -1 ? prevModel : offset === 1 ? nextModel : currentModel;
-          const date =
-            offset === -1 ? prevDate : offset === 1 ? nextDate : currentDate;
-          return (
-            <HomeDayContent
-              key={date.getTime()}
-              model={model}
-              date={date}
-              expandedExercises={expandedExercises}
-              setExpandedExercises={setExpandedExercises}
-              onOpenLog={actions.openLogForExercise}
-              splitMode={homeSplitMode}
-              onSplitModeChange={mode =>
-                dispatch({ type: 'preferences/homeSplitMode', mode })
-              }
-              styles={styles}
-            />
-          );
+      <FlatList<number>
+        ref={listRef}
+        data={pageIndices}
+        horizontal
+        pagingEnabled
+        style={{ flex: 1 }}
+        showsHorizontalScrollIndicator={false}
+        bounces={false}
+        initialScrollIndex={HOME_PAGER_CENTER_INDEX}
+        onLayout={handleListLayout}
+        onScroll={handleListScroll}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        keyExtractor={index => `home-day-${index}`}
+        renderItem={renderPage}
+        getItemLayout={getItemLayout}
+        keyboardShouldPersistTaps="handled"
+        removeClippedSubviews
+        initialNumToRender={5}
+        maxToRenderPerBatch={5}
+        windowSize={5}
+        onScrollToIndexFailed={info => {
+          requestAnimationFrame(() => {
+            listRef.current?.scrollToIndex({
+              index: info.index,
+              animated: false,
+            });
+          });
         }}
       />
     </View>

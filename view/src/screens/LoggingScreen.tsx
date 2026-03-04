@@ -6,18 +6,42 @@ import React, {
   useState,
 } from 'react';
 import {
-  InputAccessoryView,
+  Dimensions,
   Keyboard,
+  KeyboardEvent,
+  LayoutChangeEvent,
   Platform,
+  Pressable,
+  SectionList,
   ScrollView,
   Text,
   TextInput,
-  View,
   TouchableOpacity,
+  View,
 } from 'react-native';
+import PagerView from 'react-native-pager-view';
+import { useFocusEffect } from '@react-navigation/native';
+import Animated, {
+  useEvent,
+  useHandler,
+  SharedValue,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 import { WorkoutEvent } from '../workoutFlows';
-import { Card, Divider, PrimaryButton, BodyText } from '../ui/components';
-import { getContrastTextColor, palette, radius, spacing } from '../ui/theme';
+import { Card, PrimaryButton, BodyText } from '../ui/components';
+import {
+  analyticsUi,
+  cardShadowStyle,
+  getContrastTextColor,
+  palette,
+  radius,
+  spacing,
+} from '../ui/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addAlpha } from '../ui/color';
 import { JsonObject } from '../TrackerEngine';
 import { roundToLocalDay } from '../timePolicy';
@@ -57,10 +81,47 @@ import {
   minutesToSeconds,
   secondsToMinutes,
 } from '../ui/formatters';
+import type {
+  PagerViewOnPageScrollEventData,
+  PagerViewOnPageSelectedEvent,
+} from 'react-native-pager-view';
 
 const sessionTabs = ['Track', 'History', 'Trends'] as const;
-const INPUT_ACCESSORY_ID = 'logging-numeric-accessory';
+const sessionTabLabels: Record<SessionTab, string> = {
+  Track: 'Track',
+  History: 'History',
+  Trends: 'Trends',
+};
 export type SessionTab = (typeof sessionTabs)[number];
+
+const AnimatedPagerView = Animated.createAnimatedComponent(PagerView);
+
+type PagerScrollEvent = PagerViewOnPageScrollEventData & {
+  eventName: string;
+};
+
+const usePagerScrollHandler = (
+  handlers: {
+    onPageScroll?: (
+      event: PagerViewOnPageScrollEventData,
+      context: Record<string, unknown>,
+    ) => void;
+  },
+  dependencies?: Array<unknown>,
+) => {
+  const { context, doDependenciesDiffer } = useHandler(handlers, dependencies);
+  return useEvent<PagerScrollEvent>(
+    event => {
+      'worklet';
+      const { onPageScroll } = handlers;
+      if (onPageScroll && event.eventName.endsWith('onPageScroll')) {
+        onPageScroll(event, context);
+      }
+    },
+    ['onPageScroll'],
+    doDependenciesDiffer,
+  );
+};
 
 const INITIAL_FIELDS: LoggingFields = {
   reps: asNumericInput(''),
@@ -159,29 +220,8 @@ const FIELD_CONFIGS: Record<LoggingModeValue | 'default', FieldConfig[]> = {
   ],
 };
 
-const scheduleIdle = (work: () => void) => {
-  const idleCallback = (
-    globalThis as typeof globalThis & {
-      requestIdleCallback?: (cb: () => void) => number;
-      cancelIdleCallback?: (id: number) => void;
-    }
-  ).requestIdleCallback;
-  if (idleCallback) {
-    const id = idleCallback(work);
-    return () => {
-      const cancel = (
-        globalThis as typeof globalThis & {
-          cancelIdleCallback?: (id: number) => void;
-        }
-      ).cancelIdleCallback;
-      cancel?.(id);
-    };
-  }
-  const timeout = setTimeout(work, 0);
-  return () => clearTimeout(timeout);
-};
-
 const LoggingScreen = () => {
+  const insets = useSafeAreaInsets();
   const state = useAppState();
   const dispatch = useAppDispatch();
   const actions = useAppActions();
@@ -195,14 +235,23 @@ const LoggingScreen = () => {
   );
   const fields = state.logging.fields;
   const sessionTab = state.logging.tab;
+  const sessionTabIndex = Math.max(sessionTabs.indexOf(sessionTab), 0);
+  const sessionPagerRef = useRef<PagerView | null>(null);
+  const sessionPagerIndexRef = useRef(sessionTabIndex);
+  const sessionRequestedIndexRef = useRef(sessionTabIndex);
+  const sessionTabPressAnimating = useSharedValue(0);
+  const sessionTabProgress = useSharedValue(sessionTabIndex);
+  const [sessionRailWidth, setSessionRailWidth] = useState(0);
+  const [historyViewportHeight, setHistoryViewportHeight] = useState(0);
   const selectedTrendRange = state.logging.selectedTrendRange;
   const selectedTrendMetric = state.logging.selectedTrendMetric;
   const selectedTrendRmReps = state.logging.selectedTrendRmReps;
   const loggingDate = state.logging.logDate;
   const editingEventId = state.logging.editingEventId;
-  const [historySets, setHistorySets] = useState<WorkoutEvent[]>([]);
-  const [historyReady, setHistoryReady] = useState(false);
+  const updateCtaProgress = useSharedValue(0);
+  const deleteCtaProgress = useSharedValue(0);
   const [interactionLocked, setInteractionLocked] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const themeKey = `${state.preferences.themeMode}:${
     state.preferences.themeAccent
@@ -231,6 +280,137 @@ const LoggingScreen = () => {
     [],
   );
 
+  useEffect(() => {
+    const handleKeyboardFrame = (event: KeyboardEvent) => {
+      if (Platform.OS === 'ios') {
+        const windowHeight = Dimensions.get('window').height;
+        const frameY = event.endCoordinates?.screenY ?? windowHeight;
+        setKeyboardInset(Math.max(0, windowHeight - frameY));
+        return;
+      }
+      setKeyboardInset(event.endCoordinates?.height ?? 0);
+    };
+    const handleKeyboardHide = () => {
+      setKeyboardInset(0);
+    };
+
+    if (Platform.OS === 'ios') {
+      const frameSub = Keyboard.addListener(
+        'keyboardWillChangeFrame',
+        handleKeyboardFrame,
+      );
+      const hideSub = Keyboard.addListener('keyboardWillHide', handleKeyboardHide);
+      return () => {
+        frameSub.remove();
+        hideSub.remove();
+      };
+    }
+
+    const showSub = Keyboard.addListener('keyboardDidShow', handleKeyboardFrame);
+    const hideSub = Keyboard.addListener('keyboardDidHide', handleKeyboardHide);
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    sessionTabProgress.value = sessionTabIndex;
+  }, [sessionTabIndex, sessionTabProgress]);
+
+  useEffect(() => {
+    if (editingEventId) {
+      updateCtaProgress.value = withTiming(1, { duration: 180 });
+      deleteCtaProgress.value = withDelay(70, withTiming(1, { duration: 180 }));
+      return;
+    }
+    updateCtaProgress.value = withTiming(0, { duration: 120 });
+    deleteCtaProgress.value = withTiming(0, { duration: 100 });
+  }, [deleteCtaProgress, editingEventId, updateCtaProgress]);
+
+  useEffect(() => {
+    const pager = sessionPagerRef.current;
+    sessionRequestedIndexRef.current = sessionTabIndex;
+    if (!pager) return;
+    if (sessionPagerIndexRef.current === sessionTabIndex) return;
+    pager.setPageWithoutAnimation(sessionTabIndex);
+    sessionPagerIndexRef.current = sessionTabIndex;
+  }, [sessionTabIndex]);
+
+  const handleSessionTabSelect = useCallback(
+    (tab: SessionTab) => {
+      if (tab === sessionTab) return;
+      const nextIndex = sessionTabs.indexOf(tab);
+      if (nextIndex < 0) return;
+      if (editingEventId) {
+        dispatch({ type: 'log/editing', eventId: null });
+      }
+      sessionRequestedIndexRef.current = nextIndex;
+      sessionTabPressAnimating.value = 1;
+      sessionTabProgress.value = withTiming(nextIndex, {
+        duration: analyticsUi.tabTapAnimationMs,
+      });
+      sessionPagerRef.current?.setPage(nextIndex);
+      sessionPagerIndexRef.current = nextIndex;
+    },
+    [dispatch, editingEventId, sessionTab, sessionTabPressAnimating, sessionTabProgress],
+  );
+
+  const handleSessionPagerSelected = useCallback(
+    (event: PagerViewOnPageSelectedEvent) => {
+      const nextIndex = event.nativeEvent.position;
+      const nextTab = sessionTabs[nextIndex];
+      if (!nextTab) return;
+      if (
+        sessionTabPressAnimating.value === 1 &&
+        nextIndex !== sessionRequestedIndexRef.current
+      ) {
+        return;
+      }
+      sessionRequestedIndexRef.current = nextIndex;
+      sessionTabPressAnimating.value = 0;
+      sessionTabProgress.value = nextIndex;
+      sessionPagerIndexRef.current = nextIndex;
+      if (editingEventId) {
+        dispatch({ type: 'log/editing', eventId: null });
+      }
+      if (nextTab !== sessionTab) {
+        dispatch({ type: 'log/tab', tab: nextTab });
+      }
+    },
+    [dispatch, editingEventId, sessionTab, sessionTabPressAnimating, sessionTabProgress],
+  );
+
+  const handleSessionPagerScroll = usePagerScrollHandler(
+    {
+      onPageScroll: event => {
+        'worklet';
+        if (sessionTabPressAnimating.value === 1) return;
+        sessionTabProgress.value = event.position + event.offset;
+      },
+    },
+    [sessionTabPressAnimating, sessionTabProgress],
+  );
+
+  const handleSessionRailLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const nextWidth = event.nativeEvent.layout.width;
+      if (nextWidth > 0 && nextWidth !== sessionRailWidth) {
+        setSessionRailWidth(nextWidth);
+      }
+    },
+    [sessionRailWidth],
+  );
+  const handleHistoryPageLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const nextHeight = event.nativeEvent.layout.height;
+      if (nextHeight > 0 && Math.abs(nextHeight - historyViewportHeight) > 1) {
+        setHistoryViewportHeight(nextHeight);
+      }
+    },
+    [historyViewportHeight],
+  );
+
   const shiftLogDate = (deltaDays: number) => {
     const next = new Date(loggingDate);
     next.setDate(next.getDate() + deltaDays);
@@ -244,46 +424,34 @@ const LoggingScreen = () => {
       : FIELD_CONFIGS.default;
   }, [selectedExercise]);
 
-  const needsTodaySets = sessionTab === 'Track';
-  const needsHistorySets = sessionTab === 'History' || sessionTab === 'Trends';
+  const exerciseSets = useMemo(() => {
+    if (!selectedExercise) return [];
+    return state.events.filter(
+      event => readExerciseName(event) === selectedExercise.display_name,
+    );
+  }, [selectedExercise, state.events]);
 
   const todaySets = useMemo(() => {
-    if (!selectedExercise || !needsTodaySets) return [];
+    if (!selectedExercise) return [];
     const start = new Date(loggingDate);
     start.setHours(0, 0, 0, 0);
     const end = new Date(start);
     end.setDate(start.getDate() + 1);
-    return state.events.filter(event => {
-      const exerciseName = readExerciseName(event);
-      return (
-        exerciseName === selectedExercise.display_name &&
-        event.ts >= start.getTime() &&
-        event.ts < end.getTime()
-      );
-    });
-  }, [state.events, selectedExercise, loggingDate, needsTodaySets]);
+    return exerciseSets.filter(
+      event => event.ts >= start.getTime() && event.ts < end.getTime(),
+    );
+  }, [exerciseSets, selectedExercise, loggingDate]);
 
-  useEffect(() => {
-    if (!selectedExercise || !needsHistorySets) {
-      setHistorySets([]);
-      setHistoryReady(false);
-      return;
-    }
-    setHistoryReady(false);
-    const cancel = scheduleIdle(() => {
-      const filtered = state.events.filter(
-        event => readExerciseName(event) === selectedExercise.display_name,
-      );
-      setHistorySets(filtered);
-      setHistoryReady(true);
-    });
-    return () => cancel();
-  }, [needsHistorySets, selectedExercise, state.events]);
+  const latestTodaySet = useMemo(() => {
+    if (todaySets.length === 0) return null;
+    return todaySets.reduce((latest, event) =>
+      event.ts > latest.ts ? event : latest,
+    );
+  }, [todaySets]);
 
   const groupedHistory = useMemo(() => {
-    if (sessionTab !== 'History') return [];
     const groups = new Map<number, WorkoutEvent[]>();
-    historySets.forEach(event => {
+    exerciseSets.forEach(event => {
       const day = roundToLocalDay(event.ts);
       const bucket = groups.get(day) ?? [];
       bucket.push(event);
@@ -300,19 +468,57 @@ const LoggingScreen = () => {
         }),
         events: events.sort((a, b) => b.ts - a.ts),
       }));
-  }, [historySets, sessionTab]);
+  }, [exerciseSets]);
+  const historySections = useMemo(
+    () =>
+      groupedHistory.map(group => ({
+        key: `${group.day}`,
+        title: group.label,
+        data: group.events,
+      })),
+    [groupedHistory],
+  );
+  const historyEventCount = useMemo(
+    () =>
+      historySections.reduce((count, section) => count + section.data.length, 0),
+    [historySections],
+  );
+  const historyEstimatedHeight = useMemo(() => {
+    const rowHeight = 52;
+    const sectionHeaderHeight = 26;
+    const cardPadding = spacing(2);
+    return (
+      historyEventCount * rowHeight +
+      historySections.length * sectionHeaderHeight +
+      cardPadding
+    );
+  }, [historyEventCount, historySections.length]);
+  const historyShouldFillHeight =
+    historyViewportHeight > 0 &&
+    historyEstimatedHeight >= historyViewportHeight - spacing(3);
 
-  const prEventIds = useMemo(() => {
-    const source = needsHistorySets ? historySets : todaySets;
-    const ids = source
-      .filter(event => event.payload?.pr === true)
-      .map(event => event.event_id);
-    return new Set(ids);
-  }, [historySets, needsHistorySets, todaySets]);
+  const prEventIdsAll = useMemo(
+    () =>
+      new Set(
+        exerciseSets
+          .filter(event => event.payload?.pr === true)
+          .map(event => event.event_id),
+      ),
+    [exerciseSets],
+  );
+  const prEventIdsToday = useMemo(
+    () =>
+      new Set(
+        todaySets
+          .filter(event => event.payload?.pr === true)
+          .map(event => event.event_id),
+      ),
+    [todaySets],
+  );
 
   const { chartData: trendData, exerciseEventsInRange: trendEventsInRange } =
     useExerciseTrendSeries({
-      events: historyReady ? historySets : [],
+      events: exerciseSets,
       catalog: state.catalog.entries as unknown as JsonObject[],
       exercise: selectedExercise?.display_name ?? null,
       metric: selectedTrendMetric,
@@ -448,7 +654,6 @@ const LoggingScreen = () => {
       fields,
       selectedExercise.display_name,
     );
-    console.log('LoggingScreen: submitting payload', payload);
     await actions.logSet(payload);
     const nextFields = { ...fields };
     if (typeof payload.reps === 'number')
@@ -466,6 +671,7 @@ const LoggingScreen = () => {
   };
 
   const handleSelectSet = (event: WorkoutEvent) => {
+    dispatch({ type: 'log/date', date: new Date(roundToLocalDay(event.ts)) });
     dispatch({ type: 'log/editing', eventId: event.event_id });
     dispatch({ type: 'log/fields', fields: fieldsFromEvent(event) });
     dispatch({ type: 'log/tab', tab: 'Track' });
@@ -488,6 +694,24 @@ const LoggingScreen = () => {
     dispatch({ type: 'log/fields', fields: { ...INITIAL_FIELDS } });
   };
 
+  const clearEditingSelection = useCallback(() => {
+    if (!editingEventId) return;
+    dispatch({ type: 'log/editing', eventId: null });
+    dispatch({
+      type: 'log/fields',
+      fields: latestTodaySet ? fieldsFromEvent(latestTodaySet) : { ...INITIAL_FIELDS },
+    });
+  }, [dispatch, editingEventId, latestTodaySet]);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        dispatch({ type: 'log/editing', eventId: null });
+      };
+    }, [dispatch]),
+  );
+
+
   const setFieldValue = (key: FieldKey, delta: number) => {
     const nextFields = { ...fields };
     const current = parseFloat(nextFields[key]) || 0;
@@ -496,334 +720,525 @@ const LoggingScreen = () => {
     dispatch({ type: 'log/fields', fields: nextFields });
   };
 
+  const sessionTabGap = analyticsUi.selectorRailGap;
+  const sessionRailPadding = analyticsUi.selectorRailPadding;
+  const sessionSegmentWidth =
+    sessionRailWidth > 0
+      ? (Math.max(0, sessionRailWidth - sessionRailPadding * 2) -
+          sessionTabGap * (sessionTabs.length - 1)) /
+        sessionTabs.length
+      : 0;
+  const sessionIndicatorStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: sessionTabProgress.value * (sessionSegmentWidth + sessionTabGap) },
+    ],
+  }));
+  const sessionInactiveText = palette.mutedText;
+  const sessionActiveText = getContrastTextColor(palette.primary);
+  const updateCtaStyle = useAnimatedStyle(() => ({
+    opacity: updateCtaProgress.value,
+    transform: [{ translateY: (1 - updateCtaProgress.value) * 8 }],
+  }));
+  const deleteCtaStyle = useAnimatedStyle(() => ({
+    opacity: deleteCtaProgress.value,
+    transform: [{ translateY: (1 - deleteCtaProgress.value) * 10 }],
+  }));
+  const ctaPaddingTop = spacing(1);
+  const ctaPaddingBottom =
+    keyboardInset > 0
+      ? ctaPaddingTop
+      : Math.max(insets.bottom, ctaPaddingTop);
+  const ctaKeyboardLift = Math.max(0, keyboardInset - insets.bottom);
+
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView
-        style={{ flex: 1 }}
-        scrollEnabled={!interactionLocked}
-        contentContainerStyle={{
-          padding: spacing(2),
-          gap: spacing(2),
-          paddingBottom: spacing(2),
-        }}
-      >
-        {selectedExercise ? null : (
+      {!selectedExercise ? (
+        <ScrollView
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            padding: spacing(2),
+            gap: spacing(2),
+            paddingBottom: spacing(2),
+          }}
+        >
           <Card>
             <Text style={{ color: palette.mutedText }}>
               Select an exercise to log sets.
             </Text>
           </Card>
-        )}
-
-        {selectedExercise && (
-          <Card variant="analytics" style={{ gap: spacing(0.75) }}>
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: spacing(1),
-                marginBottom: spacing(1.25),
-              }}
-            >
-              {sessionTabs.map(tab => (
-                <TouchableOpacity
-                  key={tab}
-                  onPress={() => dispatch({ type: 'log/tab', tab })}
-                  style={{
-                    flex: 1,
-                    paddingVertical: spacing(1),
-                    borderRadius: radius.card,
-                    backgroundColor:
-                      sessionTab === tab
-                        ? palette.primary
-                        : palette.mutedSurface,
-                    alignItems: 'center',
-                  }}
-                >
-                  <Text
-                    style={{
-                      color:
-                        sessionTab === tab
-                          ? getContrastTextColor(palette.primary)
-                          : palette.text,
-                      fontWeight: '600',
-                    }}
+        </ScrollView>
+      ) : (
+        <View style={{ flex: 1 }}>
+            <View style={styles.sessionRailWrap}>
+              <View
+                onLayout={handleSessionRailLayout}
+                style={styles.sessionRail}
+              >
+                {sessionSegmentWidth > 0 ? (
+                  <Animated.View
+                    pointerEvents="none"
+                    style={[
+                      styles.sessionIndicator,
+                      { width: sessionSegmentWidth },
+                      sessionIndicatorStyle,
+                    ]}
+                  />
+                ) : null}
+                {sessionTabs.map((tab, index) => (
+                  <Pressable
+                    key={tab}
+                    onPress={() => handleSessionTabSelect(tab)}
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: sessionTab === tab }}
+                    style={styles.sessionTabButton}
                   >
-                    {tab}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+                    <SlidingTabText
+                      label={sessionTabLabels[tab]}
+                      index={index}
+                      progress={sessionTabProgress}
+                      inactiveTextColor={sessionInactiveText}
+                      activeTextColor={sessionActiveText}
+                    />
+                  </Pressable>
+                ))}
+              </View>
             </View>
 
-            {sessionTab === 'Track' && (
-              <>
-                <View style={styles.dateRow}>
-                  <TouchableOpacity
-                    onPress={() => shiftLogDate(-1)}
-                    style={styles.dateButton}
+            <AnimatedPagerView
+              ref={(value: PagerView | null) => {
+                sessionPagerRef.current = value;
+              }}
+              style={{ flex: 1 }}
+              initialPage={sessionTabIndex}
+              offscreenPageLimit={3}
+              scrollEnabled={!interactionLocked}
+              overdrag={false}
+              onPageSelected={handleSessionPagerSelected}
+              onPageScroll={handleSessionPagerScroll as never}
+            >
+              <View key="Track" style={styles.sessionPage}>
+                <View style={styles.sessionPage}>
+                  <ScrollView
+                    style={styles.sessionPage}
+                    keyboardShouldPersistTaps="handled"
+                    directionalLockEnabled
+                    contentContainerStyle={{
+                      paddingHorizontal: spacing(2),
+                      paddingTop: spacing(1.25),
+                      paddingBottom: spacing(2),
+                    }}
                   >
-                    <ChevronLeftIcon
-                      width={16}
-                      height={16}
-                      color={palette.text}
+                    <Card style={styles.sessionContentCard}>
+                      <View style={styles.dateRow}>
+                        <TouchableOpacity
+                          onPress={() => shiftLogDate(-1)}
+                          style={styles.dateButton}
+                        >
+                          <ChevronLeftIcon
+                            width={16}
+                            height={16}
+                            color={palette.text}
+                          />
+                        </TouchableOpacity>
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <Text style={{ color: palette.text, fontWeight: '600' }}>
+                            {formatDateLabel(loggingDate)}
+                          </Text>
+                          <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                            {loggingDate.toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => shiftLogDate(1)}
+                          style={styles.dateButton}
+                        >
+                          <ChevronRightIcon
+                            width={16}
+                            height={16}
+                            color={palette.text}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ gap: spacing(1) }}>
+                        {fieldDefinitions.map(definition => (
+                          <Stepper
+                            key={definition.key}
+                            label={definition.label}
+                            unit={definition.unit}
+                            value={fields[definition.key]}
+                            step={definition.step}
+                            onIncrement={() => {
+                              setFieldValue(definition.key, definition.step);
+                            }}
+                            onDecrement={() => {
+                              setFieldValue(definition.key, -definition.step);
+                            }}
+                            onChange={value => {
+                              dispatch({
+                                type: 'log/fields',
+                                fields: {
+                                  ...fields,
+                                  [definition.key]: asNumericInput(value),
+                                },
+                              });
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <View style={{ marginTop: spacing(2) }}>
+                        {todaySets.length === 0 ? (
+                          <BodyText style={{ color: palette.mutedText }}>
+                            No sets logged today.
+                          </BodyText>
+                        ) : (
+                          todaySets.map((set, index) => (
+                            <SetRow
+                              key={set.event_id}
+                              event={set}
+                              highlightColor={getMuscleColor(
+                                selectedExercise?.primary_muscle_group,
+                              )}
+                              onPress={() => handleSelectSet(set)}
+                              active={editingEventId === set.event_id}
+                              previousActive={
+                                index > 0 &&
+                                editingEventId === todaySets[index - 1].event_id
+                              }
+                              isLast={index === todaySets.length - 1}
+                              pr={prEventIdsToday.has(set.event_id)}
+                            />
+                          ))
+                        )}
+                      </View>
+                    </Card>
+                    <Pressable
+                      onPress={clearEditingSelection}
+                      style={{ minHeight: spacing(4) }}
                     />
-                  </TouchableOpacity>
-                  <View style={{ alignItems: 'center', flex: 1 }}>
-                    <Text style={{ color: palette.text, fontWeight: '600' }}>
-                      {formatDateLabel(loggingDate)}
-                    </Text>
-                    <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                      {loggingDate.toLocaleDateString(undefined, {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </Text>
+                  </ScrollView>
+                  <View
+                    style={[
+                      styles.trackStickyCta,
+                      {
+                        paddingTop: ctaPaddingTop,
+                        paddingBottom: ctaPaddingBottom,
+                        marginBottom: ctaKeyboardLift,
+                      },
+                    ]}
+                  >
+                    {editingEventId ? (
+                      <>
+                        <Animated.View style={updateCtaStyle}>
+                          <PrimaryButton
+                            label={asLabelText('Update set')}
+                            onPress={handleUpdateSet}
+                            disabled={trackDisabled}
+                          />
+                        </Animated.View>
+                        <Animated.View style={deleteCtaStyle}>
+                          <TouchableOpacity
+                            onPress={handleDeleteSet}
+                            style={styles.dangerButton}
+                          >
+                            <Text style={{ color: '#fffaf2', fontWeight: '600' }}>
+                              Delete set
+                            </Text>
+                          </TouchableOpacity>
+                        </Animated.View>
+                      </>
+                    ) : (
+                      <PrimaryButton
+                        label={asLabelText('Log set')}
+                        onPress={handleAddSet}
+                        disabled={trackDisabled}
+                      />
+                    )}
                   </View>
-                  <TouchableOpacity
-                    onPress={() => shiftLogDate(1)}
-                    style={styles.dateButton}
-                  >
-                    <ChevronRightIcon
-                      width={16}
-                      height={16}
-                      color={palette.text}
-                    />
-                  </TouchableOpacity>
                 </View>
-                <View style={{ gap: spacing(1) }}>
-                  {fieldDefinitions.map(definition => (
-                    <Stepper
-                      key={definition.key}
-                      label={definition.label}
-                      unit={definition.unit}
-                      value={fields[definition.key]}
-                      step={definition.step}
-                      onIncrement={() =>
-                        setFieldValue(definition.key, definition.step)
-                      }
-                      onDecrement={() =>
-                        setFieldValue(definition.key, -definition.step)
-                      }
-                      onChange={value =>
-                        dispatch({
-                          type: 'log/fields',
-                          fields: {
-                            ...fields,
-                            [definition.key]: asNumericInput(value),
-                          },
-                        })
-                      }
-                    />
-                  ))}
-                </View>
-                <Divider />
-                {todaySets.length === 0 ? (
-                  <BodyText style={{ color: palette.mutedText }}>
-                    No sets logged today.
-                  </BodyText>
-                ) : (
-                  todaySets.map(set => (
-                    <SetRow
-                      key={set.event_id}
-                      event={set}
-                      highlightColor={getMuscleColor(
-                        selectedExercise?.primary_muscle_group,
-                      )}
-                      onPress={() => handleSelectSet(set)}
-                      active={editingEventId === set.event_id}
-                      pr={prEventIds.has(set.event_id)}
-                    />
-                  ))
-                )}
-              </>
-            )}
+              </View>
 
-            {sessionTab === 'History' && (
-              <>
-                {!historyReady ? (
-                  <BodyText style={{ color: palette.mutedText }}>
-                    Loading history...
-                  </BodyText>
-                ) : null}
-                {groupedHistory.length === 0 ? (
-                  <BodyText style={{ color: palette.mutedText }}>
-                    Log sets to unlock history.
-                  </BodyText>
-                ) : (
-                  groupedHistory.map(bucket => (
-                    <View
-                      key={bucket.day}
-                      style={{ marginBottom: spacing(1.5) }}
+              <View
+                key="History"
+                style={styles.sessionPage}
+                onLayout={handleHistoryPageLayout}
+              >
+                <Card
+                  style={
+                    historyShouldFillHeight
+                      ? [
+                          styles.sessionContentCard,
+                          styles.historyCard,
+                          styles.historyCardExpanded,
+                          styles.historyCardFrame,
+                        ]
+                      : [
+                          styles.sessionContentCard,
+                          styles.historyCard,
+                          styles.historyCardFrame,
+                        ]
+                  }
+                >
+                  {historySections.length === 0 ? (
+                    <BodyText
+                      style={{
+                        color: palette.mutedText,
+                        paddingHorizontal: spacing(2),
+                      }}
                     >
+                      Log sets to unlock history.
+                    </BodyText>
+                  ) : (
+                    <SectionList
+                      sections={historySections}
+                      keyExtractor={item => item.event_id}
+                      onTouchStart={clearEditingSelection}
+                      onScrollBeginDrag={clearEditingSelection}
+                      keyboardShouldPersistTaps="handled"
+                      directionalLockEnabled
+                      scrollEnabled={historyShouldFillHeight}
+                      showsVerticalScrollIndicator={false}
+                      stickySectionHeadersEnabled={false}
+                      style={
+                        historyShouldFillHeight
+                          ? styles.historyListExpanded
+                          : styles.historyListCompact
+                      }
+                      contentContainerStyle={{
+                        paddingHorizontal: spacing(2),
+                        paddingBottom: spacing(1),
+                      }}
+                      renderSectionHeader={({ section }) => (
+                        <Text
+                          style={{
+                            color: palette.mutedText,
+                            marginTop: spacing(0.75),
+                            marginBottom: spacing(0.5),
+                          }}
+                        >
+                          {section.title}
+                        </Text>
+                      )}
+                      renderItem={({ item, index, section }) => (
+                        <SetRow
+                          event={item}
+                          compact
+                          onPress={() => handleSelectSet(item)}
+                          active={editingEventId === item.event_id}
+                          previousActive={
+                            index > 0 &&
+                            editingEventId === section.data[index - 1].event_id
+                          }
+                          isLast={index === section.data.length - 1}
+                          pr={prEventIdsAll.has(item.event_id)}
+                        />
+                      )}
+                    />
+                  )}
+                </Card>
+              </View>
+
+              <View key="Trends" style={styles.sessionPage}>
+                <ScrollView
+                  style={styles.sessionPage}
+                  onTouchStart={clearEditingSelection}
+                  onScrollBeginDrag={clearEditingSelection}
+                  keyboardShouldPersistTaps="handled"
+                  directionalLockEnabled
+                  contentContainerStyle={{
+                    paddingHorizontal: spacing(2),
+                    paddingTop: spacing(1.25),
+                    paddingBottom: spacing(2),
+                  }}
+                >
+                  <Card style={styles.sessionContentCard}>
+                  <View style={{ gap: spacing(1) }}>
+                    {trendMetricOptions.length > 0 ? (
+                      <AnalyticsInlineSelect
+                        title={asLabelText('Metric')}
+                        options={trendMetricOptions}
+                        selected={selectedTrendMetric}
+                        onSelect={metric =>
+                          dispatch({ type: 'log/trendMetric', metric })
+                        }
+                        onInteractionLockChange={handleInteractionLockChange}
+                      />
+                    ) : (
+                      <BodyText style={{ color: palette.mutedText }}>
+                        No metrics available for this range.
+                      </BodyText>
+                    )}
+                    <View style={{ gap: spacing(0.5) }}>
                       <Text
                         style={{
                           color: palette.mutedText,
-                          marginBottom: spacing(0.5),
+                          fontWeight: '600',
+                          fontSize: 12,
                         }}
                       >
-                        {bucket.label}
+                        RANGE
                       </Text>
-                      {bucket.events.map(event => (
-                        <SetRow
-                          key={event.event_id}
-                          event={event}
-                          compact
-                          onPress={() => handleSelectSet(event)}
-                          active={editingEventId === event.event_id}
-                          pr={prEventIds.has(event.event_id)}
-                        />
-                      ))}
-                    </View>
-                  ))
-                )}
-              </>
-            )}
-
-            {sessionTab === 'Trends' && (
-              <>
-                {!historyReady ? (
-                  <BodyText style={{ color: palette.mutedText }}>
-                    Loading trends...
-                  </BodyText>
-                ) : null}
-                <View style={{ gap: spacing(1) }}>
-                  {trendMetricOptions.length > 0 ? (
-                    <AnalyticsInlineSelect
-                      title={asLabelText('Metric')}
-                      options={trendMetricOptions}
-                      selected={selectedTrendMetric}
-                      onSelect={metric =>
-                        dispatch({ type: 'log/trendMetric', metric })
-                      }
-                      onInteractionLockChange={handleInteractionLockChange}
-                    />
-                  ) : (
-                    <BodyText style={{ color: palette.mutedText }}>
-                      No metrics available for this range.
-                    </BodyText>
-                  )}
-                  <View style={{ gap: spacing(0.5) }}>
-                    <Text
-                      style={{
-                        color: palette.mutedText,
-                        fontWeight: '600',
-                        fontSize: 12,
-                      }}
-                    >
-                      RANGE
-                    </Text>
-                    <AnalyticsRangeSelector
-                      selected={selectedTrendRange}
-                      onSelect={range =>
-                        dispatch({ type: 'log/trendRange', range })
-                      }
-                      options={analyticsRangeOptions.map(option => option.key)}
-                      onInteractionLockChange={handleInteractionLockChange}
-                    />
-                  </View>
-                  {selectedTrendMetric === 'pr_by_rm' &&
-                  trendRmOptions.length > 0 ? (
-                    <AnalyticsInlineSelect
-                      title={asLabelText('RM')}
-                      options={trendRmOptions}
-                      selected={
-                        selectedTrendRmReps === null
-                          ? trendRmOptions[0].key
-                          : `${selectedTrendRmReps}`
-                      }
-                      onSelect={value =>
-                        dispatch({
-                          type: 'log/trendRm',
-                          rmReps: Number(value),
-                        })
-                      }
-                      onInteractionLockChange={handleInteractionLockChange}
-                    />
-                  ) : null}
-                  {selectedTrendMetric === 'pr_by_rm' &&
-                  trendRmOptions.length === 0 ? (
-                    <BodyText style={{ color: palette.mutedText }}>
-                      No RM-specific records in this range.
-                    </BodyText>
-                  ) : null}
-                  {displayTrendData.length === 0 ? (
-                    <BodyText style={{ color: palette.mutedText }}>
-                      No trend data for this selection.
-                    </BodyText>
-                  ) : (
-                    <View style={{ height: 220 }}>
-                      <SkiaTrendChart
-                        data={displayTrendData}
-                        height={220}
-                        unit={unitForExerciseMetric(selectedTrendMetric)}
-                        showTooltip
-                        rangeKey={selectedTrendRange}
-                        countLabel="set"
+                      <AnalyticsRangeSelector
+                        selected={selectedTrendRange}
+                        onSelect={range =>
+                          dispatch({ type: 'log/trendRange', range })
+                        }
+                        options={analyticsRangeOptions.map(option => option.key)}
                         onInteractionLockChange={handleInteractionLockChange}
                       />
                     </View>
-                  )}
-                </View>
-              </>
-            )}
-          </Card>
-        )}
-      </ScrollView>
-
-      {selectedExercise && (
-        <View style={styles.bottomCta}>
-          {editingEventId ? (
-            <>
-              <PrimaryButton
-                label={asLabelText('Update set')}
-                onPress={handleUpdateSet}
-                disabled={trackDisabled}
-              />
-              <TouchableOpacity
-                onPress={handleDeleteSet}
-                style={styles.dangerButton}
-              >
-                <Text style={{ color: '#fffaf2', fontWeight: '600' }}>
-                  Delete set
-                </Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <PrimaryButton
-              label={asLabelText('Log set')}
-              onPress={handleAddSet}
-              disabled={trackDisabled}
-            />
-          )}
+                    {selectedTrendMetric === 'pr_by_rm' &&
+                    trendRmOptions.length > 0 ? (
+                      <AnalyticsInlineSelect
+                        title={asLabelText('RM')}
+                        options={trendRmOptions}
+                        selected={
+                          selectedTrendRmReps === null
+                            ? trendRmOptions[0].key
+                            : `${selectedTrendRmReps}`
+                        }
+                        onSelect={value =>
+                          dispatch({
+                            type: 'log/trendRm',
+                            rmReps: Number(value),
+                          })
+                        }
+                        onInteractionLockChange={handleInteractionLockChange}
+                      />
+                    ) : null}
+                    {selectedTrendMetric === 'pr_by_rm' &&
+                    trendRmOptions.length === 0 ? (
+                      <BodyText style={{ color: palette.mutedText }}>
+                        No RM-specific records in this range.
+                      </BodyText>
+                    ) : null}
+                    {displayTrendData.length === 0 ? (
+                      <BodyText style={{ color: palette.mutedText }}>
+                        No trend data for this selection.
+                      </BodyText>
+                    ) : (
+                      <View style={{ height: 220 }}>
+                        <SkiaTrendChart
+                          data={displayTrendData}
+                          height={220}
+                          unit={unitForExerciseMetric(selectedTrendMetric)}
+                          showTooltip
+                          rangeKey={selectedTrendRange}
+                          countLabel="set"
+                          onInteractionLockChange={handleInteractionLockChange}
+                        />
+                      </View>
+                    )}
+                  </View>
+                  </Card>
+                  <Pressable
+                    onPress={clearEditingSelection}
+                    style={{ minHeight: spacing(4) }}
+                  />
+                </ScrollView>
+              </View>
+            </AnimatedPagerView>
         </View>
-      )}
-      {Platform.OS === 'ios' && (
-        <InputAccessoryView nativeID={INPUT_ACCESSORY_ID}>
-          <View
-            style={{
-              paddingHorizontal: spacing(2),
-              paddingVertical: spacing(1),
-              borderTopWidth: 1,
-              borderColor: palette.border,
-              backgroundColor: palette.background,
-              alignItems: 'flex-end',
-            }}
-          >
-            <TouchableOpacity onPress={() => Keyboard.dismiss()}>
-              <Text style={{ color: palette.primary, fontWeight: '700' }}>
-                Done
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </InputAccessoryView>
       )}
     </View>
   );
 };
 
+const SlidingTabText = ({
+  label,
+  index,
+  progress,
+  inactiveTextColor,
+  activeTextColor,
+}: {
+  label: string;
+  index: number;
+  progress: SharedValue<number>;
+  inactiveTextColor: string;
+  activeTextColor: string;
+}) => {
+  const textStyle = useAnimatedStyle(() => {
+    const distance = Math.abs(progress.value - index);
+    const mix = Math.max(0, Math.min(1, 1 - distance / 0.6));
+    return {
+      color: interpolateColor(
+        mix,
+        [0, 1],
+        [inactiveTextColor, activeTextColor],
+      ) as string,
+    };
+  });
+  return (
+    <Animated.Text style={[{ fontSize: 12, fontWeight: '600' as const }, textStyle]}>
+      {label}
+    </Animated.Text>
+  );
+};
+
 const createStyles = () => ({
-  bottomCta: {
-    padding: spacing(2),
+  sessionRailWrap: {
+    marginHorizontal: spacing(2),
+    marginTop: spacing(1),
+    marginBottom: 0,
+  },
+  sessionRail: {
+    flexDirection: 'row' as const,
+    gap: analyticsUi.selectorRailGap,
+    borderRadius: radius.pill,
+    backgroundColor: palette.mutedSurface,
+    padding: analyticsUi.selectorRailPadding,
+    overflow: 'hidden' as const,
+  },
+  sessionContentCard: {
+    backgroundColor: palette.surface,
+    borderWidth: 0,
+    borderColor: 'transparent',
+    ...cardShadowStyle,
+  },
+  sessionIndicator: {
+    position: 'absolute' as const,
+    left: analyticsUi.selectorRailPadding,
+    top: analyticsUi.selectorRailPadding,
+    bottom: analyticsUi.selectorRailPadding,
+    borderRadius: radius.pill,
+    backgroundColor: palette.primary,
+  },
+  sessionTabButton: {
+    flex: 1,
+    minHeight: analyticsUi.controlHeight,
+    borderRadius: radius.pill,
+    paddingVertical: analyticsUi.controlPaddingY,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  sessionPage: {
+    flex: 1,
+  },
+  historyCard: {
+    alignSelf: 'stretch' as const,
+  },
+  historyCardFrame: {
+    marginTop: spacing(1.25),
+    marginHorizontal: spacing(2),
+    marginBottom: spacing(1),
+    paddingHorizontal: 0,
+    paddingVertical: spacing(1),
+  },
+  historyCardExpanded: {
+    flex: 1,
+  },
+  historyListExpanded: {
+    flex: 1,
+  },
+  historyListCompact: {
+    flexGrow: 0,
+  },
+  trackStickyCta: {
+    paddingHorizontal: spacing(2),
+    paddingTop: spacing(1),
     borderTopWidth: 1,
     borderColor: palette.border,
     backgroundColor: palette.background,
@@ -836,15 +1251,19 @@ const createStyles = () => ({
     paddingHorizontal: spacing(1),
     paddingVertical: spacing(1),
     borderRadius: radius.card,
-    backgroundColor: palette.mutedSurface,
+    borderWidth: 1,
+    borderColor: palette.border,
+    backgroundColor: 'transparent',
   },
   dateButton: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    borderWidth: 1,
+    borderColor: palette.border,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    backgroundColor: addAlpha(palette.background, 0.32),
+    backgroundColor: 'transparent',
   },
   dangerButton: {
     paddingVertical: spacing(1.5),
@@ -874,10 +1293,10 @@ const Stepper = ({
   <View
     style={{
       width: '100%',
-      backgroundColor: palette.mutedSurface,
       borderRadius: radius.card,
       paddingHorizontal: spacing(1),
-      paddingVertical: spacing(0.9),
+      paddingVertical: spacing(1.1),
+      backgroundColor: 'transparent',
     }}
   >
     <Text style={{ color: palette.mutedText, marginBottom: spacing(0.5) }}>
@@ -894,10 +1313,12 @@ const Stepper = ({
       <TouchableOpacity
         onPress={onDecrement}
         style={{
-          backgroundColor: addAlpha(palette.background, 0.35),
-          width: 48,
-          height: 48,
+          width: 54,
+          height: 54,
           borderRadius: radius.card,
+          borderWidth: 1,
+          borderColor: palette.border,
+          backgroundColor: 'transparent',
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -908,10 +1329,12 @@ const Stepper = ({
       <TouchableOpacity
         onPress={onIncrement}
         style={{
-          backgroundColor: addAlpha(palette.background, 0.35),
-          width: 48,
-          height: 48,
+          width: 54,
+          height: 54,
           borderRadius: radius.card,
+          borderWidth: 1,
+          borderColor: palette.border,
+          backgroundColor: 'transparent',
           alignItems: 'center',
           justifyContent: 'center',
         }}
@@ -941,14 +1364,16 @@ const InputPill = ({
       activeOpacity={0.85}
       style={{
         flex: 1,
-        height: 48,
+        height: 54,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: radius.pill,
+        borderWidth: 1,
+        borderColor: palette.border,
         paddingVertical: 0,
         paddingHorizontal: spacing(1.5),
-        backgroundColor: addAlpha(palette.background, 0.45),
+        backgroundColor: 'transparent',
       }}
     >
       <TextInput
@@ -956,22 +1381,18 @@ const InputPill = ({
         value={value}
         onChangeText={next => onChange(asNumericInput(next))}
         keyboardType="numeric"
-        returnKeyType="done"
-        blurOnSubmit
-        onSubmitEditing={() => Keyboard.dismiss()}
         placeholder="0"
         placeholderTextColor={palette.mutedText}
         selectTextOnFocus
-        inputAccessoryViewID={INPUT_ACCESSORY_ID}
         style={{
           color: palette.text,
-          fontSize: 18,
+          fontSize: 20,
           fontWeight: '600',
           textAlign: 'center',
           lineHeight: 22,
           paddingVertical: 0,
-          height: 48,
-          minWidth: 48,
+          height: 54,
+          minWidth: 54,
         }}
       />
       {unit ? (
@@ -1049,6 +1470,8 @@ const SetRow = ({
   highlightColor,
   compact = false,
   active = false,
+  previousActive = false,
+  isLast = false,
   onPress,
   pr = false,
   onPrPress,
@@ -1057,11 +1480,14 @@ const SetRow = ({
   highlightColor?: ColorHex;
   compact?: boolean;
   active?: boolean;
+  previousActive?: boolean;
+  isLast?: boolean;
   onPress?: () => void;
   pr?: boolean;
   onPrPress?: () => void;
 }) => {
   const description = describeLoggedSet(event);
+  const activeDividerColor = addAlpha(highlightColor ?? palette.primary, 0.3);
 
   return (
     <TouchableOpacity
@@ -1071,18 +1497,35 @@ const SetRow = ({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        paddingVertical: spacing(0.75),
-        borderBottomWidth: compact ? 0 : 1,
-        borderColor: palette.border,
+        paddingTop: spacing(1.10),
+        paddingBottom: spacing(1.10),
+        paddingHorizontal: 0,
+        borderTopWidth: compact ? 0 : 1,
+        borderBottomWidth: !compact && (isLast || active) ? 1 : 0,
+        borderTopColor: compact
+          ? 'transparent'
+          : active
+            ? activeDividerColor
+            : previousActive
+              ? 'transparent'
+              : palette.border,
+        borderBottomColor: compact
+          ? 'transparent'
+          : active
+            ? activeDividerColor
+            : palette.border,
         backgroundColor: active
-          ? addAlpha(highlightColor ?? palette.primary, 0.15)
+          ? addAlpha(highlightColor ?? palette.primary, 0.14)
           : 'transparent',
-        paddingHorizontal: onPress ? spacing(0.5) : 0,
-        borderRadius: active ? radius.card : 0,
       }}
     >
       <View
-        style={{ flexDirection: 'row', alignItems: 'center', gap: spacing(1) }}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: spacing(1),
+          paddingHorizontal: spacing(0.9),
+        }}
       >
         <View
           style={{
@@ -1099,6 +1542,7 @@ const SetRow = ({
           flexDirection: 'row',
           alignItems: 'center',
           gap: spacing(0.5),
+          paddingHorizontal: spacing(0.9),
         }}
       >
         {pr ? (

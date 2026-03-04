@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,27 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  NativeSyntheticEvent,
 } from 'react-native';
+import PagerView from 'react-native-pager-view';
+import Reanimated, {
+  SharedValue,
+  interpolateColor,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import {
   createNativeStackNavigator,
   NativeStackNavigationProp,
 } from '@react-navigation/native-stack';
-import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
+import {
+  ExerciseCatalogEntry,
+  ManageCatalogEntry,
+  fetchManageCatalogEntries,
+  setExerciseHidden,
+} from '../exercise/catalogStorage';
 import {
   ExerciseName,
   ExerciseSlug,
@@ -39,7 +53,14 @@ import {
   asErrorMessage,
   asTag,
 } from '../domain/types';
-import { getContrastTextColor, palette, spacing, radius } from '../ui/theme';
+import {
+  analyticsUi,
+  cardShadowStyle,
+  getContrastTextColor,
+  palette,
+  spacing,
+  radius,
+} from '../ui/theme';
 import { addAlpha } from '../ui/color';
 import { muscleColorMap } from '../ui/muscleColors';
 import {
@@ -75,6 +96,18 @@ const ExerciseBrowserListScreen = () => {
   const favoriteSlugs = state.catalog.favorites;
   const { selectedGroup, query, searchExpanded, activeTab } =
     state.browser;
+  const listPagerRef = useRef<PagerView | null>(null);
+  const listPagerIndexRef = useRef(activeTab === 'all' ? 0 : 1);
+  const listRequestedIndexRef = useRef(activeTab === 'all' ? 0 : 1);
+  const listTabPressAnimatingRef = useRef(false);
+  const listTabProgress = useSharedValue(activeTab === 'all' ? 0 : 1);
+  const [searchViewportHeight, setSearchViewportHeight] = useState(0);
+  const [searchContentHeight, setSearchContentHeight] = useState(0);
+  const searchCardHeight = useSharedValue(0);
+  const [allViewportHeight, setAllViewportHeight] = useState(0);
+  const [allContentHeight, setAllContentHeight] = useState(0);
+  const [favoritesViewportHeight, setFavoritesViewportHeight] = useState(0);
+  const [favoritesContentHeight, setFavoritesContentHeight] = useState(0);
 
   useFocusEffect(
     useCallback(() => {
@@ -82,22 +115,16 @@ const ExerciseBrowserListScreen = () => {
     }, [dispatch]),
   );
 
-  const muscleGroups = useMemo(() => {
-    const groups = Array.from(
-      new Set(catalog.map(entry => entry.primary_muscle_group)),
-    ) as MuscleGroup[];
-    return groups.sort((a, b) => a.localeCompare(b));
-  }, [catalog]);
-
-  const filteredGroups = useMemo(() => {
-    const q = normalizeSearchText(query);
-    if (!q) return muscleGroups;
-    return muscleGroups
-      .map(group => ({ group, score: exerciseSearchScore(q, group) }))
-      .filter(entry => entry.score !== null)
-      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-      .map(entry => entry.group);
-  }, [muscleGroups, query]);
+  useEffect(() => {
+    const targetIndex = activeTab === 'all' ? 0 : 1;
+    listRequestedIndexRef.current = targetIndex;
+    listTabProgress.value = targetIndex;
+    const pager = listPagerRef.current;
+    if (!pager) return;
+    if (listPagerIndexRef.current === targetIndex) return;
+    pager.setPageWithoutAnimation(targetIndex);
+    listPagerIndexRef.current = targetIndex;
+  }, [activeTab, listTabProgress]);
 
   const searchExercises = useMemo(() => {
     const q = normalizeSearchText(query);
@@ -136,22 +163,207 @@ const ExerciseBrowserListScreen = () => {
     [catalog],
   );
 
-  const visibleExercises = useMemo(() => {
-    const base = activeTab === 'favorites' ? favoriteExercises : allExercises;
-    if (!selectedGroup) return base;
-    return base.filter(entry => entry.primary_muscle_group === selectedGroup);
-  }, [activeTab, allExercises, favoriteExercises, selectedGroup]);
+  const allVisibleExercises = useMemo(() => {
+    if (!selectedGroup) return allExercises;
+    return allExercises.filter(
+      entry => entry.primary_muscle_group === selectedGroup,
+    );
+  }, [allExercises, selectedGroup]);
+
+  const favoriteVisibleExercises = useMemo(() => {
+    if (!selectedGroup) return favoriteExercises;
+    return favoriteExercises.filter(
+      entry => entry.primary_muscle_group === selectedGroup,
+    );
+  }, [favoriteExercises, selectedGroup]);
+
+  const tabExercises = useMemo(
+    () => (activeTab === 'favorites' ? favoriteExercises : allExercises),
+    [activeTab, allExercises, favoriteExercises],
+  );
+
+  const allMuscleGroups = useMemo(() => {
+    const groups = Array.from(
+      new Set(allExercises.map(entry => entry.primary_muscle_group)),
+    ) as MuscleGroup[];
+    return groups.sort((a, b) => a.localeCompare(b));
+  }, [allExercises]);
+
+  const favoriteMuscleGroups = useMemo(() => {
+    const groups = Array.from(
+      new Set(favoriteExercises.map(entry => entry.primary_muscle_group)),
+    ) as MuscleGroup[];
+    return groups.sort((a, b) => a.localeCompare(b));
+  }, [favoriteExercises]);
+
+  const muscleGroups = useMemo(
+    () => (activeTab === 'favorites' ? favoriteMuscleGroups : allMuscleGroups),
+    [activeTab, allMuscleGroups, favoriteMuscleGroups],
+  );
+
+  const filterGroupsByQuery = useCallback(
+    (groups: MuscleGroup[]) => {
+      const q = normalizeSearchText(query);
+      if (!q) return groups;
+      return groups
+        .map(group => ({ group, score: exerciseSearchScore(q, group) }))
+        .filter(entry => entry.score !== null)
+        .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+        .map(entry => entry.group);
+    },
+    [query],
+  );
+
+  const allFilteredGroups = useMemo(() => {
+    return filterGroupsByQuery(allMuscleGroups);
+  }, [allMuscleGroups, filterGroupsByQuery]);
+
+  const favoriteFilteredGroups = useMemo(() => {
+    return filterGroupsByQuery(favoriteMuscleGroups);
+  }, [favoriteMuscleGroups, filterGroupsByQuery]);
+
+  const filteredSearchGroups = useMemo(() => {
+    const q = normalizeSearchText(query);
+    if (!q) return muscleGroups;
+    return muscleGroups
+      .map(group => ({ group, score: exerciseSearchScore(q, group) }))
+      .filter(entry => entry.score !== null)
+      .sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
+      .map(entry => entry.group);
+  }, [muscleGroups, query]);
 
   const headerSubtitle = useMemo((): LabelText => {
     const tabLabel = activeTab === 'favorites' ? 'Favorites' : 'All exercises';
     if (!selectedGroup) return asLabelText(tabLabel);
     return asLabelText(`${tabLabel} • ${formatLabel(selectedGroup)}`);
   }, [activeTab, selectedGroup]);
+  const searchListHeight = useMemo(() => {
+    if (searchViewportHeight <= 0 || searchContentHeight <= 0) return 0;
+    return Math.min(searchContentHeight, searchViewportHeight);
+  }, [searchContentHeight, searchViewportHeight]);
+  const searchListScrollEnabled =
+    searchViewportHeight > 0 && searchContentHeight > searchViewportHeight;
+  const allListHeight = useMemo(() => {
+    const headerHeight = allFilteredGroups.length > 0 ? 96 : 46;
+    const rowHeight = 72;
+    const emptyHeight = 44;
+    const separators = Math.max(0, allVisibleExercises.length - 1);
+    const estimatedContentHeight =
+      headerHeight +
+      (allVisibleExercises.length > 0
+        ? allVisibleExercises.length * rowHeight + separators
+        : emptyHeight) +
+      spacing(2.5);
+    if (allViewportHeight <= 0) return estimatedContentHeight;
+    const measuredHeight =
+      allContentHeight > 0 ? allContentHeight : estimatedContentHeight;
+    return Math.min(measuredHeight, allViewportHeight);
+  }, [
+    allContentHeight,
+    allViewportHeight,
+    allVisibleExercises.length,
+    allFilteredGroups.length,
+  ]);
+  const favoritesListHeight = useMemo(() => {
+    const headerHeight = favoriteFilteredGroups.length > 0 ? 96 : 46;
+    const rowHeight = 72;
+    const emptyHeight = 44;
+    const separators = Math.max(0, favoriteVisibleExercises.length - 1);
+    const estimatedContentHeight =
+      headerHeight +
+      (favoriteVisibleExercises.length > 0
+        ? favoriteVisibleExercises.length * rowHeight + separators
+        : emptyHeight) +
+      spacing(2.5);
+    if (favoritesViewportHeight <= 0) return estimatedContentHeight;
+    const measuredHeight =
+      favoritesContentHeight > 0
+        ? favoritesContentHeight
+        : estimatedContentHeight;
+    return Math.min(measuredHeight, favoritesViewportHeight);
+  }, [
+    favoriteVisibleExercises.length,
+    favoritesContentHeight,
+    favoritesViewportHeight,
+    favoriteFilteredGroups.length,
+  ]);
+  const allListScrollEnabled =
+    allViewportHeight > 0 && allContentHeight > allViewportHeight;
+  const favoritesListScrollEnabled =
+    favoritesViewportHeight > 0 && favoritesContentHeight > favoritesViewportHeight;
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    const groupStillAvailable = tabExercises.some(
+      entry => entry.primary_muscle_group === selectedGroup,
+    );
+    if (!groupStillAvailable) {
+      dispatch({ type: 'browser/group', group: null });
+    }
+  }, [dispatch, selectedGroup, tabExercises]);
+
+  useEffect(() => {
+    if (!searchExpanded || query.trim().length === 0 || searchListHeight <= 0) {
+      searchCardHeight.value = 0;
+      return;
+    }
+    searchCardHeight.value = withTiming(searchListHeight, { duration: 200 });
+  }, [query, searchCardHeight, searchExpanded, searchListHeight]);
+
+  const searchCardStyle = useAnimatedStyle(() => {
+    if (searchCardHeight.value <= 0) {
+      return {};
+    }
+    return { height: searchCardHeight.value };
+  });
 
   const collapseSearch = () => {
     dispatch({ type: 'browser/search', expanded: false });
     dispatch({ type: 'browser/query', query: asSearchQuery('') });
   };
+
+  const handleListTabSelect = useCallback(
+    (tab: 'all' | 'favorites') => {
+      if (tab === activeTab) return;
+      const nextIndex = tab === 'all' ? 0 : 1;
+      listTabPressAnimatingRef.current = true;
+      listRequestedIndexRef.current = nextIndex;
+      listTabProgress.value = withTiming(nextIndex, {
+        duration: analyticsUi.tabTapAnimationMs,
+      });
+      listPagerRef.current?.setPage(nextIndex);
+      listPagerIndexRef.current = nextIndex;
+    },
+    [activeTab, listTabProgress],
+  );
+
+  const handleListPageSelected = useCallback(
+    (event: NativeSyntheticEvent<{ position: number }>) => {
+      const position = event.nativeEvent.position;
+      if (listTabPressAnimatingRef.current && position !== listRequestedIndexRef.current) {
+        listPagerRef.current?.setPage(listRequestedIndexRef.current);
+        return;
+      }
+      const nextTab = position === 0 ? 'all' : 'favorites';
+      listTabPressAnimatingRef.current = false;
+      listRequestedIndexRef.current = position;
+      listTabProgress.value = position;
+      listPagerIndexRef.current = position;
+      if (nextTab !== activeTab) {
+        dispatch({ type: 'browser/tab', tab: nextTab });
+      }
+    },
+    [activeTab, dispatch, listTabProgress],
+  );
+
+  const handleListPageScroll = useCallback(
+    (event: NativeSyntheticEvent<{ position: number; offset: number }>) => {
+      if (listTabPressAnimatingRef.current) return;
+      const { position, offset } = event.nativeEvent;
+      listTabProgress.value = position + offset;
+    },
+    [listTabProgress],
+  );
 
   const renderGroupTag = (group: MuscleGroup) => {
     const groupColor = muscleColorMap[group] ?? palette.primary;
@@ -306,6 +518,7 @@ const ExerciseBrowserListScreen = () => {
                 flexDirection: 'row',
                 alignItems: 'center',
                 gap: spacing(1),
+                paddingHorizontal: spacing(2),
               }}
             >
               <TextInput
@@ -334,143 +547,231 @@ const ExerciseBrowserListScreen = () => {
             </View>
             {query.trim().length === 0 ? (
               <View
-                style={{ paddingTop: spacing(1.5), paddingBottom: spacing(8) }}
+                style={{
+                  paddingHorizontal: spacing(2),
+                  paddingTop: spacing(1.5),
+                  paddingBottom: spacing(8),
+                }}
               >
                 <Text style={{ color: palette.mutedText, fontSize: 12 }}>
                   Search muscle groups or exercises.
                 </Text>
               </View>
             ) : (
-              <FlatList<ExerciseCatalogEntry>
-                data={searchExercises}
-                keyExtractor={item => item.slug}
-                renderItem={renderExerciseRow}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                automaticallyAdjustKeyboardInsets
-                style={listSurface()}
-                contentContainerStyle={{
-                  paddingTop: spacing(1.25),
-                  paddingBottom: spacing(10),
+              <View
+                style={{ flex: 1 }}
+                onLayout={event => {
+                  const next = event.nativeEvent.layout.height;
+                  if (next > 0 && Math.abs(next - searchViewportHeight) > 1) {
+                    setSearchViewportHeight(next);
+                  }
                 }}
-                ListHeaderComponent={
-                  <View
-                    style={{ gap: spacing(1.25), marginBottom: spacing(0.25) }}
-                  >
-                    <View style={{ gap: spacing(1) }}>
-                      {filteredGroups.length === 0 ? (
-                        <Text
-                          style={{ color: palette.mutedText, fontSize: 12 }}
-                        >
-                          No muscle groups found.
-                        </Text>
-                      ) : (
-                        <View style={groupTagWrap}>
-                          {filteredGroups.map(group => renderGroupTag(group))}
+              >
+                <Reanimated.View
+                  style={[
+                    listSurface(),
+                    { marginTop: spacing(1.25) },
+                    searchCardStyle,
+                  ]}
+                >
+                  <FlatList<ExerciseCatalogEntry>
+                    data={searchExercises}
+                    keyExtractor={item => item.slug}
+                    renderItem={renderExerciseRow}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    automaticallyAdjustKeyboardInsets
+                    style={{ flex: 1 }}
+                    scrollEnabled={searchListScrollEnabled}
+                    contentContainerStyle={[
+                      {
+                        paddingHorizontal: spacing(1.25),
+                        paddingTop: spacing(0.5),
+                        paddingBottom: spacing(2),
+                      },
+                      !searchListScrollEnabled ? { flexGrow: 0 } : null,
+                    ]}
+                    onContentSizeChange={(_width, height) => {
+                      if (height > 0 && Math.abs(height - searchContentHeight) > 1) {
+                        setSearchContentHeight(height);
+                      }
+                    }}
+                    ListHeaderComponent={
+                      <View style={listHeaderWrap()}>
+                        <View style={groupSectionWrap()}>
+                          {filteredSearchGroups.length === 0 ? (
+                            <Text
+                              style={{ color: palette.mutedText, fontSize: 12 }}
+                            >
+                              No muscle groups found.
+                            </Text>
+                          ) : (
+                            <View style={groupTagWrap}>
+                              {filteredSearchGroups.map(group => renderGroupTag(group))}
+                            </View>
+                          )}
                         </View>
-                      )}
-                    </View>
-                    <SectionHeading label={asLabelText('Exercises')} />
-                  </View>
-                }
-                ListEmptyComponent={
-                  <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                    No exercises found.
-                  </Text>
-                }
-                ItemSeparatorComponent={() => <View style={listDivider()} />}
-                initialNumToRender={18}
-                maxToRenderPerBatch={20}
-                windowSize={8}
-                removeClippedSubviews
-              />
+                        <View style={{ marginTop: spacing(0.5) }}>
+                          <SectionHeading label={asLabelText('Exercises')} />
+                        </View>
+                      </View>
+                    }
+                    ListEmptyComponent={
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        No exercises found.
+                      </Text>
+                    }
+                    ItemSeparatorComponent={() => <View style={listDivider()} />}
+                    initialNumToRender={18}
+                    maxToRenderPerBatch={20}
+                    windowSize={8}
+                    removeClippedSubviews
+                  />
+                </Reanimated.View>
+              </View>
             )}
           </View>
         )}
         {!searchExpanded && (
-          <View style={tabRow()}>
-            {(['all', 'favorites'] as const).map(tab => (
-              <TouchableOpacity
-                key={tab}
-                onPress={() => dispatch({ type: 'browser/tab', tab })}
-                style={[
-                  tabButton(),
-                  activeTab === tab && tabButtonActive(),
-                  activeTab === tab
-                    ? {
-                        backgroundColor: palette.primary,
-                        borderColor: palette.primary,
-                      }
-                    : null,
-                ]}
+          <>
+            <PagerTabsRail
+              tabs={[
+                { key: 'all', label: 'All' },
+                { key: 'favorites', label: 'Favorites' },
+              ]}
+              activeKey={activeTab}
+              progress={listTabProgress}
+              onSelect={key => handleListTabSelect(key as 'all' | 'favorites')}
+            />
+            <PagerView
+              ref={listPagerRef}
+              style={{ flex: 1 }}
+              initialPage={activeTab === 'all' ? 0 : 1}
+              overdrag={false}
+              onPageSelected={handleListPageSelected}
+              onPageScroll={handleListPageScroll}
+            >
+              <View
+                key="all"
+                style={{ flex: 1 }}
+                onLayout={event => {
+                  const next = event.nativeEvent.layout.height;
+                  if (next > 0 && Math.abs(next - allViewportHeight) > 1) {
+                    setAllViewportHeight(next);
+                  }
+                }}
               >
-                <Text
-                  style={{
-                    color:
-                      activeTab === tab
-                        ? getContrastTextColor(palette.primary)
-                        : palette.text,
-                    fontWeight: '600' as const,
-                  }}
-                >
-                  {tab === 'all' ? 'All' : 'Favorites'}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        )}
-        {!searchExpanded ? (
-          <FlatList<ExerciseCatalogEntry>
-            data={visibleExercises}
-            keyExtractor={item => item.slug}
-            renderItem={renderExerciseRow}
-            style={listSurface()}
-            contentContainerStyle={{
-              paddingHorizontal: spacing(1.25),
-              paddingTop: spacing(0.5),
-              paddingBottom: spacing(8),
-            }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            automaticallyAdjustKeyboardInsets
-            ListHeaderComponent={
-              <View style={listHeaderWrap()}>
-                <View style={groupSectionWrap()}>
-                  {filteredGroups.length === 0 ? (
-                    <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                      No muscle groups available.
-                    </Text>
-                  ) : (
-                    <View style={groupTagWrap}>
-                      {filteredGroups.map(group => renderGroupTag(group))}
-                    </View>
-                  )}
-                </View>
-                <View style={{ marginTop: spacing(0.5) }}>
-                  <SectionHeading
-                    label={asLabelText(
-                      selectedGroup
-                        ? `${formatLabel(selectedGroup)} exercises`
-                        : 'Exercises',
-                    )}
+                <View style={[listSurface(), allListHeight ? { height: allListHeight } : null]}>
+                  <FlatList<ExerciseCatalogEntry>
+                    data={allVisibleExercises}
+                    keyExtractor={item => item.slug}
+                    renderItem={renderExerciseRow}
+                    style={{ flex: 1 }}
+                    scrollEnabled={allListScrollEnabled}
+                    contentContainerStyle={[
+                      {
+                        paddingHorizontal: spacing(1.25),
+                        paddingTop: spacing(0.5),
+                        paddingBottom: spacing(2),
+                      },
+                      !allListScrollEnabled ? { flexGrow: 0 } : null,
+                    ]}
+                    onContentSizeChange={(_width, height) => {
+                      if (height > 0 && Math.abs(height - allContentHeight) > 1) {
+                        setAllContentHeight(height);
+                      }
+                    }}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    automaticallyAdjustKeyboardInsets
+                    ListHeaderComponent={
+                      <ExerciseListHeader
+                        filteredGroups={allFilteredGroups}
+                        selectedGroup={selectedGroup}
+                        renderGroupTag={renderGroupTag}
+                      />
+                    }
+                    ListEmptyComponent={
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        {selectedGroup
+                          ? 'No exercises found for this group.'
+                          : 'No exercises available.'}
+                      </Text>
+                    }
+                    ItemSeparatorComponent={() => <View style={listDivider()} />}
+                    initialNumToRender={20}
+                    maxToRenderPerBatch={20}
+                    windowSize={7}
+                    removeClippedSubviews
                   />
                 </View>
               </View>
-            }
-            ListEmptyComponent={
-              <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-                {selectedGroup
-                  ? 'No exercises found for this group.'
-                  : 'No exercises available.'}
-              </Text>
-            }
-            ItemSeparatorComponent={() => <View style={listDivider()} />}
-            initialNumToRender={20}
-            maxToRenderPerBatch={20}
-            windowSize={7}
-            removeClippedSubviews
-          />
-        ) : null}
+              <View
+                key="favorites"
+                style={{ flex: 1 }}
+                onLayout={event => {
+                  const next = event.nativeEvent.layout.height;
+                  if (
+                    next > 0 &&
+                    Math.abs(next - favoritesViewportHeight) > 1
+                  ) {
+                    setFavoritesViewportHeight(next);
+                  }
+                }}
+              >
+                <View
+                  style={[
+                    listSurface(),
+                    favoritesListHeight ? { height: favoritesListHeight } : null,
+                  ]}
+                >
+                  <FlatList<ExerciseCatalogEntry>
+                    data={favoriteVisibleExercises}
+                    keyExtractor={item => item.slug}
+                    renderItem={renderExerciseRow}
+                    style={{ flex: 1 }}
+                    scrollEnabled={favoritesListScrollEnabled}
+                    contentContainerStyle={[
+                      {
+                        paddingHorizontal: spacing(1.25),
+                        paddingTop: spacing(0.5),
+                        paddingBottom: spacing(2),
+                      },
+                      !favoritesListScrollEnabled ? { flexGrow: 0 } : null,
+                    ]}
+                    onContentSizeChange={(_width, height) => {
+                      if (height > 0 && Math.abs(height - favoritesContentHeight) > 1) {
+                        setFavoritesContentHeight(height);
+                      }
+                    }}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    automaticallyAdjustKeyboardInsets
+                    ListHeaderComponent={
+                      <ExerciseListHeader
+                        filteredGroups={favoriteFilteredGroups}
+                        selectedGroup={selectedGroup}
+                        renderGroupTag={renderGroupTag}
+                      />
+                    }
+                    ListEmptyComponent={
+                      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+                        {selectedGroup
+                          ? 'No favorites found for this group.'
+                          : 'Mark favorites to see them here.'}
+                      </Text>
+                    }
+                    ItemSeparatorComponent={() => <View style={listDivider()} />}
+                    initialNumToRender={20}
+                    maxToRenderPerBatch={20}
+                    windowSize={7}
+                    removeClippedSubviews
+                  />
+                </View>
+              </View>
+            </PagerView>
+          </>
+        )}
         {!searchExpanded && (
           <View style={{ padding: spacing(2) }}>
             <TouchableOpacity
@@ -519,6 +820,7 @@ const ExerciseContextSheet = ({
   const favoriteSlugs = state.catalog.favorites;
   const contextEntry = state.browser.contextEntry;
   if (!contextEntry) return null;
+  const isArchived = Boolean(contextEntry.archived);
 
   const handleFavoriteToggle = async (slug: ExerciseSlug) => {
     const isFavorite = favoriteSlugs.includes(slug);
@@ -538,16 +840,16 @@ const ExerciseContextSheet = ({
                 justifyContent: 'space-between',
               }}
             >
-              <Text
-                style={{
-                  color: palette.text,
-                  fontWeight: '700' as const,
-                  fontSize: 16,
-                }}
-              >
-                {contextEntry.entry.display_name}
-              </Text>
-              {!contextEntry.custom ? (
+                <Text
+                  style={{
+                    color: palette.text,
+                    fontWeight: '700' as const,
+                    fontSize: 16,
+                  }}
+                >
+                  {contextEntry.entry.display_name}
+                </Text>
+              {!isArchived ? (
                 <TouchableOpacity
                   onPress={() => handleFavoriteToggle(contextEntry.entry.slug)}
                 >
@@ -567,109 +869,89 @@ const ExerciseContextSheet = ({
               ) : null}
             </View>
 
-            {!contextEntry.custom ? (
-              <>
-                <TouchableOpacity
-                  onPress={() => {
-                    actions.openLogForExercise(
-                      contextEntry.entry.display_name,
-                      state.selectedDate,
-                      'Track',
-                    );
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={sheetActionLabel()}>Select exercise</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    dispatch({
-                      type: 'browser/form',
-                      entry: contextEntry.entry,
-                    });
-                    dispatch({
-                      type: 'browser/formDraft',
-                      draft: draftFromEntry(contextEntry.entry),
-                    });
-                    onFormNavigate();
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={sheetActionLabel()}>Edit exercise</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => {
-                    handleFavoriteToggle(contextEntry.entry.slug);
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={sheetActionLabel()}>
-                    {favoriteSlugs.includes(contextEntry.entry.slug)
-                      ? 'Remove favorite'
-                      : 'Add to favorites'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={async () => {
-                    await actions.deleteExercise(contextEntry.entry);
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={[sheetActionLabel(), { color: palette.danger }]}>
-                    Delete exercise
-                  </Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <>
-                <TouchableOpacity
-                  onPress={() => {
-                    dispatch({
-                      type: 'browser/form',
-                      entry: contextEntry.entry,
-                    });
-                    dispatch({
-                      type: 'browser/formDraft',
-                      draft: draftFromEntry(contextEntry.entry),
-                    });
-                    onFormNavigate();
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={sheetActionLabel()}>Edit exercise</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={async () => {
-                    await actions.archiveCustomExercise(
-                      contextEntry.entry.slug,
-                      !contextEntry.archived,
-                    );
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={sheetActionLabel()}>
-                    {contextEntry.archived ? 'Restore' : 'Archive'}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={async () => {
-                    await actions.deleteExercise(contextEntry.entry);
-                    dispatch({ type: 'browser/context', context: null });
-                  }}
-                  style={sheetAction()}
-                >
-                  <Text style={[sheetActionLabel(), { color: palette.danger }]}>
-                    Delete exercise
-                  </Text>
-                </TouchableOpacity>
-              </>
-            )}
+            {!isArchived ? (
+              <TouchableOpacity
+                onPress={() => {
+                  actions.openLogForExercise(
+                    contextEntry.entry.display_name,
+                    state.selectedDate,
+                    'Track',
+                  );
+                  dispatch({ type: 'browser/context', context: null });
+                }}
+                style={sheetAction()}
+              >
+                <Text style={sheetActionLabel()}>Select exercise</Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              onPress={() => {
+                dispatch({
+                  type: 'browser/form',
+                  entry: contextEntry.entry,
+                });
+                dispatch({
+                  type: 'browser/formDraft',
+                  draft: draftFromEntry(contextEntry.entry),
+                });
+                onFormNavigate();
+                dispatch({ type: 'browser/context', context: null });
+              }}
+              style={sheetAction()}
+            >
+              <Text style={sheetActionLabel()}>Edit exercise</Text>
+            </TouchableOpacity>
+            {!isArchived ? (
+              <TouchableOpacity
+                onPress={() => {
+                  handleFavoriteToggle(contextEntry.entry.slug);
+                  dispatch({ type: 'browser/context', context: null });
+                }}
+                style={sheetAction()}
+              >
+                <Text style={sheetActionLabel()}>
+                  {favoriteSlugs.includes(contextEntry.entry.slug)
+                    ? 'Remove favorite'
+                    : 'Add to favorites'}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              onPress={async () => {
+                if (contextEntry.custom) {
+                  await actions.archiveCustomExercise(
+                    contextEntry.entry.slug,
+                    !contextEntry.archived,
+                  );
+                } else {
+                  if (!contextEntry.archived && favoriteSlugs.includes(contextEntry.entry.slug)) {
+                    await actions.toggleFavorite(contextEntry.entry.slug, false);
+                  }
+                  await setExerciseHidden(
+                    contextEntry.entry.slug,
+                    !contextEntry.archived,
+                  );
+                  await actions.refreshAll();
+                }
+                dispatch({ type: 'browser/context', context: null });
+              }}
+              style={sheetAction()}
+            >
+              <Text style={sheetActionLabel()}>
+                {contextEntry.archived ? 'Restore exercise' : 'Archive exercise'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={async () => {
+                await actions.deleteExercise(contextEntry.entry);
+                dispatch({ type: 'browser/context', context: null });
+              }}
+              style={sheetAction()}
+            >
+              <Text style={[sheetActionLabel(), { color: palette.danger }]}>
+                Delete exercise
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() =>
@@ -697,26 +979,36 @@ const ExerciseBrowserManageScreen = () => {
   const dispatch = useAppDispatch();
   const navigation =
     useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
-  const allVisibleExercises = useMemo(
-    () =>
-      state.catalog.entries
+  const [manageEntries, setManageEntries] = useState<{
+    active: ManageCatalogEntry[];
+    archived: ManageCatalogEntry[];
+  }>({
+    active: [],
+    archived: [],
+  });
+
+  const refreshManageEntries = useCallback(async () => {
+    const snapshot = await fetchManageCatalogEntries();
+    setManageEntries({
+      active: snapshot.active
         .slice()
         .sort((a, b) => a.display_name.localeCompare(b.display_name)),
-    [state.catalog.entries],
-  );
-  const archivedCustom = useMemo(
-    () =>
-      state.catalog.custom
-        .filter(entry => entry.archived)
+      archived: snapshot.archived
+        .slice()
         .sort((a, b) => a.display_name.localeCompare(b.display_name)),
-    [state.catalog.custom],
-  );
+    });
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
       dispatch({ type: 'browser/mode', mode: 'manage' });
-    }, [dispatch]),
+      void refreshManageEntries();
+    }, [dispatch, refreshManageEntries]),
   );
+
+  useEffect(() => {
+    void refreshManageEntries();
+  }, [refreshManageEntries, state.catalogRevision]);
 
   const handleAdd = () => {
     dispatch({ type: 'browser/form', entry: null });
@@ -743,19 +1035,20 @@ const ExerciseBrowserManageScreen = () => {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <ManageCustomExercises
-          entries={allVisibleExercises}
-          archivedCustom={archivedCustom}
+          entries={manageEntries.active}
+          archivedEntries={manageEntries.archived}
           searchQuery={state.browser.query}
           onSearch={value =>
             dispatch({ type: 'browser/query', query: asSearchQuery(value) })
           }
-          onSelectEntry={(entry, archived) => {
+          onSelectEntry={(entry, archived, archiveSource) => {
             dispatch({
               type: 'browser/context',
               context: {
                 entry,
                 archived,
                 custom: entry.source === asExerciseSource('custom'),
+                archiveSource,
               },
             });
           }}
@@ -868,6 +1161,127 @@ const ExerciseBrowserStack = () => (
   </BrowserStack.Navigator>
 );
 
+const ExerciseListHeader = ({
+  filteredGroups,
+  selectedGroup,
+  renderGroupTag,
+}: {
+  filteredGroups: MuscleGroup[];
+  selectedGroup: MuscleGroup | null;
+  renderGroupTag: (group: MuscleGroup) => React.ReactNode;
+}) => (
+  <View style={listHeaderWrap()}>
+    <View style={groupSectionWrap()}>
+      {filteredGroups.length > 0 ? (
+        <View style={groupTagWrap}>
+          {filteredGroups.map(group => renderGroupTag(group))}
+        </View>
+      ) : null}
+    </View>
+    <View style={{ marginTop: spacing(0.5) }}>
+      <SectionHeading
+        label={asLabelText(
+          selectedGroup ? `${formatLabel(selectedGroup)} exercises` : 'Exercises',
+        )}
+      />
+    </View>
+  </View>
+);
+
+const PagerTabText = ({
+  label,
+  index,
+  progress,
+  inactiveTextColor,
+  activeTextColor,
+  textStyle,
+}: {
+  label: string;
+  index: number;
+  progress: SharedValue<number>;
+  inactiveTextColor: string;
+  activeTextColor: string;
+  textStyle: ReturnType<typeof tabLabel>;
+}) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    const distance = Math.abs(progress.value - index);
+    const mix = Math.max(0, Math.min(1, 1 - distance / 0.6));
+    return {
+      color: interpolateColor(
+        mix,
+        [0, 1],
+        [inactiveTextColor, activeTextColor],
+      ) as string,
+    };
+  });
+  return <Reanimated.Text style={[textStyle, animatedStyle]}>{label}</Reanimated.Text>;
+};
+
+const PagerTabsRail = ({
+  tabs,
+  activeKey,
+  progress,
+  onSelect,
+}: {
+  tabs: ReadonlyArray<{ key: string; label: string }>;
+  activeKey: string;
+  progress: SharedValue<number>;
+  onSelect: (key: string) => void;
+}) => {
+  const [railWidth, setRailWidth] = useState(0);
+  const gap = analyticsUi.selectorRailGap;
+  const railPadding = analyticsUi.selectorRailPadding;
+  const inactiveTextColor = palette.mutedText;
+  const activeTextColor = getContrastTextColor(palette.primary);
+  const segmentWidth = useMemo(() => {
+    if (railWidth <= 0) return 0;
+    const contentWidth = Math.max(0, railWidth - railPadding * 2);
+    return (contentWidth - gap * (tabs.length - 1)) / tabs.length;
+  }, [gap, railPadding, railWidth, tabs.length]);
+
+  const indicatorStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: progress.value * (segmentWidth + gap) }],
+  }));
+
+  const onRailLayout = (event: { nativeEvent: { layout: { width: number } } }) => {
+    const next = event.nativeEvent.layout.width;
+    if (next > 0 && next !== railWidth) {
+      setRailWidth(next);
+    }
+  };
+
+  return (
+    <View style={tabRow()}>
+      <View onLayout={onRailLayout} style={tabRail()}>
+        {segmentWidth > 0 ? (
+          <Reanimated.View
+            pointerEvents="none"
+            style={[tabIndicator(segmentWidth), indicatorStyle]}
+          />
+        ) : null}
+        {tabs.map((tab, index) => (
+          <TouchableOpacity
+            key={tab.key}
+            onPress={() => onSelect(tab.key)}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: activeKey === tab.key }}
+            style={tabButton()}
+          >
+            <PagerTabText
+              label={tab.label}
+              index={index}
+              progress={progress}
+              inactiveTextColor={inactiveTextColor}
+              activeTextColor={activeTextColor}
+              textStyle={tabLabel()}
+            />
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+};
+
 const formatLabel = (
   label: ExerciseName | MuscleGroup | SearchQuery | Modality | LoggingMode,
 ) =>
@@ -948,11 +1362,8 @@ const iconButton = () => ({
 
 const searchContainer = () => ({
   flex: 1,
-  paddingHorizontal: spacing(2),
   paddingTop: spacing(1.5),
   paddingBottom: spacing(1),
-  borderBottomWidth: 1,
-  borderColor: palette.border,
   zIndex: 3,
 });
 
@@ -967,26 +1378,43 @@ const searchInput = () => ({
 });
 
 const tabRow = () => ({
-  flexDirection: 'row' as const,
-  gap: spacing(1),
-  paddingHorizontal: spacing(0),
-  paddingVertical: 0,
-  marginHorizontal: spacing(2),
+  paddingHorizontal: spacing(2),
   marginTop: spacing(0.75),
   marginBottom: spacing(1.25),
 });
 
+const tabRail = () => ({
+  borderRadius: radius.pill,
+  backgroundColor: palette.mutedSurface,
+  padding: analyticsUi.selectorRailPadding,
+  flexDirection: 'row' as const,
+  gap: analyticsUi.selectorRailGap,
+  overflow: 'hidden' as const,
+});
+
 const tabButton = () => ({
   flex: 1,
-  borderRadius: radius.card,
-  paddingVertical: spacing(0.75),
+  borderRadius: radius.pill,
+  minHeight: analyticsUi.controlHeight,
+  paddingVertical: analyticsUi.controlPaddingY,
   alignItems: 'center' as const,
+  justifyContent: 'center' as const,
   backgroundColor: 'transparent',
 });
 
-const tabButtonActive = () => ({
+const tabIndicator = (segmentWidth: number) => ({
+  position: 'absolute' as const,
+  left: analyticsUi.selectorRailPadding,
+  top: analyticsUi.selectorRailPadding,
+  bottom: analyticsUi.selectorRailPadding,
+  width: segmentWidth,
+  borderRadius: radius.pill,
   backgroundColor: palette.primary,
-  borderColor: palette.primary,
+});
+
+const tabLabel = () => ({
+  fontSize: 12,
+  fontWeight: '600' as const,
 });
 
 const rowStyle = () => ({
@@ -1013,6 +1441,7 @@ const listSurface = () => ({
   marginHorizontal: spacing(2),
   borderRadius: radius.card,
   backgroundColor: palette.surface,
+  ...cardShadowStyle,
   paddingHorizontal: spacing(0.75),
   paddingBottom: spacing(0.5),
 });
@@ -1024,11 +1453,13 @@ const manageSearchWrap = () => ({
 });
 
 const manageListSurface = () => ({
-  flex: 1,
+  marginTop: spacing(0.25),
   marginHorizontal: spacing(2),
   borderRadius: radius.card,
   backgroundColor: palette.surface,
+  ...cardShadowStyle,
   paddingHorizontal: spacing(0.75),
+  paddingBottom: spacing(0.5),
 });
 
 const listDivider = () => ({
@@ -1043,6 +1474,7 @@ const groupTagWrap = {
 };
 
 const groupSectionWrap = () => ({
+  paddingTop: spacing(0.75),
   paddingHorizontal: spacing(0.25),
 });
 
@@ -1371,129 +1803,187 @@ const ExerciseForm = ({
 
 const ManageCustomExercises = ({
   entries,
-  archivedCustom,
+  archivedEntries,
   searchQuery,
   onSearch,
   onSelectEntry,
 }: {
-  entries: ExerciseCatalogEntry[];
-  archivedCustom: ExerciseCatalogEntry[];
+  entries: ManageCatalogEntry[];
+  archivedEntries: ManageCatalogEntry[];
   searchQuery: SearchQuery;
   onSearch: (value: string) => void;
-  onSelectEntry: (entry: ExerciseCatalogEntry, archived: boolean) => void;
+  onSelectEntry: (
+    entry: ManageCatalogEntry,
+    archived: boolean,
+    archiveSource?: 'hidden_default' | 'archived_custom',
+  ) => void;
 }) => {
+  const pagerRef = useRef<PagerView | null>(null);
+  const tabRequestedIndexRef = useRef(0);
+  const tabPressAnimatingRef = useRef(false);
+  const [activeTab, setActiveTab] = useState<'active' | 'archived'>('active');
+  const tabProgress = useSharedValue(0);
+  const [activeViewportHeight, setActiveViewportHeight] = useState(0);
+  const [activeContentHeight, setActiveContentHeight] = useState(0);
+  const [archivedViewportHeight, setArchivedViewportHeight] = useState(0);
+  const [archivedContentHeight, setArchivedContentHeight] = useState(0);
   const query = normalizeSearchText(searchQuery);
-  const activeFiltered = query
-    ? entries
-        .map(entry => ({
-          entry,
-          score: exerciseSearchScore(
-            query,
-            entry.display_name,
-            entry.primary_muscle_group,
-            entry.modality,
-            entry.source,
-          ),
-        }))
-        .filter(result => result.score !== null)
-        .sort((a, b) => {
-          if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
-          return a.entry.display_name.localeCompare(b.entry.display_name);
-        })
-        .map(result => result.entry)
-    : entries;
-  const archivedFiltered = query
-    ? archivedCustom
-        .map(entry => ({
-          entry,
-          score: exerciseSearchScore(
-            query,
-            entry.display_name,
-            entry.primary_muscle_group,
-            entry.modality,
-          ),
-        }))
-        .filter(result => result.score !== null)
-        .sort((a, b) => {
-          if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
-          return a.entry.display_name.localeCompare(b.entry.display_name);
-        })
-        .map(result => result.entry)
-    : archivedCustom;
 
-  type ManageListItem =
-    | { type: 'header'; key: string; label: string }
-    | {
-        type: 'entry';
-        key: string;
-        entry: ExerciseCatalogEntry;
-        archived: boolean;
-      };
+  const activeFiltered = useMemo(
+    () =>
+      query
+        ? entries
+            .map(entry => ({
+              entry,
+              score: exerciseSearchScore(
+                query,
+                entry.display_name,
+                entry.primary_muscle_group,
+                entry.modality,
+                entry.source,
+              ),
+            }))
+            .filter(result => result.score !== null)
+            .sort((a, b) => {
+              if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+              return a.entry.display_name.localeCompare(b.entry.display_name);
+            })
+            .map(result => result.entry)
+        : entries,
+    [entries, query],
+  );
 
-  const listItems = useMemo<ManageListItem[]>(() => {
-    const items: ManageListItem[] = [];
-    activeFiltered.forEach(entry => {
-      items.push({
-        type: 'entry',
-        key: `active-${entry.slug}`,
-        entry,
-        archived: false,
-      });
-    });
-    if (archivedFiltered.length > 0) {
-      items.push({
-        type: 'header',
-        key: 'archived',
-        label: 'Archived custom',
-      });
-      archivedFiltered.forEach(entry => {
-        items.push({
-          type: 'entry',
-          key: `archived-${entry.slug}`,
-          entry,
-          archived: true,
-        });
-      });
-    }
-    return items;
-  }, [activeFiltered, archivedFiltered]);
+  const archivedFiltered = useMemo(
+    () =>
+      query
+        ? archivedEntries
+            .map(entry => ({
+              entry,
+              score: exerciseSearchScore(
+                query,
+                entry.display_name,
+                entry.primary_muscle_group,
+                entry.modality,
+              ),
+            }))
+            .filter(result => result.score !== null)
+            .sort((a, b) => {
+              if (a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+              return a.entry.display_name.localeCompare(b.entry.display_name);
+            })
+            .map(result => result.entry)
+        : archivedEntries,
+    [archivedEntries, query],
+  );
 
-  const renderItem = ({ item }: ListRenderItemInfo<ManageListItem>) => {
-    if (item.type === 'header') {
-      const isEmpty = item.key.endsWith('-empty');
+  const handleTabChange = useCallback(
+    (next: 'active' | 'archived') => {
+      const index = next === 'active' ? 0 : 1;
+      tabPressAnimatingRef.current = true;
+      tabRequestedIndexRef.current = index;
+      tabProgress.value = withTiming(index, {
+        duration: analyticsUi.tabTapAnimationMs,
+      });
+      pagerRef.current?.setPage(index);
+    },
+    [tabProgress],
+  );
+
+  const handlePageSelected = useCallback(
+    (event: NativeSyntheticEvent<{ position: number }>) => {
+      const position = event.nativeEvent.position;
+      if (tabPressAnimatingRef.current && position !== tabRequestedIndexRef.current) {
+        pagerRef.current?.setPage(tabRequestedIndexRef.current);
+        return;
+      }
+      tabPressAnimatingRef.current = false;
+      tabRequestedIndexRef.current = position;
+      tabProgress.value = position;
+      setActiveTab(position === 0 ? 'active' : 'archived');
+    },
+    [tabProgress],
+  );
+
+  const handlePageScroll = useCallback(
+    (event: NativeSyntheticEvent<{ position: number; offset: number }>) => {
+      if (tabPressAnimatingRef.current) return;
+      const { position, offset } = event.nativeEvent;
+      tabProgress.value = position + offset;
+    },
+    [tabProgress],
+  );
+
+  const activeListHeight = useMemo(() => {
+    const rowHeight = 72;
+    const emptyHeight = 52;
+    const separators = Math.max(0, activeFiltered.length - 1);
+    const estimatedContentHeight =
+      (activeFiltered.length > 0
+        ? activeFiltered.length * rowHeight + separators
+        : emptyHeight) + spacing(2);
+    if (activeViewportHeight <= 0) return estimatedContentHeight;
+    const measuredHeight =
+      activeContentHeight > 0 ? activeContentHeight : estimatedContentHeight;
+    return Math.min(measuredHeight, activeViewportHeight);
+  }, [activeContentHeight, activeFiltered.length, activeViewportHeight]);
+
+  const archivedListHeight = useMemo(() => {
+    const rowHeight = 72;
+    const emptyHeight = 52;
+    const separators = Math.max(0, archivedFiltered.length - 1);
+    const estimatedContentHeight =
+      (archivedFiltered.length > 0
+        ? archivedFiltered.length * rowHeight + separators
+        : emptyHeight) + spacing(2);
+    if (archivedViewportHeight <= 0) return estimatedContentHeight;
+    const measuredHeight =
+      archivedContentHeight > 0
+        ? archivedContentHeight
+        : estimatedContentHeight;
+    return Math.min(measuredHeight, archivedViewportHeight);
+  }, [archivedContentHeight, archivedFiltered.length, archivedViewportHeight]);
+
+  const activeScrollEnabled =
+    activeViewportHeight > 0 && activeContentHeight > activeViewportHeight;
+  const archivedScrollEnabled =
+    archivedViewportHeight > 0 &&
+    archivedContentHeight > archivedViewportHeight;
+
+  const renderManageRow = useCallback(
+    ({
+      item,
+      archived,
+    }: {
+      item: ManageCatalogEntry;
+      archived: boolean;
+    }) => {
+      const sourceLabel = archived
+        ? item.archiveSource === 'hidden_default'
+          ? 'Archived default'
+          : 'Archived custom'
+        : item.source === asExerciseSource('default')
+          ? 'Default'
+          : 'Custom';
+      const subtitle = `${sourceLabel} • ${formatLabel(
+        item.primary_muscle_group,
+      )}`;
+
       return (
-        <Text
-          style={[
-            isEmpty ? { color: palette.mutedText } : sectionLabel(),
-            { paddingHorizontal: spacing(0.5), paddingTop: spacing(0.75) },
-          ]}
+        <TouchableOpacity
+          onPress={() =>
+            onSelectEntry(item, archived, archived ? item.archiveSource : undefined)
+          }
+          style={rowStyle()}
         >
-          {item.label}
-        </Text>
+          <View style={{ flex: 1, gap: spacing(0.25) }}>
+            <Text style={rowText()}>{item.display_name}</Text>
+            <Text style={rowMeta()}>{subtitle}</Text>
+          </View>
+        </TouchableOpacity>
       );
-    }
-
-    const sourceLabel = item.archived
-      ? 'Archived'
-      : item.entry.source === asExerciseSource('default')
-        ? 'Default'
-        : 'Custom';
-    const subtitle = `${sourceLabel} • ${formatLabel(
-      item.entry.primary_muscle_group,
-    )}`;
-
-    return (
-      <TouchableOpacity
-        onPress={() => onSelectEntry(item.entry, item.archived)}
-        style={rowStyle()}
-      >
-        <View style={{ flex: 1, gap: spacing(0.25) }}>
-          <Text style={rowText()}>{item.entry.display_name}</Text>
-          <Text style={rowMeta()}>{subtitle}</Text>
-        </View>
-      </TouchableOpacity>
-    );
-  };
+    },
+    [onSelectEntry],
+  );
 
   return (
     <View style={{ flex: 1 }}>
@@ -1508,32 +1998,139 @@ const ManageCustomExercises = ({
           autoCorrect={false}
         />
       </View>
-      <View style={manageListSurface()}>
-        <FlatList
-          data={listItems}
-          keyExtractor={item => item.key}
-          renderItem={renderItem}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          automaticallyAdjustKeyboardInsets
-          contentContainerStyle={{ paddingBottom: spacing(8) }}
-          ItemSeparatorComponent={() => <View style={listDivider()} />}
-          ListHeaderComponent={
-            <Text style={[sectionLabel(), { paddingHorizontal: spacing(0.5) }]}>
-              All exercises
-            </Text>
-          }
-          ListEmptyComponent={
-            <Text style={{ color: palette.mutedText, paddingHorizontal: spacing(0.5) }}>
-              No matching exercises.
-            </Text>
-          }
-          initialNumToRender={20}
-          maxToRenderPerBatch={24}
-          windowSize={8}
-          removeClippedSubviews
-        />
-      </View>
+      <PagerTabsRail
+        tabs={[
+          { key: 'active', label: 'Active' },
+          { key: 'archived', label: 'Archived' },
+        ]}
+        activeKey={activeTab}
+        progress={tabProgress}
+        onSelect={key => handleTabChange(key as 'active' | 'archived')}
+      />
+      <PagerView
+        ref={pagerRef}
+        style={{ flex: 1 }}
+        initialPage={0}
+        overdrag={false}
+        onPageSelected={handlePageSelected}
+        onPageScroll={handlePageScroll}
+      >
+        <View
+          key="active"
+          style={{ flex: 1 }}
+          onLayout={event => {
+            const next = event.nativeEvent.layout.height;
+            if (next > 0 && Math.abs(next - activeViewportHeight) > 1) {
+              setActiveViewportHeight(next);
+            }
+          }}
+        >
+          <View style={[manageListSurface(), activeListHeight ? { height: activeListHeight } : null]}>
+            <FlatList
+              data={activeFiltered}
+              keyExtractor={item => `active-${item.slug}`}
+              renderItem={(info: ListRenderItemInfo<ManageCatalogEntry>) =>
+                renderManageRow({ item: info.item, archived: false })
+              }
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets
+              scrollEnabled={activeScrollEnabled}
+              contentContainerStyle={[
+                {
+                  paddingHorizontal: spacing(1.25),
+                  paddingTop: spacing(0.75),
+                  paddingBottom: spacing(2),
+                },
+                !activeScrollEnabled ? { flexGrow: 0 } : null,
+              ]}
+              onContentSizeChange={(_width, height) => {
+                if (height > 0 && Math.abs(height - activeContentHeight) > 1) {
+                  setActiveContentHeight(height);
+                }
+              }}
+              ItemSeparatorComponent={() => <View style={listDivider()} />}
+              ListEmptyComponent={
+                <Text
+                  style={{
+                    color: palette.mutedText,
+                    fontSize: 12,
+                    paddingHorizontal: spacing(0.5),
+                  }}
+                >
+                  {query
+                    ? 'No active exercises match your search.'
+                    : 'No active exercises right now.'}
+                </Text>
+              }
+              initialNumToRender={20}
+              maxToRenderPerBatch={24}
+              windowSize={8}
+              removeClippedSubviews
+            />
+          </View>
+        </View>
+        <View
+          key="archived"
+          style={{ flex: 1 }}
+          onLayout={event => {
+            const next = event.nativeEvent.layout.height;
+            if (next > 0 && Math.abs(next - archivedViewportHeight) > 1) {
+              setArchivedViewportHeight(next);
+            }
+          }}
+        >
+          <View
+            style={[
+              manageListSurface(),
+              archivedListHeight ? { height: archivedListHeight } : null,
+            ]}
+          >
+            <FlatList
+              data={archivedFiltered}
+              keyExtractor={item => `archived-${item.slug}`}
+              renderItem={(info: ListRenderItemInfo<ManageCatalogEntry>) =>
+                renderManageRow({ item: info.item, archived: true })
+              }
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="interactive"
+              automaticallyAdjustKeyboardInsets
+              scrollEnabled={archivedScrollEnabled}
+              contentContainerStyle={[
+                {
+                  paddingHorizontal: spacing(1.25),
+                  paddingTop: spacing(0.75),
+                  paddingBottom: spacing(2),
+                },
+                !archivedScrollEnabled ? { flexGrow: 0 } : null,
+              ]}
+              onContentSizeChange={(_width, height) => {
+                if (height > 0 && Math.abs(height - archivedContentHeight) > 1) {
+                  setArchivedContentHeight(height);
+                }
+              }}
+              ItemSeparatorComponent={() => <View style={listDivider()} />}
+              ListEmptyComponent={
+                <Text
+                  style={{
+                    color: palette.mutedText,
+                    fontSize: 12,
+                    paddingHorizontal: spacing(0.5),
+                  }}
+                >
+                  {query
+                    ? 'No archived exercises match your search.'
+                    : 'Archive exercises to manage them here.'}
+                </Text>
+              }
+              initialNumToRender={20}
+              maxToRenderPerBatch={24}
+              windowSize={8}
+              removeClippedSubviews
+            />
+          </View>
+        </View>
+      </PagerView>
     </View>
   );
 };
@@ -1622,8 +2219,9 @@ const sheetCard = () => ({
   width: '100%' as const,
   borderRadius: radius.card,
   backgroundColor: palette.surface,
-  borderWidth: 1,
-  borderColor: palette.border,
+  borderWidth: 0,
+  borderColor: 'transparent',
+  ...cardShadowStyle,
   padding: spacing(1.5),
   gap: spacing(0.5),
 });

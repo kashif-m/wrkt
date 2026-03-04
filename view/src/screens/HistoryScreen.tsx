@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { ScrollView, View, Text } from 'react-native';
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, SectionHeading, EmptyState, ListRow } from '../ui/components';
-import { spacing, palette, radius } from '../ui/theme';
+import { cardShadowStyle, spacing, palette, radius } from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { useAppState } from '../state/appContext';
 import {
@@ -127,8 +127,9 @@ const toNumber = (value: unknown) => {
 const dayList = {
   backgroundColor: palette.surface,
   borderRadius: radius.card,
-  borderWidth: 1,
-  borderColor: palette.border,
+  borderWidth: 0,
+  borderColor: 'transparent',
+  ...cardShadowStyle,
   padding: spacing(1.5),
   gap: spacing(1),
 };

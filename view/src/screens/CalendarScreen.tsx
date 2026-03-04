@@ -23,7 +23,7 @@ import { CalendarMonthResponse } from '../domain/analytics';
 import { getMuscleColor } from '../ui/muscleColors';
 import { roundToLocalDay } from '../timePolicy';
 import { formatPercent } from '../ui/formatters';
-import { palette, radius, spacing } from '../ui/theme';
+import { cardShadowStyle, palette, radius, spacing } from '../ui/theme';
 import { addAlpha } from '../ui/color';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
@@ -639,6 +639,7 @@ const createStyles = () => ({
     paddingBottom: spacing(1),
     backgroundColor: palette.surface,
     borderRadius: radius.card,
+    ...cardShadowStyle,
     borderWidth: 0,
     marginHorizontal: spacing(1.5),
     overflow: 'hidden' as const,
@@ -727,6 +728,7 @@ const createStyles = () => ({
     backgroundColor: palette.surface,
     borderTopLeftRadius: radius.card,
     borderTopRightRadius: radius.card,
+    ...cardShadowStyle,
     padding: spacing(2),
   } as ViewStyle,
   sheetRow: {

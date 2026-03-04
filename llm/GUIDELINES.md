@@ -539,6 +539,47 @@ React Native uses the pack configs and calls into the generic core.
 
 ---
 
+# 9.5) Bridge-call performance rules (JSI/FFI)
+
+Generic boundaries must not make UX sluggish. Enforce these rules:
+
+## Call granularity
+
+- Prefer one coarse compute call per screen query change.
+- Never fan out into many tiny bridge calls from one render path.
+- Batch adjacent queries when natural (example: `prev/current/next` day in one endpoint).
+
+## Where compute is allowed
+
+- `useMemo`/`useEffect` with stable dependency keys only.
+- Never from gesture handlers, animation frames, or frequently re-rendering row components.
+
+## Cache requirements
+
+- Add a shared query cache keyed by:
+  - `events_revision`
+  - `timezone_offset`
+  - serialized query hash
+- If key is unchanged, consume cached result and skip bridge call.
+
+## Payload requirements
+
+- Rust returns domain aggregates only.
+- TS/UI owns labels, colors, copy, and presentation formatting.
+- Minimize JSON payload shape to required fields only.
+
+## PR gate checks for performance
+
+1. Did this screen add more bridge calls per interaction than before?
+2. Can multiple calls be replaced by one batched endpoint?
+3. Is there a cache key and invalidation strategy?
+4. Are we computing during touch/scroll/animation?
+5. Are we serializing more data than UI consumes?
+
+If any answer is wrong, revise before merge.
+
+---
+
 # 10) wrkt minimalist UX canon
 
 Keep the UI “minimal but meaningful.” Every element must earn its place and support the core flows (log a set in <10 s, review progress quickly).

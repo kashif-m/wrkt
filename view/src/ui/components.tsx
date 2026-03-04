@@ -24,6 +24,7 @@ import {
 } from 'react-native';
 import {
   analyticsUi,
+  cardShadowStyle,
   getActiveThemeMode,
   getContrastTextColor,
   palette,
@@ -74,18 +75,9 @@ export const Card = ({
         backgroundColor: palette.surface,
         padding: spacing(2),
         borderRadius: radius.card,
-        borderWidth: variant === 'analytics' ? 0 : 1,
+        borderWidth: 0,
         borderColor: palette.border,
-        shadowColor: '#000',
-        shadowOpacity:
-          variant === 'analytics' ? analyticsUi.cardShadowOpacity : 0,
-        shadowRadius:
-          variant === 'analytics' ? analyticsUi.cardShadowRadius : 0,
-        shadowOffset:
-          variant === 'analytics'
-            ? { width: 0, height: analyticsUi.cardShadowOffsetY }
-            : { width: 0, height: 0 },
-        elevation: variant === 'analytics' ? 2 : 0,
+        ...cardShadowStyle,
       },
       style,
     ]}

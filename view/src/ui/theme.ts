@@ -42,29 +42,6 @@ type Palette = {
   danger: ColorHex;
 };
 
-export const palette: Palette = {
-  // Base
-  background: asColorHex('#0B1220'), // deep navy (less harsh than pure near-black)
-  surface: asColorHex('#111A2E'), // primary card surface
-  mutedSurface: asColorHex('#172342'), // elevated/secondary surface
-
-  // Brand / Actions
-  primary: asColorHex('#5FA8FF'), // calm sky-blue (good contrast on dark)
-  primaryMuted: asColorHex('#2B66F0'), // deeper action/pressed state
-
-  // Text
-  text: asColorHex('#EAF2FF'), // slightly softer than pure white
-  mutedText: asColorHex('#9AAAC7'), // readable but clearly secondary
-
-  // UI Chrome
-  border: asColorHex('#223154'), // clearer separation on dark surfaces
-
-  // Status
-  success: asColorHex('#34D399'), // softer green
-  warning: asColorHex('#F4C84A'), // less neon yellow, still “warning”
-  danger: asColorHex('#F87171'), // keep; already good on dark
-};
-
 const modePaletteMap: Record<
   ThemeMode,
   Omit<Palette, 'primary' | 'primaryMuted'>
@@ -294,29 +271,44 @@ export const resolveAccentColor = (
 export const resolveThemeModeColor = (mode: ThemeMode): ColorHex =>
   (modePaletteMap[mode] ?? modePaletteMap.dark).background;
 
-const applyMode = (mode: ThemeMode) => {
-  const modePalette = modePaletteMap[mode] ?? modePaletteMap.dark;
-  palette.background = modePalette.background;
-  palette.surface = modePalette.surface;
-  palette.mutedSurface = modePalette.mutedSurface;
-  palette.text = modePalette.text;
-  palette.mutedText = modePalette.mutedText;
-  palette.border = modePalette.border;
-  palette.success = modePalette.success;
-  palette.warning = modePalette.warning;
-  palette.danger = modePalette.danger;
-};
+const resolveModePalette = (mode: ThemeMode) =>
+  modePaletteMap[mode] ?? modePaletteMap.dark;
 
-const applyAccent = (accent: AccentKey, customAccentHex?: string | null) => {
+const resolveAccentPalette = (
+  accent: AccentKey,
+  customAccentHex?: string | null,
+) => {
   const customHex = customAccentHex ? normalizeHex(customAccentHex) : null;
   const resolvedAccent = resolveAccentColor(accent, customHex);
-  palette.primary = resolvedAccent;
-  palette.primaryMuted =
-    accent === 'custom' && customHex
-      ? resolvedAccent
-      : accentThemeMap[accent === 'custom' ? 'blue' : accent].primaryMuted;
-  activeCustomAccentHex = customHex;
+  return {
+    primary: resolvedAccent,
+    primaryMuted:
+      accent === 'custom' && customHex
+        ? resolvedAccent
+        : accentThemeMap[accent === 'custom' ? 'blue' : accent].primaryMuted,
+    customHex,
+  };
 };
+
+const buildPalette = (
+  mode: ThemeMode,
+  accent: AccentKey,
+  customAccentHex?: string | null,
+): Palette => {
+  const modePalette = modePaletteMap[mode] ?? modePaletteMap.dark;
+  const accentPalette = resolveAccentPalette(accent, customAccentHex);
+  return {
+    ...modePalette,
+    primary: accentPalette.primary,
+    primaryMuted: accentPalette.primaryMuted,
+  };
+};
+
+export let palette: Palette = buildPalette(
+  activeThemeMode,
+  activeAccent,
+  activeCustomAccentHex,
+);
 
 export const applyThemeSettings = ({
   mode,
@@ -329,8 +321,13 @@ export const applyThemeSettings = ({
 }) => {
   activeThemeMode = mode;
   activeAccent = accent;
-  applyMode(mode);
-  applyAccent(accent, customAccentHex);
+  const accentPalette = resolveAccentPalette(accent, customAccentHex);
+  activeCustomAccentHex = accentPalette.customHex;
+  palette = {
+    ...resolveModePalette(mode),
+    primary: accentPalette.primary,
+    primaryMuted: accentPalette.primaryMuted,
+  };
 };
 
 export const getActiveAccent = (): AccentKey => activeAccent;
@@ -349,12 +346,21 @@ export const analyticsUi = {
   controlHeight: 34,
   controlPaddingX: 12,
   controlPaddingY: 4,
+  tabTapAnimationMs: 150,
   selectorRailPadding: 2,
   selectorRailGap: 2,
   selectorCardRadius: 14,
   cardShadowOpacity: 0.12,
   cardShadowRadius: 12,
   cardShadowOffsetY: 4,
+};
+
+export const cardShadowStyle = {
+  shadowColor: '#000',
+  shadowOpacity: analyticsUi.cardShadowOpacity,
+  shadowRadius: analyticsUi.cardShadowRadius,
+  shadowOffset: { width: 0, height: analyticsUi.cardShadowOffsetY },
+  elevation: 2,
 };
 
 export const typography = {

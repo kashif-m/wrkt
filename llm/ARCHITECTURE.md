@@ -387,3 +387,53 @@ I won’t ask questions unless necessary, but here are “default decisions” I
 * No cloud sync in MVP
 * Stateless compute initially (recompute from events for selected window)
 * Tracker configs embedded as DSL files in the app bundle
+
+---
+
+# 13) Runtime performance contract (Rust bridge calls)
+
+This app uses Rust through native JSI/FFI. Rust compute is fast; the main cost is boundary crossing + JSON marshal/unmarshal + sync execution timing.
+
+## Core rule
+
+**Prefer fewer, larger calls over many small calls.**
+
+### Avoid
+- Per-component compute calls on the same screen
+- Compute calls in gesture/animation handlers
+- Recomputing identical queries on tab switch
+
+### Prefer
+- One coarse-grained compute call per screen query change
+- Batched queries (example: previous/current/next day in one request)
+- Query-keyed cache reuse across tabs and re-renders
+
+## Call budget targets
+
+- Home render update: <= 1 compute call
+- Calendar month update: <= 1 compute call
+- Trends tab switch with unchanged query: 0 new compute calls (cache hit)
+- Chart scrub/zoom interactions: 0 compute calls per frame
+
+## Caching policy
+
+Cache key shape:
+
+`(events_revision, timezone_offset, query_hash)`
+
+Where:
+- `events_revision` increments for event/catalog mutations
+- cache invalidates only when this key changes
+- cache is shared across analytics tabs
+
+## Boundary policy
+
+- Rust returns domain aggregates, not display strings/styles
+- UI applies labels/colors/formatting
+- Keep payloads narrow; do not return unused fields
+
+## Scheduling policy
+
+- Trigger compute in memo/effect paths with stable dependencies
+- Never trigger compute directly from render loops
+- Warm hot queries on screen focus where useful

@@ -1,6 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { LayoutChangeEvent, Text, TouchableOpacity, View } from 'react-native';
+import { LayoutChangeEvent, TouchableOpacity, View } from 'react-native';
 import Animated, {
+  interpolateColor,
+  SharedValue,
   useAnimatedStyle,
   useSharedValue,
   withTiming,
@@ -27,31 +29,81 @@ const labels: Record<AnalyticsTabKey, LabelText> = {
   exercises: asLabelText('Exercises'),
 };
 
+const AnalyticsTabLabel = ({
+  label,
+  index,
+  progress,
+  inactiveTextColor,
+  activeTextColor,
+}: {
+  label: string;
+  index: number;
+  progress: SharedValue<number>;
+  inactiveTextColor: string;
+  activeTextColor: string;
+}) => {
+  const animatedStyle = useAnimatedStyle(() => {
+    // Start switching text color as soon as the active pill starts overlapping the next tab label.
+    const distance = Math.abs(progress.value - index);
+    const mix = Math.max(0, Math.min(1, 1 - distance / 0.6));
+    return {
+      color: interpolateColor(
+        mix,
+        [0, 1],
+        [inactiveTextColor, activeTextColor],
+      ) as string,
+    };
+  });
+
+  return (
+    <Animated.Text
+      style={[
+        {
+          fontSize: 12,
+          fontWeight: '600',
+        },
+        animatedStyle,
+      ]}
+    >
+      {label}
+    </Animated.Text>
+  );
+};
+
 export const AnalyticsTabs = ({
   selected,
   onSelect,
+  scrollProgress,
 }: {
   selected: AnalyticsTabKey;
   onSelect: (tab: AnalyticsTabKey) => void;
+  scrollProgress?: SharedValue<number>;
 }) => {
   const tabs = Object.keys(labels) as AnalyticsTabKey[];
   const selectedIndex = Math.max(tabs.indexOf(selected), 0);
   const [railWidth, setRailWidth] = useState(0);
   const gap = analyticsUi.selectorRailGap;
+  const railPadding = analyticsUi.selectorRailPadding;
   const segmentWidth = useMemo(() => {
     if (railWidth <= 0) return 0;
-    return (railWidth - gap * (tabs.length - 1)) / tabs.length;
-  }, [gap, railWidth, tabs.length]);
-  const indicatorX = useSharedValue(0);
+    const contentWidth = Math.max(0, railWidth - railPadding * 2);
+    return (contentWidth - gap * (tabs.length - 1)) / tabs.length;
+  }, [gap, railPadding, railWidth, tabs.length]);
+  const fallbackProgress = useSharedValue(selectedIndex);
 
   React.useEffect(() => {
-    if (segmentWidth <= 0) return;
-    const nextX = selectedIndex * (segmentWidth + gap);
-    indicatorX.value = withTiming(nextX, { duration: 180 });
-  }, [gap, indicatorX, segmentWidth, selectedIndex]);
+    if (scrollProgress) return;
+    fallbackProgress.value = withTiming(selectedIndex, {
+      duration: analyticsUi.tabTapAnimationMs,
+    });
+  }, [fallbackProgress, scrollProgress, selectedIndex]);
+
+  const indicatorProgress = scrollProgress ?? fallbackProgress;
+  const inactiveTextColor = palette.mutedText;
+  const activeTextColor = getContrastTextColor(palette.primary);
 
   const indicatorStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: indicatorX.value }],
+    transform: [{ translateX: indicatorProgress.value * (segmentWidth + gap) }],
   }));
 
   const onRailLayout = (event: LayoutChangeEvent) => {
@@ -99,6 +151,7 @@ export const AnalyticsTabs = ({
         ) : null}
         {tabs.map(key => {
           const active = key === selected;
+          const index = tabs.indexOf(key);
           return (
             <TouchableOpacity
               key={key}
@@ -115,17 +168,13 @@ export const AnalyticsTabs = ({
                 borderRadius: radius.pill,
               }}
             >
-              <Text
-                style={{
-                  fontSize: 12,
-                  fontWeight: '600',
-                  color: active
-                    ? getContrastTextColor(palette.primary)
-                    : palette.mutedText,
-                }}
-              >
-                {unwrapLabelText(labels[key])}
-              </Text>
+              <AnalyticsTabLabel
+                label={unwrapLabelText(labels[key])}
+                index={index}
+                progress={indicatorProgress}
+                inactiveTextColor={inactiveTextColor}
+                activeTextColor={activeTextColor}
+              />
             </TouchableOpacity>
           );
         })}

@@ -159,6 +159,7 @@ export type RootState = {
       entry: ExerciseCatalogEntry;
       archived?: boolean;
       custom?: boolean;
+      archiveSource?: 'hidden_default' | 'archived_custom';
     } | null;
     activeTab: BrowserTab;
     formEditing: ExerciseCatalogEntry | null;

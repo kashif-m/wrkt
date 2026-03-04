@@ -46,6 +46,17 @@ export type ExerciseCatalogEntry = BaseExerciseCatalogEntry & {
   archived?: boolean;
 };
 
+export type ManageArchiveSource = 'hidden_default' | 'archived_custom';
+
+export type ManageCatalogEntry = ExerciseCatalogEntry & {
+  archiveSource?: ManageArchiveSource;
+};
+
+export type ManageCatalogSnapshot = {
+  active: ManageCatalogEntry[];
+  archived: ManageCatalogEntry[];
+};
+
 const readCustomExercises = async (): Promise<ExerciseCatalogEntry[]> => {
   const raw = await AsyncStorage.getItem(CUSTOM_EXERCISES_KEY);
   if (!raw) {
@@ -190,36 +201,66 @@ const parseCatalog = (
 };
 
 export const fetchMergedCatalog = async (): Promise<ExerciseCatalogEntry[]> => {
+  const snapshot = await fetchManageCatalogEntries();
+  return snapshot.active.map(({ archiveSource, ...entry }) => entry);
+};
+
+export const fetchManageCatalogEntries =
+  async (): Promise<ManageCatalogSnapshot> => {
   const baseData = await getExerciseCatalog().catch(error => {
     console.warn('Failed to load catalog from Rust', error);
     return undefined;
   });
-  // console.debug('Fetched catalog from Rust', baseData); // REMOVED: heavy logging
   const base = parseCatalog(baseData);
   const custom = await readCustomExercises();
   const overrides = await readDefaultOverrides();
-  const overrideMap = new Map(overrides.map(entry => [String(entry.slug), entry]));
+  const overrideMap = new Map(
+    overrides.map(entry => [String(entry.slug), entry]),
+  );
   const hidden = await readHiddenSlugs();
   const hiddenSet = new Set(hidden.map(slug => String(slug)));
   console.debug('Merged default and custom catalog', {
     baseCount: base.length,
     customCount: custom.length,
   });
-  const baseApplied = base
-    .filter(entry => !hiddenSet.has(String(entry.slug)))
-    .map(entry => {
-      const override = overrideMap.get(String(entry.slug));
-      const next = override ?? entry;
-      return { ...next, source: asExerciseSource('default') };
+
+  const defaultsVisible: ManageCatalogEntry[] = [];
+  const defaultsArchived: ManageCatalogEntry[] = [];
+  base.forEach(entry => {
+    const override = overrideMap.get(String(entry.slug));
+    const next = { ...(override ?? entry), source: asExerciseSource('default') };
+    if (hiddenSet.has(String(entry.slug))) {
+      defaultsArchived.push({
+        ...next,
+        archived: true,
+        archiveSource: 'hidden_default',
+      });
+      return;
+    }
+    defaultsVisible.push(next);
+  });
+
+  const customVisible: ManageCatalogEntry[] = [];
+  const customArchived: ManageCatalogEntry[] = [];
+  custom
+    .filter(entry => !overrideMap.has(String(entry.slug)))
+    .forEach(entry => {
+      const next = { ...entry, source: asExerciseSource('custom') };
+      if (entry.archived) {
+        customArchived.push({
+          ...next,
+          archived: true,
+          archiveSource: 'archived_custom',
+        });
+        return;
+      }
+      customVisible.push(next);
     });
-  const merged = [
-    ...baseApplied,
-    ...custom
-      .filter(entry => !entry.archived)
-      .filter(entry => !overrideMap.has(String(entry.slug)))
-      .map(entry => ({ ...entry, source: asExerciseSource('custom') })),
-  ];
-  return merged;
+
+  return {
+    active: [...defaultsVisible, ...customVisible],
+    archived: [...defaultsArchived, ...customArchived],
+  };
 };
 
 const slugify = (value: ExerciseName | ExerciseSlug) =>
