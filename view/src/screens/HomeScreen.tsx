@@ -119,12 +119,12 @@ const HomeScreen = () => {
   );
   const viewport = useWindowDimensions();
   const listRef = useRef<FlatList<number> | null>(null);
-  const isProgrammaticScrollRef = useRef(false);
   const baseDateRef = useRef(new Date(selectedDate));
   const baseDayBucketRef = useRef(
     roundToLocalDay(selectedDate.getTime(), offsetMinutes),
   );
   const [currentIndex, setCurrentIndex] = useState(HOME_PAGER_CENTER_INDEX);
+  const currentIndexRef = useRef(HOME_PAGER_CENTER_INDEX);
   const [windowCenterIndex, setWindowCenterIndex] = useState(
     HOME_PAGER_CENTER_INDEX,
   );
@@ -200,6 +200,17 @@ const HomeScreen = () => {
     [],
   );
 
+  const applyPagerIndex = useCallback((nextIndex: number) => {
+    if (nextIndex === currentIndexRef.current) {
+      return false;
+    }
+    currentIndexRef.current = nextIndex;
+    setCurrentIndex(nextIndex);
+    setWindowCenterIndex(nextIndex);
+    lastWindowCenterIndexRef.current = nextIndex;
+    return true;
+  }, []);
+
   useEffect(() => {
     if (viewport.width <= 0) return;
     if (Math.abs(viewport.width - pageWidth) <= 1) return;
@@ -218,16 +229,12 @@ const HomeScreen = () => {
       baseDayBucketRef.current = selectedBucket;
       targetIndex = HOME_PAGER_CENTER_INDEX;
     }
-    if (targetIndex !== currentIndex) {
-      isProgrammaticScrollRef.current = true;
-      setCurrentIndex(targetIndex);
-      setWindowCenterIndex(targetIndex);
-      lastWindowCenterIndexRef.current = targetIndex;
+    if (applyPagerIndex(targetIndex)) {
       requestAnimationFrame(() => {
         listRef.current?.scrollToIndex({ index: targetIndex, animated: false });
       });
     }
-  }, [currentIndex, indexForDayBucket, offsetMinutes, selectedDate]);
+  }, [applyPagerIndex, indexForDayBucket, offsetMinutes, selectedDate]);
 
   const visibleBuckets = useMemo(
     () => {
@@ -296,30 +303,48 @@ const HomeScreen = () => {
     [currentIndex, getModelForIndex],
   );
 
-  const handleMomentumScrollEnd = useCallback(
-    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+  const commitIndexFromOffset = useCallback(
+    (offsetX: number) => {
       const width = Math.max(pageWidth, 1);
       const nextIndex = Math.max(
         0,
         Math.min(
           HOME_PAGER_TOTAL_PAGES - 1,
-          Math.round(event.nativeEvent.contentOffset.x / width),
+          Math.round(offsetX / width),
         ),
       );
-      if (nextIndex === currentIndex) {
-        isProgrammaticScrollRef.current = false;
+      if (!applyPagerIndex(nextIndex)) {
         return;
       }
-      setCurrentIndex(nextIndex);
-      setWindowCenterIndex(nextIndex);
-      lastWindowCenterIndexRef.current = nextIndex;
-      if (isProgrammaticScrollRef.current) {
-        isProgrammaticScrollRef.current = false;
-        return;
+      const selectedBucket = roundToLocalDay(selectedDate.getTime(), offsetMinutes);
+      const nextBucket = dayBucketForIndex(nextIndex);
+      if (nextBucket !== selectedBucket) {
+        actions.setSelectedDate(dateForIndex(nextIndex));
       }
-      actions.setSelectedDate(dateForIndex(nextIndex));
     },
-    [actions, currentIndex, dateForIndex, pageWidth],
+    [
+      actions,
+      applyPagerIndex,
+      dateForIndex,
+      dayBucketForIndex,
+      offsetMinutes,
+      pageWidth,
+      selectedDate,
+    ],
+  );
+
+  const handleMomentumScrollEnd = useCallback(
+    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+      commitIndexFromOffset(event.nativeEvent.contentOffset.x);
+    },
+    [commitIndexFromOffset],
+  );
+
+  const handleScrollEndDrag = useCallback(
+    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+      commitIndexFromOffset(event.nativeEvent.contentOffset.x);
+    },
+    [commitIndexFromOffset],
   );
 
   const handleListScroll = useCallback(
@@ -437,6 +462,7 @@ const HomeScreen = () => {
         onLayout={handleListLayout}
         onScroll={handleListScroll}
         scrollEventThrottle={16}
+        onScrollEndDrag={handleScrollEndDrag}
         onMomentumScrollEnd={handleMomentumScrollEnd}
         keyExtractor={index => `home-day-${index}`}
         renderItem={renderPage}

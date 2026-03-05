@@ -1,5 +1,7 @@
 import { MutableRefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Platform } from 'react-native';
 import PagerView, {
+  PageScrollStateChangedNativeEvent,
   PagerViewOnPageScrollEvent,
   PagerViewOnPageSelectedEvent,
 } from 'react-native-pager-view';
@@ -10,7 +12,6 @@ type UsePagerTabsControllerArgs<T extends string> = {
   tabs: readonly T[];
   selectedTab: T;
   onTabChange: (tab: T) => void;
-  animationMs?: number;
 };
 
 type UsePagerTabsControllerResult<T extends string> = {
@@ -20,14 +21,17 @@ type UsePagerTabsControllerResult<T extends string> = {
   onTabPress: (tab: T) => void;
   onPageSelected: (event: PagerViewOnPageSelectedEvent) => void;
   onPageScroll: (event: PagerViewOnPageScrollEvent) => void;
+  onPageScrollStateChanged: (event: PageScrollStateChangedNativeEvent) => void;
 };
+
+type PagerScrollState = 'idle' | 'dragging' | 'settling';
 
 export const usePagerTabsController = <T extends string>({
   tabs,
   selectedTab,
   onTabChange,
-  animationMs = analyticsUi.tabTapAnimationMs,
 }: UsePagerTabsControllerArgs<T>): UsePagerTabsControllerResult<T> => {
+  const isIos = Platform.OS === 'ios';
   const pagerRef = useRef<PagerView | null>(null);
   const indexByTab = useMemo(() => {
     const next = new Map<T, number>();
@@ -38,28 +42,19 @@ export const usePagerTabsController = <T extends string>({
   }, [tabs]);
 
   const selectedIndex = Math.max(indexByTab.get(selectedTab) ?? 0, 0);
-  const currentPagerIndexRef = useRef(selectedIndex);
-  const requestedIndexRef = useRef(selectedIndex);
-  const tapAnimatingRef = useRef(false);
-  const tapAnimationResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const committedIndexRef = useRef(selectedIndex);
+  const scrollStateRef = useRef<PagerScrollState>('idle');
+
+  // Android branch refs: keep behavior identical to current baseline.
+  const androidRequestedIndexRef = useRef<number | null>(null);
+  const androidSettledIndexRef = useRef(selectedIndex);
+
+  // iOS branch refs: drop-in behavior from pre-dedup implementation.
+  const iosRequestedIndexRef = useRef(selectedIndex);
+  const iosSettledIndexRef = useRef(selectedIndex);
+  const iosTapAnimatingRef = useRef(false);
+
   const progress = useSharedValue(selectedIndex);
-
-  const clearTapAnimationLock = useCallback(() => {
-    tapAnimatingRef.current = false;
-    if (tapAnimationResetRef.current) {
-      clearTimeout(tapAnimationResetRef.current);
-      tapAnimationResetRef.current = null;
-    }
-  }, []);
-
-  const armTapAnimationLock = useCallback(() => {
-    clearTapAnimationLock();
-    tapAnimatingRef.current = true;
-    tapAnimationResetRef.current = setTimeout(() => {
-      tapAnimatingRef.current = false;
-      tapAnimationResetRef.current = null;
-    }, animationMs * 3);
-  }, [animationMs, clearTapAnimationLock]);
 
   const movePagerToIndex = useCallback((index: number, animated: boolean) => {
     const pager = pagerRef.current;
@@ -69,18 +64,49 @@ export const usePagerTabsController = <T extends string>({
     } else {
       pager.setPageWithoutAnimation(index);
     }
-    currentPagerIndexRef.current = index;
   }, []);
 
+  const commitTabIndex = useCallback(
+    (index: number) => {
+      if (committedIndexRef.current === index) return;
+      committedIndexRef.current = index;
+      const nextTab = tabs[index];
+      if (nextTab && nextTab !== selectedTab) {
+        onTabChange(nextTab);
+      }
+    },
+    [onTabChange, selectedTab, tabs],
+  );
+
   useEffect(() => {
-    requestedIndexRef.current = selectedIndex;
-    progress.value = selectedIndex;
-    if (currentPagerIndexRef.current !== selectedIndex) {
+    if (isIos) {
+      if (selectedIndex === committedIndexRef.current) {
+        return;
+      }
+      iosRequestedIndexRef.current = selectedIndex;
+      if (iosTapAnimatingRef.current || scrollStateRef.current !== 'idle') {
+        return;
+      }
+      committedIndexRef.current = selectedIndex;
+      progress.value = selectedIndex;
       movePagerToIndex(selectedIndex, false);
+      return;
     }
-    clearTapAnimationLock();
+
+    if (
+      androidRequestedIndexRef.current === null &&
+      androidSettledIndexRef.current === selectedIndex &&
+      committedIndexRef.current === selectedIndex
+    ) {
+      return;
+    }
+    androidRequestedIndexRef.current = null;
+    androidSettledIndexRef.current = selectedIndex;
+    committedIndexRef.current = selectedIndex;
+    progress.value = selectedIndex;
+    movePagerToIndex(selectedIndex, false);
   }, [
-    clearTapAnimationLock,
+    isIos,
     movePagerToIndex,
     progress,
     selectedIndex,
@@ -89,64 +115,140 @@ export const usePagerTabsController = <T extends string>({
 
   const onTabPress = useCallback(
     (tab: T) => {
-      if (tab === selectedTab) return;
       const nextIndex = indexByTab.get(tab);
       if (typeof nextIndex !== 'number') return;
-      requestedIndexRef.current = nextIndex;
-      armTapAnimationLock();
-      progress.value = withTiming(nextIndex, { duration: animationMs });
+
+      if (isIos) {
+        if (
+          iosTapAnimatingRef.current &&
+          nextIndex === iosRequestedIndexRef.current
+        ) {
+          return;
+        }
+        if (
+          !iosTapAnimatingRef.current &&
+          scrollStateRef.current === 'idle' &&
+          nextIndex === iosSettledIndexRef.current
+        ) {
+          return;
+        }
+        iosRequestedIndexRef.current = nextIndex;
+        iosTapAnimatingRef.current = true;
+        progress.value = withTiming(nextIndex, {
+          duration: analyticsUi.tabTapAnimationMs,
+        });
+        movePagerToIndex(nextIndex, true);
+        return;
+      }
+
+      if (
+        androidRequestedIndexRef.current === nextIndex ||
+        (androidRequestedIndexRef.current === null &&
+          androidSettledIndexRef.current === nextIndex)
+      ) {
+        return;
+      }
+      androidRequestedIndexRef.current = nextIndex;
       movePagerToIndex(nextIndex, true);
     },
-    [
-      animationMs,
-      armTapAnimationLock,
-      indexByTab,
-      movePagerToIndex,
-      progress,
-      selectedTab,
-    ],
+    [indexByTab, isIos, movePagerToIndex, progress],
   );
 
   const onPageSelected = useCallback(
     (event: PagerViewOnPageSelectedEvent) => {
       const nextIndex = event.nativeEvent.position;
-      if (tapAnimatingRef.current && nextIndex !== requestedIndexRef.current) {
-        movePagerToIndex(requestedIndexRef.current, true);
+
+      if (isIos) {
+        const requestedIndex = iosRequestedIndexRef.current;
+        iosSettledIndexRef.current = nextIndex;
+        if (
+          iosTapAnimatingRef.current &&
+          nextIndex !== requestedIndex &&
+          scrollStateRef.current !== 'dragging'
+        ) {
+          return;
+        }
+        if (nextIndex === requestedIndex) {
+          iosTapAnimatingRef.current = false;
+          commitTabIndex(nextIndex);
+        }
+        iosRequestedIndexRef.current = nextIndex;
+        progress.value = nextIndex;
         return;
       }
 
-      requestedIndexRef.current = nextIndex;
-      currentPagerIndexRef.current = nextIndex;
-      clearTapAnimationLock();
-      progress.value = nextIndex;
-      const nextTab = tabs[nextIndex];
-      if (nextTab && nextTab !== selectedTab) {
-        onTabChange(nextTab);
+      const requestedIndex = androidRequestedIndexRef.current;
+      if (
+        requestedIndex !== null &&
+        nextIndex !== requestedIndex &&
+        scrollStateRef.current !== 'dragging'
+      ) {
+        return;
+      }
+      androidSettledIndexRef.current = nextIndex;
+      if (requestedIndex !== null && nextIndex === requestedIndex) {
+        androidRequestedIndexRef.current = null;
       }
     },
-    [
-      clearTapAnimationLock,
-      movePagerToIndex,
-      onTabChange,
-      progress,
-      selectedTab,
-      tabs,
-    ],
+    [commitTabIndex, isIos, progress],
   );
 
   const onPageScroll = useCallback(
     (event: PagerViewOnPageScrollEvent) => {
-      if (tapAnimatingRef.current) return;
-      progress.value = event.nativeEvent.position + event.nativeEvent.offset;
+      const { position, offset } = event.nativeEvent;
+      if (isIos && iosTapAnimatingRef.current) {
+        return;
+      }
+      progress.value = position + offset;
     },
-    [progress],
+    [isIos, progress],
   );
 
-  useEffect(
-    () => () => {
-      clearTapAnimationLock();
+  const onPageScrollStateChanged = useCallback(
+    (event: PageScrollStateChangedNativeEvent) => {
+      const nextState = event.nativeEvent.pageScrollState as PagerScrollState;
+      scrollStateRef.current = nextState;
+
+      if (isIos) {
+        if (nextState === 'dragging') {
+          iosTapAnimatingRef.current = false;
+          return;
+        }
+        if (nextState !== 'idle') return;
+        const requestedIndex = iosRequestedIndexRef.current;
+        const settledIndex = iosSettledIndexRef.current;
+        if (iosTapAnimatingRef.current) {
+          if (requestedIndex !== settledIndex) {
+            movePagerToIndex(requestedIndex, true);
+            return;
+          }
+          iosTapAnimatingRef.current = false;
+        }
+        progress.value = settledIndex;
+        commitTabIndex(settledIndex);
+        return;
+      }
+
+      if (nextState === 'dragging') {
+        androidRequestedIndexRef.current = null;
+        return;
+      }
+      if (nextState !== 'idle') return;
+
+      const requestedIndex = androidRequestedIndexRef.current;
+      if (requestedIndex !== null) {
+        if (androidSettledIndexRef.current !== requestedIndex) {
+          movePagerToIndex(requestedIndex, true);
+          return;
+        }
+        androidRequestedIndexRef.current = null;
+      }
+
+      const settledIndex = androidSettledIndexRef.current;
+      progress.value = settledIndex;
+      commitTabIndex(settledIndex);
     },
-    [clearTapAnimationLock],
+    [commitTabIndex, isIos, movePagerToIndex, progress],
   );
 
   return {
@@ -156,5 +258,6 @@ export const usePagerTabsController = <T extends string>({
     onTabPress,
     onPageSelected,
     onPageScroll,
+    onPageScrollStateChanged,
   };
 };

@@ -222,7 +222,7 @@ const LoggingScreen = () => {
   const [interactionLocked, setInteractionLocked] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const styles = createStyles();
+  const styles = useMemo(createStyles, []);
 
   const handleInteractionLockChange = useCallback((locked: boolean) => {
     if (unlockTimerRef.current) {
@@ -663,11 +663,14 @@ const LoggingScreen = () => {
               ref={sessionTabController.pagerRef}
               style={{ flex: 1 }}
               initialPage={sessionTabController.selectedIndex}
-              offscreenPageLimit={3}
+              offscreenPageLimit={1}
               scrollEnabled={!interactionLocked}
               overdrag={false}
               onPageSelected={sessionTabController.onPageSelected}
               onPageScroll={sessionTabController.onPageScroll}
+              onPageScrollStateChanged={
+                sessionTabController.onPageScrollStateChanged
+              }
             >
               <View key="Track" style={styles.sessionPage}>
                 <View style={styles.sessionPage}>
@@ -849,6 +852,10 @@ const LoggingScreen = () => {
                       keyExtractor={item => item.event_id}
                       onTouchStart={clearEditingSelection}
                       onScrollBeginDrag={clearEditingSelection}
+                      initialNumToRender={16}
+                      maxToRenderPerBatch={16}
+                      windowSize={7}
+                      removeClippedSubviews={Platform.OS === 'android'}
                       keyboardShouldPersistTaps="handled"
                       directionalLockEnabled
                       scrollEnabled={historyShouldFillHeight}
@@ -1260,7 +1267,7 @@ const describeLoggedSet = (event: WorkoutEvent) => {
   return 'Logged set';
 };
 
-const SetRow = ({
+const SetRow = React.memo(({
   event,
   highlightColor,
   compact = false,
@@ -1281,7 +1288,15 @@ const SetRow = ({
   pr?: boolean;
   onPrPress?: () => void;
 }) => {
-  const description = describeLoggedSet(event);
+  const description = useMemo(() => describeLoggedSet(event), [event]);
+  const timeLabel = useMemo(
+    () =>
+      new Date(event.ts).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      }),
+    [event.ts],
+  );
   const activeDividerColor = addAlpha(highlightColor ?? palette.primary, 0.3);
 
   return (
@@ -1358,15 +1373,22 @@ const SetRow = ({
           </TouchableOpacity>
         ) : null}
         <Text style={{ color: palette.mutedText, fontSize: 12 }}>
-          {new Date(event.ts).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-          })}
+          {timeLabel}
         </Text>
       </View>
     </TouchableOpacity>
   );
-};
+}, (prev, next) => {
+  return (
+    prev.event === next.event &&
+    prev.highlightColor === next.highlightColor &&
+    prev.compact === next.compact &&
+    prev.active === next.active &&
+    prev.previousActive === next.previousActive &&
+    prev.isLast === next.isLast &&
+    prev.pr === next.pr
+  );
+});
 
 const formatDateLabel = (date: Date): DisplayLabel => {
   const now = new Date();

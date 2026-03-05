@@ -86,6 +86,7 @@ const AnalyticsHub = () => {
           overdrag={false}
           onPageSelected={pagerController.onPageSelected}
           onPageScroll={pagerController.onPageScroll}
+          onPageScrollStateChanged={pagerController.onPageScrollStateChanged}
         >
           {ANALYTICS_TABS.map(tabKey => (
             <View key={tabKey} style={styles.page}>

@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
-import { SharedValue, useSharedValue, withTiming } from 'react-native-reanimated';
-import { analyticsUi, spacing } from '../../ui/theme';
+import { SharedValue, useSharedValue } from 'react-native-reanimated';
+import { spacing } from '../../ui/theme';
 import { LabelText, asLabelText, unwrapLabelText } from '../../domain/types';
 import PagerTabsRail, { PagerTabDefinition } from '../../ui/pager/PagerTabsRail';
 
@@ -38,9 +38,7 @@ export const AnalyticsTabs = ({
 
   React.useEffect(() => {
     if (scrollProgress) return;
-    fallbackProgress.value = withTiming(selectedIndex, {
-      duration: analyticsUi.tabTapAnimationMs,
-    });
+    fallbackProgress.value = selectedIndex;
   }, [fallbackProgress, scrollProgress, selectedIndex]);
 
   const indicatorProgress = scrollProgress ?? fallbackProgress;

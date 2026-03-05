@@ -346,7 +346,7 @@ export const analyticsUi = {
   controlHeight: 34,
   controlPaddingX: 12,
   controlPaddingY: 4,
-  tabTapAnimationMs: 150,
+  tabTapAnimationMs: 180,
   selectorRailPadding: 2,
   selectorRailGap: 2,
   selectorCardRadius: 14,

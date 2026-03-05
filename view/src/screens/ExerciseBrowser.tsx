@@ -610,6 +610,9 @@ const ExerciseBrowserListScreen = () => {
               overdrag={false}
               onPageSelected={listTabController.onPageSelected}
               onPageScroll={listTabController.onPageScroll}
+              onPageScrollStateChanged={
+                listTabController.onPageScrollStateChanged
+              }
             >
               <View
                 key="all"
@@ -1748,6 +1751,7 @@ const ManageCustomExercises = ({
         overdrag={false}
         onPageSelected={tabController.onPageSelected}
         onPageScroll={tabController.onPageScroll}
+        onPageScrollStateChanged={tabController.onPageScrollStateChanged}
       >
         <View
           key="active"

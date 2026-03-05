@@ -52,6 +52,10 @@ const AnalyticsExercises = ({
   onClearFilter?: () => void;
 }) => {
   const state = useAppState();
+  const themeKey = `${state.preferences.themeMode}:${
+    state.preferences.themeAccent
+  }:${state.preferences.customAccentHex ?? ''}`;
+  const styles = useMemo(() => createStyles(themeKey), [themeKey]);
   const {
     events,
     loading,
@@ -561,6 +565,7 @@ const AnalyticsExercises = ({
                 label={row.label}
                 value={row.value}
                 date={row.date}
+                styles={styles}
               />
             ))}
             {rmLadderRows.length > 0 ? (
@@ -572,6 +577,7 @@ const AnalyticsExercises = ({
                     label={row.label}
                     value={row.value}
                     date={row.date}
+                    styles={styles}
                   />
                 ))}
               </>
@@ -598,10 +604,12 @@ const PRMetricRow = ({
   label,
   value,
   date,
+  styles,
 }: {
   label: string;
   value: string;
   date: string;
+  styles: ReturnType<typeof createStyles>;
 }) => (
   <View style={styles.prRow}>
     <View style={styles.prMeta}>
@@ -612,7 +620,7 @@ const PRMetricRow = ({
   </View>
 );
 
-const styles = {
+const createStyles = (_themeKey: string) => ({
   center: {
     flex: 1,
     justifyContent: 'center' as const,
@@ -681,6 +689,6 @@ const styles = {
     marginTop: spacing(0.75),
     textTransform: 'uppercase' as const,
   },
-};
+});
 
 export default AnalyticsExercises;
