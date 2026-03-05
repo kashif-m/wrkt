@@ -25,7 +25,13 @@ import {
   asMuscleGroup,
   unwrapDisplayLabel,
 } from '../domain/types';
-import { analyticsUi, palette, spacing, radius, typography } from '../ui/theme';
+import {
+  cardShadowStyle,
+  palette,
+  spacing,
+  radius,
+  typography,
+} from '../ui/theme';
 import { getMuscleColor } from '../ui/muscleColors';
 import { formatMuscleLabel, formatPercent } from '../ui/formatters';
 import { AnalyticsRangeSelector } from '../components/analytics/AnalyticsRangeSelector';
@@ -716,11 +722,7 @@ const createStyles = () =>
       borderRadius: radius.card,
       padding: spacing(2),
       gap: spacing(1),
-      shadowColor: '#000',
-      shadowOpacity: analyticsUi.cardShadowOpacity,
-      shadowRadius: analyticsUi.cardShadowRadius,
-      shadowOffset: { width: 0, height: analyticsUi.cardShadowOffsetY },
-      elevation: 2,
+      ...cardShadowStyle,
     },
     cardHeader: {
       flexDirection: 'row',

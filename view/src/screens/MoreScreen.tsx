@@ -26,6 +26,7 @@ import {
   AccentKey,
   ThemeMode,
   accentOptions,
+  cardShadowStyle,
   getContrastTextColor,
   palette,
   resolveAccentColor,
@@ -358,6 +359,7 @@ const MoreScreen = () => {
           <View
             style={[
               styles.surfaceSection,
+              cardShadowStyle,
               {
                 backgroundColor: palette.surface,
               },
@@ -375,6 +377,7 @@ const MoreScreen = () => {
           <View
             style={[
               styles.surfaceSection,
+              cardShadowStyle,
               {
                 backgroundColor: palette.surface,
               },
@@ -784,11 +787,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     paddingHorizontal: spacing(2),
     paddingVertical: spacing(1.5),
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
   },
   sheetTitle: {
     ...typography.section,

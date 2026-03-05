@@ -1,3 +1,4 @@
+import { Platform } from 'react-native';
 import { ColorHex, asColorHex } from '../domain/types';
 
 export type ThemeMode =
@@ -274,6 +275,23 @@ export const resolveThemeModeColor = (mode: ThemeMode): ColorHex =>
 const resolveModePalette = (mode: ThemeMode) =>
   modePaletteMap[mode] ?? modePaletteMap.dark;
 
+const clampColorChannel = (value: number): number =>
+  Math.max(0, Math.min(255, Math.round(value)));
+
+const toHexChannel = (value: number): string =>
+  clampColorChannel(value).toString(16).padStart(2, '0');
+
+const darkenThemeColor = (hex: ColorHex, amount: number): ColorHex => {
+  const normalized = hex.replace('#', '');
+  const r = parseInt(normalized.slice(0, 2), 16);
+  const g = parseInt(normalized.slice(2, 4), 16);
+  const b = parseInt(normalized.slice(4, 6), 16);
+  const factor = 1 - Math.max(0, Math.min(1, amount));
+  return asColorHex(
+    `#${toHexChannel(r * factor)}${toHexChannel(g * factor)}${toHexChannel(b * factor)}`,
+  );
+};
+
 const resolveAccentPalette = (
   accent: AccentKey,
   customAccentHex?: string | null,
@@ -355,12 +373,20 @@ export const analyticsUi = {
   cardShadowOffsetY: 4,
 };
 
+const themedCardShadowColor = () => {
+  const mode = getActiveThemeMode();
+  const darkenBy = mode === 'light' ? 0.45 : 0.25;
+  return darkenThemeColor(palette.surface, darkenBy);
+};
+
 export const cardShadowStyle = {
-  shadowColor: '#000',
+  get shadowColor() {
+    return themedCardShadowColor();
+  },
   shadowOpacity: analyticsUi.cardShadowOpacity,
   shadowRadius: analyticsUi.cardShadowRadius,
   shadowOffset: { width: 0, height: analyticsUi.cardShadowOffsetY },
-  elevation: 2,
+  elevation: Platform.OS === 'android' ? 1 : 2,
 };
 
 export const typography = {
