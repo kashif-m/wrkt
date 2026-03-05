@@ -10,12 +10,13 @@ import {
   Text,
   TouchableOpacity,
   Animated,
+  InteractionManager,
+  FlatList,
   StyleSheet,
   ViewStyle,
   TouchableWithoutFeedback,
-  NativeSyntheticEvent,
+  useWindowDimensions,
 } from 'react-native';
-import PagerView from 'react-native-pager-view';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ScrollView } from 'react-native-gesture-handler';
 import { runOnJS } from 'react-native-reanimated';
@@ -52,10 +53,8 @@ import {
 const DAYS_IN_WEEK = 7;
 const TOTAL_CELLS = 42;
 const DAY_NAMES = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
-type MonthPageSelectedEvent = NativeSyntheticEvent<{ position: number }>;
-type MonthPageScrollStateEvent = NativeSyntheticEvent<{
-  pageScrollState: 'idle' | 'dragging' | 'settling';
-}>;
+const CALENDAR_TOTAL_PAGES = 2401;
+const CALENDAR_CENTER_INDEX = Math.floor(CALENDAR_TOTAL_PAGES / 2);
 type CalendarMuscleRow = ReturnType<typeof mapCalendarMuscles>[number];
 type CalendarPieDatum = ReturnType<typeof mapCalendarPieData>[number];
 type CalendarMonthStats = {
@@ -68,6 +67,14 @@ type CalendarMonthStats = {
 };
 const MONTH_STATS_CACHE_LIMIT = 48;
 const MONTH_DAYS_CACHE_LIMIT = 24;
+const EMPTY_MONTH_STATS: CalendarMonthStats = {
+  sessions: 0,
+  attendance: 0,
+  isFutureMonth: false,
+  topMuscles: [],
+  allMuscles: [],
+  pieData: [],
+};
 
 const CalendarScreen = () => {
   const state = useAppState();
@@ -87,20 +94,28 @@ const CalendarScreen = () => {
   );
   const visibleMonth = state.calendar.visibleMonth;
   const yearSheetOpen = state.calendar.yearSheetOpen;
-  const monthPagerRef = useRef<PagerView | null>(null);
-  const visibleMonthRef = useRef(visibleMonth);
-  const pendingPagePositionRef = useRef<number | null>(null);
-  const scrollStateRef = useRef<'idle' | 'dragging' | 'settling'>('idle');
-  const awaitingCenterRef = useRef(false);
+  const viewport = useWindowDimensions();
+  const listRef = useRef<FlatList<number> | null>(null);
+  const baseMonthRef = useRef(startOfMonth(visibleMonth));
+  const currentIndexRef = useRef(CALENDAR_CENTER_INDEX);
+  const [windowCenterIndex, setWindowCenterIndex] = useState(
+    CALENDAR_CENTER_INDEX,
+  );
+  const lastWindowCenterIndexRef = useRef(CALENDAR_CENTER_INDEX);
+  const [pageWidth, setPageWidth] = useState(() => Math.max(viewport.width, 1));
+  const pageIndices = useMemo(
+    () => Array.from({ length: CALENDAR_TOTAL_PAGES }, (_unused, index) => index),
+    [],
+  );
+  const committedMonthRef = useRef(startOfMonth(visibleMonth));
   const monthStatsCacheRef = useRef<Map<string, CalendarMonthStats>>(new Map());
+  const pendingMonthStatsRef = useRef<Set<string>>(new Set());
+  const statsRevisionTokenRef = useRef(0);
   const monthDaysCacheRef = useRef<Map<number, Date[]>>(new Map());
   const sheetTranslate = useRef(new Animated.Value(0)).current;
   const [showAllMuscles, setShowAllMuscles] = useState(false);
+  const [, setStatsVersion] = useState(0);
   const styles = useMemo(createStyles, []);
-
-  useEffect(() => {
-    visibleMonthRef.current = visibleMonth;
-  }, [visibleMonth]);
 
   useEffect(() => {
     if (yearSheetOpen) {
@@ -110,6 +125,10 @@ const CalendarScreen = () => {
 
   useEffect(() => {
     setShowAllMuscles(false);
+  }, [visibleMonth]);
+
+  useEffect(() => {
+    committedMonthRef.current = startOfMonth(visibleMonth);
   }, [visibleMonth]);
 
   const catalogMap = useMemo(() => {
@@ -137,13 +156,69 @@ const CalendarScreen = () => {
     return buckets;
   }, [events, catalogMap]);
 
-  const getMonthStats = useCallback(
-    (month: Date): CalendarMonthStats => {
+  const monthForIndex = useCallback((index: number) => {
+    return shiftMonth(baseMonthRef.current, index - CALENDAR_CENTER_INDEX);
+  }, []);
+
+  const indexForMonth = useCallback((month: Date) => {
+    const base = baseMonthRef.current;
+    const delta =
+      (month.getFullYear() - base.getFullYear()) * 12 +
+      (month.getMonth() - base.getMonth());
+    return CALENDAR_CENTER_INDEX + delta;
+  }, []);
+
+  const applyIndex = useCallback((nextIndex: number) => {
+    if (nextIndex === currentIndexRef.current) {
+      return false;
+    }
+    currentIndexRef.current = nextIndex;
+    setWindowCenterIndex(nextIndex);
+    lastWindowCenterIndexRef.current = nextIndex;
+    return true;
+  }, []);
+
+  useEffect(() => {
+    if (viewport.width <= 0) return;
+    if (Math.abs(viewport.width - pageWidth) <= 1) return;
+    setPageWidth(viewport.width);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({ index: currentIndexRef.current, animated: false });
+    });
+  }, [pageWidth, viewport.width]);
+
+  useEffect(() => {
+    let targetIndex = indexForMonth(startOfMonth(visibleMonth));
+    if (targetIndex < 0 || targetIndex >= CALENDAR_TOTAL_PAGES) {
+      baseMonthRef.current = startOfMonth(visibleMonth);
+      targetIndex = CALENDAR_CENTER_INDEX;
+    }
+    if (applyIndex(targetIndex)) {
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToIndex({ index: targetIndex, animated: false });
+      });
+    }
+  }, [applyIndex, indexForMonth, visibleMonth]);
+
+  const getMonthStatsKey = useCallback(
+    (month: Date) =>
+      `${getMonthBucket(month)}:${state.eventsRevision}:${state.catalogRevision}:${offsetMinutes}`,
+    [offsetMinutes, state.catalogRevision, state.eventsRevision],
+  );
+  const getMonthStatsFromCache = useCallback(
+    (month: Date): CalendarMonthStats | null => {
+      const cacheKey = getMonthStatsKey(month);
+      return monthStatsCacheRef.current.get(cacheKey) ?? null;
+    },
+    [getMonthStatsKey],
+  );
+  const computeAndStoreMonthStats = useCallback(
+    (month: Date, token: number) => {
       const monthBucket = getMonthBucket(month);
-      const cacheKey = `${monthBucket}:${state.eventsRevision}:${state.catalogRevision}:${offsetMinutes}`;
-      const cached = monthStatsCacheRef.current.get(cacheKey);
-      if (cached) {
-        return cached;
+      const cacheKey = getMonthStatsKey(month);
+      if (monthStatsCacheRef.current.has(cacheKey)) {
+        pendingMonthStatsRef.current.delete(cacheKey);
+        return;
       }
       const analytics = computeCalendarMonthAnalytics(
         eventPayload,
@@ -161,16 +236,17 @@ const CalendarScreen = () => {
           },
         },
       );
-      const allMuscles = mapCalendarMuscles(analytics.all_muscles);
-      const topMuscles = mapCalendarMuscles(analytics.top_muscles);
-      const pieData = mapCalendarPieData(analytics);
+      if (token !== statsRevisionTokenRef.current) {
+        pendingMonthStatsRef.current.delete(cacheKey);
+        return;
+      }
       const stats: CalendarMonthStats = {
         sessions: analytics.sessions,
         attendance: analytics.attendance_percent,
         isFutureMonth: analytics.is_future_month,
-        topMuscles,
-        allMuscles,
-        pieData,
+        topMuscles: mapCalendarMuscles(analytics.top_muscles),
+        allMuscles: mapCalendarMuscles(analytics.all_muscles),
+        pieData: mapCalendarPieData(analytics),
       };
       cacheSet(
         monthStatsCacheRef.current,
@@ -178,16 +254,53 @@ const CalendarScreen = () => {
         stats,
         MONTH_STATS_CACHE_LIMIT,
       );
-      return stats;
+      pendingMonthStatsRef.current.delete(cacheKey);
+      setStatsVersion(version => version + 1);
     },
     [
       catalogPayload,
       eventPayload,
+      getMonthStatsKey,
       offsetMinutes,
       state.catalogRevision,
       state.eventsRevision,
     ],
   );
+  const requestMonthStats = useCallback(
+    (month: Date, priority: 'high' | 'low') => {
+      const cacheKey = getMonthStatsKey(month);
+      if (
+        monthStatsCacheRef.current.has(cacheKey) ||
+        pendingMonthStatsRef.current.has(cacheKey)
+      ) {
+        return;
+      }
+      pendingMonthStatsRef.current.add(cacheKey);
+      const token = statsRevisionTokenRef.current;
+      const run = () => computeAndStoreMonthStats(month, token);
+      if (priority === 'high') {
+        requestAnimationFrame(run);
+        return;
+      }
+      InteractionManager.runAfterInteractions(run);
+    },
+    [computeAndStoreMonthStats, getMonthStatsKey],
+  );
+  useEffect(() => {
+    statsRevisionTokenRef.current += 1;
+    monthStatsCacheRef.current.clear();
+    pendingMonthStatsRef.current.clear();
+    setStatsVersion(version => version + 1);
+  }, [offsetMinutes, state.catalogRevision, state.eventsRevision]);
+  const centerMonth = useMemo(
+    () => monthForIndex(windowCenterIndex),
+    [monthForIndex, windowCenterIndex],
+  );
+  useEffect(() => {
+    requestMonthStats(centerMonth, 'high');
+    requestMonthStats(shiftMonth(centerMonth, -1), 'low');
+    requestMonthStats(shiftMonth(centerMonth, 1), 'low');
+  }, [centerMonth, requestMonthStats]);
   const getMonthDays = useCallback((month: Date) => {
     const monthBucket = getMonthBucket(month);
     const cached = monthDaysCacheRef.current.get(monthBucket);
@@ -198,99 +311,131 @@ const CalendarScreen = () => {
     cacheSet(monthDaysCacheRef.current, monthBucket, days, MONTH_DAYS_CACHE_LIMIT);
     return days;
   }, []);
-  const monthPages = useMemo(
-    () =>
-      [-1, 0, 1].map(offset => {
-        const month = shiftMonth(visibleMonth, offset);
-        return {
-          key: `${month.getFullYear()}-${month.getMonth()}`,
-          month,
-          days: getMonthDays(month),
-          stats: getMonthStats(month),
-        };
-      }),
-    [getMonthDays, getMonthStats, visibleMonth],
+  const getPageModel = useCallback(
+    (index: number) => {
+      const month = monthForIndex(index);
+      return {
+        key: `${month.getFullYear()}-${month.getMonth()}`,
+        month,
+        days: getMonthDays(month),
+        stats: getMonthStatsFromCache(month),
+      };
+    },
+    [getMonthDays, getMonthStatsFromCache, monthForIndex],
   );
   const selectedDayBucket = useMemo(
     () => roundToLocalDay(selectedDate.getTime()),
     [selectedDate],
   );
-  const monthLabel = visibleMonth.toLocaleDateString(undefined, {
+  const displayMonth = centerMonth;
+  const monthLabel = displayMonth.toLocaleDateString(undefined, {
     month: 'long',
   });
-  const yearLabel = visibleMonth.getFullYear();
+  const yearLabel = displayMonth.getFullYear();
   const yearOptions = useMemo(() => {
-    const base = visibleMonth.getFullYear() - 25;
+    const base = displayMonth.getFullYear() - 25;
     return Array.from({ length: 60 }, (_, index) => base + index);
-  }, [visibleMonth]);
+  }, [displayMonth]);
 
-  const setVisibleMonth = useCallback(
-    (date: Date) => {
-      visibleMonthRef.current = date;
-      dispatch({ type: 'calendar/visibleMonth', date });
+  const setPreviewIndex = useCallback(
+    (nextIndex: number) => {
+      applyIndex(nextIndex);
     },
-    [dispatch],
+    [applyIndex],
   );
 
-  const recenterMonthPager = useCallback(() => {
-    monthPagerRef.current?.setPageWithoutAnimation(1);
-  }, []);
+  const commitIndex = useCallback(
+    (nextIndex: number) => {
+      setPreviewIndex(nextIndex);
+      const targetMonth = monthForIndex(nextIndex);
+      const currentMonth = committedMonthRef.current;
+      const currentMonthKey =
+        currentMonth.getFullYear() * 12 + currentMonth.getMonth();
+      const targetMonthKey = targetMonth.getFullYear() * 12 + targetMonth.getMonth();
+      if (currentMonthKey !== targetMonthKey) {
+        committedMonthRef.current = startOfMonth(targetMonth);
+        dispatch({ type: 'calendar/visibleMonth', date: targetMonth });
+      }
+    },
+    [dispatch, monthForIndex, setPreviewIndex],
+  );
 
-  const commitPendingMonthChange = useCallback(() => {
-    const position = pendingPagePositionRef.current;
-    if (position == null || position === 1) {
-      return;
-    }
-    pendingPagePositionRef.current = null;
-    const targetMonth = shiftMonth(visibleMonthRef.current, position - 1);
-    setVisibleMonth(targetMonth);
-    awaitingCenterRef.current = true;
-    recenterMonthPager();
-  }, [recenterMonthPager, setVisibleMonth]);
+  const commitIndexFromOffset = useCallback(
+    (offsetX: number) => {
+      const width = Math.max(pageWidth, 1);
+      const nextIndex = Math.max(
+        0,
+        Math.min(CALENDAR_TOTAL_PAGES - 1, Math.round(offsetX / width)),
+      );
+      commitIndex(nextIndex);
+    },
+    [commitIndex, pageWidth],
+  );
 
   const handleShift = useCallback(
     (delta: number) => {
-      const pager = monthPagerRef.current;
-      if (!pager) {
-        setVisibleMonth(shiftMonth(visibleMonthRef.current, delta));
+      const nextIndex = Math.max(
+        0,
+        Math.min(CALENDAR_TOTAL_PAGES - 1, currentIndexRef.current + delta),
+      );
+      if (nextIndex === currentIndexRef.current) {
         return;
       }
-      pager.setPage(delta >= 0 ? 2 : 0);
+      listRef.current?.scrollToIndex({ index: nextIndex, animated: true });
+      commitIndex(nextIndex);
     },
-    [setVisibleMonth],
+    [commitIndex],
   );
-  const handleMonthPageSelected = useCallback(
-    (event: MonthPageSelectedEvent) => {
-      const position = event.nativeEvent.position;
-      if (awaitingCenterRef.current && position === 1) {
-        awaitingCenterRef.current = false;
-        return;
-      }
-      if (position === 1) {
-        return;
-      }
-      pendingPagePositionRef.current = position;
-      if (scrollStateRef.current === 'idle') {
-        commitPendingMonthChange();
-      }
+  const handleMomentumScrollEnd = useCallback(
+    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+      commitIndexFromOffset(event.nativeEvent.contentOffset.x);
     },
-    [commitPendingMonthChange],
+    [commitIndexFromOffset],
   );
-
-  const handleMonthPageScrollStateChanged = useCallback(
-    (event: MonthPageScrollStateEvent) => {
-      const nextState = event.nativeEvent.pageScrollState;
-      scrollStateRef.current = nextState;
-      if (nextState === 'dragging') {
-        // Safety release for platforms that miss center-selected after recenter.
-        awaitingCenterRef.current = false;
-      }
-      if (nextState !== 'idle') {
+  const handleListScroll = useCallback(
+    (event: { nativeEvent: { contentOffset: { x: number } } }) => {
+      const width = Math.max(pageWidth, 1);
+      const thresholdOffset = event.nativeEvent.contentOffset.x + width * 0.5;
+      const nextIndex = Math.max(
+        0,
+        Math.min(
+          CALENDAR_TOTAL_PAGES - 1,
+          Math.floor(thresholdOffset / width),
+        ),
+      );
+      if (nextIndex === lastWindowCenterIndexRef.current) {
         return;
       }
-      commitPendingMonthChange();
+      setPreviewIndex(nextIndex);
     },
-    [commitPendingMonthChange],
+    [pageWidth, setPreviewIndex],
+  );
+  const handleListLayout = useCallback(
+    (event: { nativeEvent: { layout: { width: number } } }) => {
+      const nextWidth = Math.max(event.nativeEvent.layout.width, 1);
+      if (Math.abs(nextWidth - pageWidth) <= 1) return;
+      setPageWidth(nextWidth);
+      requestAnimationFrame(() => {
+        listRef.current?.scrollToIndex({
+          index: currentIndexRef.current,
+          animated: false,
+        });
+      });
+    },
+    [pageWidth],
+  );
+  const jumpToMonth = useCallback(
+    (targetDate: Date, animated: boolean) => {
+      const targetMonth = startOfMonth(targetDate);
+      let targetIndex = indexForMonth(targetMonth);
+      if (targetIndex < 0 || targetIndex >= CALENDAR_TOTAL_PAGES) {
+        baseMonthRef.current = targetMonth;
+        targetIndex = CALENDAR_CENTER_INDEX;
+      }
+      listRef.current?.scrollToIndex({ index: targetIndex, animated });
+      commitIndex(targetIndex);
+    },
+    [commitIndex, indexForMonth],
   );
 
   const closeSheet = useCallback(() => {
@@ -373,15 +518,7 @@ const CalendarScreen = () => {
           <TouchableOpacity
             onPress={() => {
               const today = new Date();
-              const currentMonthKey =
-                visibleMonth.getFullYear() * 12 + visibleMonth.getMonth();
-              const targetMonthKey = today.getFullYear() * 12 + today.getMonth();
-              if (targetMonthKey !== currentMonthKey) {
-                setVisibleMonth(today);
-                recenterMonthPager();
-              } else {
-                setVisibleMonth(today);
-              }
+              jumpToMonth(today, true);
               actions.setSelectedDate(new Date(today));
             }}
             style={styles.todayButton}
@@ -396,159 +533,181 @@ const CalendarScreen = () => {
         </View>
       </View>
 
-      <PagerView
-        ref={monthPagerRef}
-        style={{ flex: 1 }}
-        initialPage={1}
-        overdrag={false}
-        offscreenPageLimit={1}
-        onPageSelected={handleMonthPageSelected}
-        onPageScrollStateChanged={handleMonthPageScrollStateChanged}
-      >
-        {monthPages.map(page => {
+      <FlatList
+        ref={listRef}
+        data={pageIndices}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        overScrollMode="never"
+        bounces={false}
+        initialNumToRender={3}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        initialScrollIndex={CALENDAR_CENTER_INDEX}
+        keyExtractor={index => `calendar-month-${index}`}
+        getItemLayout={(_unused, index) => ({
+          length: pageWidth,
+          offset: pageWidth * index,
+          index,
+        })}
+        onMomentumScrollEnd={handleMomentumScrollEnd}
+        onScroll={handleListScroll}
+        scrollEventThrottle={16}
+        onLayout={handleListLayout}
+        renderItem={({ item: index }) => {
+          const page = getPageModel(index);
           const monthStats = page.stats;
+          const hasMonthStats = monthStats !== null;
+          const safeMonthStats = monthStats ?? EMPTY_MONTH_STATS;
           return (
-            <ScrollView
-              key={page.key}
-              contentContainerStyle={{
-                paddingTop: spacing(1.5),
-                paddingBottom: spacing(6),
-              }}
-            >
-              <Card variant="analytics" style={styles.summaryCard}>
-                <View style={styles.summaryHeader}>
-                  <Text style={styles.summaryTitle}>Monthly summary</Text>
-                  <Text style={styles.summarySubtitle}>
-                    {monthStats.sessions} sessions •{' '}
-                    {formatPercent(monthStats.attendance)} attendance
-                  </Text>
-                </View>
-                {monthStats.sessions === 0 ? (
-                  <Text style={styles.summaryValue}>
-                    {monthStats.isFutureMonth
-                      ? 'No sessions logged yet'
-                      : 'No sessions logged'}
-                  </Text>
-                ) : (
-                  <View style={styles.summaryBody}>
-                    <View style={{ flex: 1 }}>
-                      <View style={styles.summaryRow}>
-                        <Text style={styles.summaryLabel}>Top muscle groups</Text>
-                        {monthStats.allMuscles.length > 3 ? (
-                          <TouchableOpacity
-                            onPress={() => setShowAllMuscles(current => !current)}
-                          >
-                            <Text style={styles.summaryLink}>
-                              {showAllMuscles ? 'Show less' : 'Show all'}
-                            </Text>
-                          </TouchableOpacity>
-                        ) : null}
-                      </View>
-                      {(showAllMuscles
-                        ? monthStats.allMuscles
-                        : monthStats.topMuscles
-                      ).map(item => (
-                        <View key={item.group} style={styles.summaryRow}>
-                          <View
-                            style={[styles.dot, { backgroundColor: item.color }]}
-                          />
-                          <Text style={styles.summaryValue}>
-                            {formatLabel(item.group)} · {item.count}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                    <View style={styles.summaryChart}>
-                      <DonutChart data={monthStats.pieData} radius={38} />
-                    </View>
+            <View style={{ width: pageWidth, flex: 1 }}>
+              <ScrollView
+                contentContainerStyle={{
+                  paddingTop: spacing(1.5),
+                  paddingBottom: spacing(6),
+                }}
+              >
+                <Card variant="analytics" style={styles.summaryCard}>
+                  <View style={styles.summaryHeader}>
+                    <Text style={styles.summaryTitle}>Monthly summary</Text>
+                    <Text style={styles.summarySubtitle}>
+                      {hasMonthStats
+                        ? `${safeMonthStats.sessions} sessions • ${formatPercent(
+                            safeMonthStats.attendance,
+                          )} attendance`
+                        : 'Loading monthly summary...'}
+                    </Text>
                   </View>
-                )}
-              </Card>
-              <View style={styles.weekdayRow}>
-                {DAY_NAMES.map(label => (
-                  <Text
-                    key={label}
-                    style={{
-                      color:
-                        label === 'SUN' || label === 'SAT'
-                          ? palette.danger
-                          : palette.mutedText,
-                      fontSize: 12,
-                      flex: 1,
-                      textAlign: 'center',
-                    }}
-                  >
-                    {label}
-                  </Text>
-                ))}
-              </View>
-              <View style={styles.gridShadowWrap}>
-                <View style={styles.grid}>
-                  {page.days.map((day, index) => {
-                    const dateKey = roundToLocalDay(day.getTime());
-                    const colors = dayColorMap.get(dateKey) ?? [];
-                    const isCurrentMonth = day.getMonth() === page.month.getMonth();
-                    const isSelected = selectedDayBucket === dateKey;
-                    const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                    const isLastColumn = (index + 1) % DAYS_IN_WEEK === 0;
-                    const isLastRow = index >= TOTAL_CELLS - DAYS_IN_WEEK;
-                    return (
-                      <TouchableOpacity
-                        key={day.toISOString()}
-                        style={[
-                          styles.cell,
-                          {
-                            borderRightWidth: isLastColumn
-                              ? 0
-                              : StyleSheet.hairlineWidth,
-                            borderBottomWidth: isLastRow
-                              ? 0
-                              : StyleSheet.hairlineWidth,
-                          },
-                          !isCurrentMonth && { opacity: 0.3 },
-                          isWeekend && {
-                            backgroundColor: addAlpha(palette.surface, 0.35),
-                          },
-                        ]}
-                        onPress={() => {
-                          actions.setSelectedDate(new Date(day));
-                          actions.navigate(asScreenKey('home'));
-                        }}
-                      >
-                        <Text
-                          style={{
-                            color: isWeekend ? palette.warning : palette.text,
-                            fontWeight: '600',
+                  {!hasMonthStats ? (
+                    <Text style={styles.summaryValue}>Computing month stats...</Text>
+                  ) : safeMonthStats.sessions === 0 ? (
+                    <Text style={styles.summaryValue}>
+                      {safeMonthStats.isFutureMonth
+                        ? 'No sessions logged yet'
+                        : 'No sessions logged'}
+                    </Text>
+                  ) : (
+                    <View style={styles.summaryBody}>
+                      <View style={{ flex: 1 }}>
+                        <View style={styles.summaryRow}>
+                          <Text style={styles.summaryLabel}>Top muscle groups</Text>
+                          {safeMonthStats.allMuscles.length > 3 ? (
+                            <TouchableOpacity
+                              onPress={() => setShowAllMuscles(current => !current)}
+                            >
+                              <Text style={styles.summaryLink}>
+                                {showAllMuscles ? 'Show less' : 'Show all'}
+                              </Text>
+                            </TouchableOpacity>
+                          ) : null}
+                        </View>
+                        {(showAllMuscles
+                          ? safeMonthStats.allMuscles
+                          : safeMonthStats.topMuscles
+                        ).map(item => (
+                          <View key={item.group} style={styles.summaryRow}>
+                            <View
+                              style={[styles.dot, { backgroundColor: item.color }]}
+                            />
+                            <Text style={styles.summaryValue}>
+                              {formatLabel(item.group)} · {item.count}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                      <View style={styles.summaryChart}>
+                        <DonutChart data={safeMonthStats.pieData} radius={38} />
+                      </View>
+                    </View>
+                  )}
+                </Card>
+                <View style={styles.weekdayRow}>
+                  {DAY_NAMES.map(label => (
+                    <Text
+                      key={label}
+                      style={{
+                        color:
+                          label === 'SUN' || label === 'SAT'
+                            ? palette.danger
+                            : palette.mutedText,
+                        fontSize: 12,
+                        flex: 1,
+                        textAlign: 'center',
+                      }}
+                    >
+                      {label}
+                    </Text>
+                  ))}
+                </View>
+                <View style={styles.gridShadowWrap}>
+                  <View style={styles.grid}>
+                    {page.days.map((day, indexInMonth) => {
+                      const dateKey = roundToLocalDay(day.getTime());
+                      const colors = dayColorMap.get(dateKey) ?? [];
+                      const isCurrentMonth = day.getMonth() === page.month.getMonth();
+                      const isSelected = selectedDayBucket === dateKey;
+                      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                      const isLastColumn = (indexInMonth + 1) % DAYS_IN_WEEK === 0;
+                      const isLastRow = indexInMonth >= TOTAL_CELLS - DAYS_IN_WEEK;
+                      return (
+                        <TouchableOpacity
+                          key={day.toISOString()}
+                          style={[
+                            styles.cell,
+                            {
+                              borderRightWidth: isLastColumn
+                                ? 0
+                                : StyleSheet.hairlineWidth,
+                              borderBottomWidth: isLastRow
+                                ? 0
+                                : StyleSheet.hairlineWidth,
+                            },
+                            !isCurrentMonth && { opacity: 0.3 },
+                            isWeekend && {
+                              backgroundColor: addAlpha(palette.surface, 0.35),
+                            },
+                          ]}
+                          onPress={() => {
+                            actions.setSelectedDate(new Date(day));
+                            actions.navigate(asScreenKey('home'));
                           }}
                         >
-                          {day.getDate()}
-                        </Text>
-                        <View style={styles.dotRow}>
-                          {colors.slice(0, 3).map(color => (
+                          <Text
+                            style={{
+                              color: isWeekend ? palette.warning : palette.text,
+                              fontWeight: '600',
+                            }}
+                          >
+                            {day.getDate()}
+                          </Text>
+                          <View style={styles.dotRow}>
+                            {colors.slice(0, 3).map(color => (
+                              <View
+                                key={`${dateKey}-${color}`}
+                                style={[styles.dot, { backgroundColor: color }]}
+                              />
+                            ))}
+                          </View>
+                          {isSelected ? (
                             <View
-                              key={`${dateKey}-${color}`}
-                              style={[styles.dot, { backgroundColor: color }]}
+                              pointerEvents="none"
+                              style={[
+                                styles.selectedOutline,
+                                { borderColor: palette.primary },
+                              ]}
                             />
-                          ))}
-                        </View>
-                        {isSelected ? (
-                          <View
-                            pointerEvents="none"
-                            style={[
-                              styles.selectedOutline,
-                              { borderColor: palette.primary },
-                            ]}
-                          />
-                        ) : null}
-                      </TouchableOpacity>
-                    );
-                  })}
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
                 </View>
-              </View>
-            </ScrollView>
+              </ScrollView>
+            </View>
           );
-        })}
-      </PagerView>
+        }}
+      />
 
       {yearSheetOpen ? (
         <TouchableWithoutFeedback
@@ -572,21 +731,20 @@ const CalendarScreen = () => {
                     <TouchableOpacity
                       key={year}
                       onPress={() => {
-                        const target = new Date(visibleMonth);
+                        const target = new Date(displayMonth);
                         target.setFullYear(year, target.getMonth(), 1);
                         const currentMonthKey =
-                          visibleMonth.getFullYear() * 12 + visibleMonth.getMonth();
+                          displayMonth.getFullYear() * 12 + displayMonth.getMonth();
                         const targetMonthKey =
                           target.getFullYear() * 12 + target.getMonth();
                         if (targetMonthKey !== currentMonthKey) {
-                          setVisibleMonth(target);
-                          recenterMonthPager();
+                          jumpToMonth(target, true);
                         }
                         dispatch({ type: 'calendar/yearSheet', open: false });
                       }}
                       style={[
                         styles.sheetRow,
-                        visibleMonth.getFullYear() === year && {
+                        displayMonth.getFullYear() === year && {
                           backgroundColor: palette.mutedSurface,
                         },
                       ]}
@@ -645,6 +803,9 @@ const shiftMonth = (date: Date, delta: number) => {
   next.setMonth(next.getMonth() + delta, 1);
   return next;
 };
+
+const startOfMonth = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), 1);
 
 const getMonthBucket = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), 1).getTime();
