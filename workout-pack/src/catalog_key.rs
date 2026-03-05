@@ -22,7 +22,10 @@ mod tests {
     #[test]
     fn normalizes_case_spacing_and_punctuation() {
         assert_eq!(normalize_catalog_key("  Barbell Squat  "), "barbell_squat");
-        assert_eq!(normalize_catalog_key("Rear-Deltoid Fly"), "rear_deltoid_fly");
+        assert_eq!(
+            normalize_catalog_key("Rear-Deltoid Fly"),
+            "rear_deltoid_fly"
+        );
         assert_eq!(normalize_catalog_key("Leg/Press (45°)"), "leg_press_45");
         assert_eq!(normalize_catalog_key("___"), "");
     }

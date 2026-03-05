@@ -288,7 +288,9 @@ const darkenThemeColor = (hex: ColorHex, amount: number): ColorHex => {
   const b = parseInt(normalized.slice(4, 6), 16);
   const factor = 1 - Math.max(0, Math.min(1, amount));
   return asColorHex(
-    `#${toHexChannel(r * factor)}${toHexChannel(g * factor)}${toHexChannel(b * factor)}`,
+    `#${toHexChannel(r * factor)}${toHexChannel(g * factor)}${toHexChannel(
+      b * factor,
+    )}`,
   );
 };
 

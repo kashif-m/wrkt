@@ -53,10 +53,8 @@ FfiResult strata_compute_home_day_analytics(const char* events_json, int32_t off
                                             const char* catalog_json, const char* query_json);
 FfiResult strata_compute_home_days_analytics(const char* events_json, int32_t offset_minutes,
                                              const char* catalog_json, const char* query_json);
-FfiResult strata_compute_calendar_month_analytics(const char* events_json,
-                                                  int32_t offset_minutes,
-                                                  const char* catalog_json,
-                                                  const char* query_json);
+FfiResult strata_compute_calendar_month_analytics(const char* events_json, int32_t offset_minutes,
+                                                  const char* catalog_json, const char* query_json);
 FfiResult strata_export_generic_sqlite(const char* payload_json, const char* output_path);
 FfiResult strata_import_generic_sqlite(const char* input_path);
 }
@@ -351,17 +349,17 @@ void installTrackerEngineBinding(Runtime& rt) {
                  return makeStringResult(runtime, callStrata(ffi));
                });
 
-  makeFunction("exportGenericSqlite",
-               [](Runtime& runtime, const Value* args, size_t count) -> Value {
-                 if (count < 1) {
-                   throw std::invalid_argument("exportGenericSqlite requires payload JSON");
-                 }
-                 auto payload_json = args[0].asString(runtime).utf8(runtime);
-                 std::string output_path =
-                     count >= 2 && args[1].isString() ? args[1].asString(runtime).utf8(runtime) : "";
-                 auto ffi = strata_export_generic_sqlite(payload_json.c_str(), output_path.c_str());
-                 return makeStringResult(runtime, callStrata(ffi));
-               });
+  makeFunction(
+      "exportGenericSqlite", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+        if (count < 1) {
+          throw std::invalid_argument("exportGenericSqlite requires payload JSON");
+        }
+        auto payload_json = args[0].asString(runtime).utf8(runtime);
+        std::string output_path =
+            count >= 2 && args[1].isString() ? args[1].asString(runtime).utf8(runtime) : "";
+        auto ffi = strata_export_generic_sqlite(payload_json.c_str(), output_path.c_str());
+        return makeStringResult(runtime, callStrata(ffi));
+      });
 
   makeFunction("importGenericSqlite",
                [](Runtime& runtime, const Value* args, size_t count) -> Value {

@@ -351,8 +351,12 @@ pub extern "C" fn strata_compute_home_day_analytics(
 
         let map = build_catalog_map(entries);
 
-        let response =
-            workout_pack::analytics::compute_home_day_analytics(&events, offset_minutes, &map, &query);
+        let response = workout_pack::analytics::compute_home_day_analytics(
+            &events,
+            offset_minutes,
+            &map,
+            &query,
+        );
         Ok(response)
     })
 }

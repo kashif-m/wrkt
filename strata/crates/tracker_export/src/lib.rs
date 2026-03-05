@@ -278,15 +278,12 @@ mod tests {
         assert_eq!(summary.trackers, 1);
         assert_eq!(summary.events, 1);
 
-        let imported = import_generic_sqlite(summary.output_path.as_str())
-            .expect("import should succeed");
+        let imported =
+            import_generic_sqlite(summary.output_path.as_str()).expect("import should succeed");
 
         assert_eq!(imported.payload.trackers.len(), 1);
         assert_eq!(imported.payload.events.len(), 1);
-        assert_eq!(
-            imported.payload.trackers[0].tracker_id,
-            "tracker.workout"
-        );
+        assert_eq!(imported.payload.trackers[0].tracker_id, "tracker.workout");
         assert_eq!(imported.payload.events[0].event_id, "evt-1");
         assert_eq!(
             imported.payload.kv_meta.get("key"),

@@ -37,8 +37,8 @@ pub fn strata_validate_event(dsl_ptr: *const c_char, event_json_ptr: *const c_ch
         let dsl = cstr_to_str(dsl_ptr)?;
         let event_json = cstr_to_str(event_json_ptr)?;
         let def = tracker_engine::compile_tracker(dsl).map_err(to_engine_error_string)?;
-        let normalized = tracker_engine::validate_event(&def, event_json)
-            .map_err(to_engine_error_string)?;
+        let normalized =
+            tracker_engine::validate_event(&def, event_json).map_err(to_engine_error_string)?;
         Ok(normalized)
     })
 }
@@ -52,7 +52,8 @@ pub fn strata_compute(
         let def = compile_from_ptr(dsl_ptr)?;
         let events = parse_events(events_json_ptr)?;
         let query = parse_query(query_json_ptr)?;
-        let output = tracker_engine::compute(&def, &events, query).map_err(to_engine_error_string)?;
+        let output =
+            tracker_engine::compute(&def, &events, query).map_err(to_engine_error_string)?;
         Ok(output)
     })
 }
@@ -162,7 +163,9 @@ fn error(message: String) -> FfiResult {
 fn string_to_c(value: String) -> *mut c_char {
     match CString::new(value) {
         Ok(cstring) => cstring.into_raw(),
-        Err(_) => CString::new("string contains null bytes").unwrap().into_raw(),
+        Err(_) => CString::new("string contains null bytes")
+            .unwrap()
+            .into_raw(),
     }
 }
 

@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LayoutChangeEvent, StyleProp, ViewStyle } from 'react-native';
-import { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 type UseMeasuredCardHeightArgs = {
   estimatedContentHeight: number;
@@ -38,7 +42,8 @@ export const useMeasuredCardHeight = ({
     return Math.min(measuredContentHeight, viewportHeight);
   }, [collapsed, measuredContentHeight, viewportHeight]);
 
-  const scrollEnabled = !collapsed && viewportHeight > 0 && measuredContentHeight > viewportHeight;
+  const scrollEnabled =
+    !collapsed && viewportHeight > 0 && measuredContentHeight > viewportHeight;
 
   useEffect(() => {
     if (!animated) {
@@ -80,7 +85,9 @@ export const useMeasuredCardHeight = ({
   }, []);
 
   return {
-    heightStyle: animated ? (animatedStyle as unknown as StyleProp<ViewStyle>) : staticStyle,
+    heightStyle: animated
+      ? (animatedStyle as unknown as StyleProp<ViewStyle>)
+      : staticStyle,
     scrollEnabled,
     viewportHeight,
     contentHeight,

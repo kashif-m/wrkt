@@ -2,7 +2,9 @@ import React, { useMemo } from 'react';
 import { SharedValue, useSharedValue } from 'react-native-reanimated';
 import { spacing } from '../../ui/theme';
 import { LabelText, asLabelText, unwrapLabelText } from '../../domain/types';
-import PagerTabsRail, { PagerTabDefinition } from '../../ui/pager/PagerTabsRail';
+import PagerTabsRail, {
+  PagerTabDefinition,
+} from '../../ui/pager/PagerTabsRail';
 
 export type AnalyticsTabKey =
   | 'summary'
@@ -33,7 +35,10 @@ export const AnalyticsTabs = ({
   onSelect: (tab: AnalyticsTabKey) => void;
   scrollProgress?: SharedValue<number>;
 }) => {
-  const selectedIndex = Math.max(tabs.findIndex(tab => tab.key === selected), 0);
+  const selectedIndex = Math.max(
+    tabs.findIndex(tab => tab.key === selected),
+    0,
+  );
   const fallbackProgress = useSharedValue(selectedIndex);
 
   React.useEffect(() => {

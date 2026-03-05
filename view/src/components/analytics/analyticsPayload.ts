@@ -7,9 +7,7 @@ const pickNumber = (value: unknown): number | undefined =>
 const pickString = (value: unknown): string | undefined =>
   typeof value === 'string' && value.length > 0 ? value : undefined;
 
-export const toAnalyticsInputEvents = (
-  events: WorkoutEvent[],
-): JsonObject[] =>
+export const toAnalyticsInputEvents = (events: WorkoutEvent[]): JsonObject[] =>
   events.map(event => {
     const payload = event.payload ?? {};
     const compactPayload: Record<string, unknown> = {};
@@ -32,4 +30,3 @@ export const toAnalyticsInputEvents = (
       payload: compactPayload,
     } as JsonObject;
   });
-

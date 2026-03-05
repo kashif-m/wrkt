@@ -1,4 +1,10 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import {
   JsonObject,
   computeBreakdownAnalytics,

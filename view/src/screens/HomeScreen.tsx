@@ -109,10 +109,7 @@ const HomeScreen = () => {
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
   const offsetMinutes = -new Date().getTimezoneOffset();
-  const eventPayload = useMemo(
-    () => toAnalyticsInputEvents(events),
-    [events],
-  );
+  const eventPayload = useMemo(() => toAnalyticsInputEvents(events), [events]);
   const catalogPayload = useMemo(
     () => catalog as unknown as JsonObject[],
     [catalog],
@@ -129,11 +126,10 @@ const HomeScreen = () => {
     HOME_PAGER_CENTER_INDEX,
   );
   const lastWindowCenterIndexRef = useRef(HOME_PAGER_CENTER_INDEX);
-  const [pageWidth, setPageWidth] = useState(
-    () => Math.max(viewport.width, 1),
-  );
+  const [pageWidth, setPageWidth] = useState(() => Math.max(viewport.width, 1));
   const pageIndices = useMemo(
-    () => Array.from({ length: HOME_PAGER_TOTAL_PAGES }, (_unused, index) => index),
+    () =>
+      Array.from({ length: HOME_PAGER_TOTAL_PAGES }, (_unused, index) => index),
     [],
   );
 
@@ -182,8 +178,7 @@ const HomeScreen = () => {
 
   const dayBucketForIndex = useCallback(
     (index: number) =>
-      baseDayBucketRef.current +
-      (index - HOME_PAGER_CENTER_INDEX) * DAY_MS,
+      baseDayBucketRef.current + (index - HOME_PAGER_CENTER_INDEX) * DAY_MS,
     [],
   );
 
@@ -221,7 +216,10 @@ const HomeScreen = () => {
   }, [currentIndex, pageWidth, viewport.width]);
 
   useEffect(() => {
-    const selectedBucket = roundToLocalDay(selectedDate.getTime(), offsetMinutes);
+    const selectedBucket = roundToLocalDay(
+      selectedDate.getTime(),
+      offsetMinutes,
+    );
     let targetIndex = indexForDayBucket(selectedBucket);
     if (targetIndex < 0 || targetIndex >= HOME_PAGER_TOTAL_PAGES) {
       // Re-anchor when selected date moves outside the seeded index range.
@@ -236,25 +234,22 @@ const HomeScreen = () => {
     }
   }, [applyPagerIndex, indexForDayBucket, offsetMinutes, selectedDate]);
 
-  const visibleBuckets = useMemo(
-    () => {
-      const buckets: number[] = [];
-      const startIndex = Math.max(
-        0,
-        Math.min(currentIndex, windowCenterIndex) - 6,
-      );
-      const endIndex = Math.min(
-        HOME_PAGER_TOTAL_PAGES - 1,
-        Math.max(currentIndex, windowCenterIndex) + 6,
-      );
-      for (let index = startIndex; index <= endIndex; index += 1) {
-        if (index < 0 || index >= HOME_PAGER_TOTAL_PAGES) continue;
-        buckets.push(dayBucketForIndex(index));
-      }
-      return buckets;
-    },
-    [currentIndex, dayBucketForIndex, windowCenterIndex],
-  );
+  const visibleBuckets = useMemo(() => {
+    const buckets: number[] = [];
+    const startIndex = Math.max(
+      0,
+      Math.min(currentIndex, windowCenterIndex) - 6,
+    );
+    const endIndex = Math.min(
+      HOME_PAGER_TOTAL_PAGES - 1,
+      Math.max(currentIndex, windowCenterIndex) + 6,
+    );
+    for (let index = startIndex; index <= endIndex; index += 1) {
+      if (index < 0 || index >= HOME_PAGER_TOTAL_PAGES) continue;
+      buckets.push(dayBucketForIndex(index));
+    }
+    return buckets;
+  }, [currentIndex, dayBucketForIndex, windowCenterIndex]);
   const batchedDays = useMemo<HomeDaysResponse>(() => {
     if (!catalogPayload || visibleBuckets.length === 0) {
       return { days: [] };
@@ -308,15 +303,15 @@ const HomeScreen = () => {
       const width = Math.max(pageWidth, 1);
       const nextIndex = Math.max(
         0,
-        Math.min(
-          HOME_PAGER_TOTAL_PAGES - 1,
-          Math.round(offsetX / width),
-        ),
+        Math.min(HOME_PAGER_TOTAL_PAGES - 1, Math.round(offsetX / width)),
       );
       if (!applyPagerIndex(nextIndex)) {
         return;
       }
-      const selectedBucket = roundToLocalDay(selectedDate.getTime(), offsetMinutes);
+      const selectedBucket = roundToLocalDay(
+        selectedDate.getTime(),
+        offsetMinutes,
+      );
       const nextBucket = dayBucketForIndex(nextIndex);
       if (nextBucket !== selectedBucket) {
         actions.setSelectedDate(dateForIndex(nextIndex));
@@ -372,7 +367,10 @@ const HomeScreen = () => {
       if (Math.abs(nextWidth - pageWidth) <= 1) return;
       setPageWidth(nextWidth);
       requestAnimationFrame(() => {
-        listRef.current?.scrollToIndex({ index: currentIndex, animated: false });
+        listRef.current?.scrollToIndex({
+          index: currentIndex,
+          animated: false,
+        });
       });
     },
     [currentIndex, pageWidth],
@@ -559,7 +557,9 @@ const HomeDayContent = ({
   const splitMenuLeft = Math.max(
     spacing(1),
     Math.min(
-      (splitAnchor?.x ?? spacing(2)) + (splitAnchor?.width ?? 0) - splitMenuWidth,
+      (splitAnchor?.x ?? spacing(2)) +
+        (splitAnchor?.width ?? 0) -
+        splitMenuWidth,
       window.width - splitMenuWidth - spacing(1),
     ),
   );
@@ -885,9 +885,7 @@ const collapseSplitItems = (
           key: asDisplayLabel('other'),
           label: asDisplayLabel('Other'),
           color: palette.mutedSurface,
-          percent: items
-            .slice(3)
-            .reduce((sum, item) => sum + item.percent, 0),
+          percent: items.slice(3).reduce((sum, item) => sum + item.percent, 0),
         },
       ];
 

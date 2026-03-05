@@ -220,20 +220,14 @@ const AnalyticsWorkouts = () => {
         value: filterValue,
       },
     };
-    return computeWorkoutAnalytics(
-      filteredPayload,
-      -offset,
-      catalog,
-      query,
-      {
-        trace: 'trends/workouts',
-        cache: {
-          enabled: true,
-          eventsRevision,
-          catalogRevision,
-        },
+    return computeWorkoutAnalytics(filteredPayload, -offset, catalog, query, {
+      trace: 'trends/workouts',
+      cache: {
+        enabled: true,
+        eventsRevision,
+        catalogRevision,
       },
-    );
+    });
   }, [
     catalog,
     catalogRevision,

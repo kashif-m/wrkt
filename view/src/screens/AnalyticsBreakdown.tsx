@@ -146,20 +146,14 @@ const AnalyticsBreakdown = () => {
       metric,
       group_by: groupBy,
     };
-    return computeBreakdownAnalytics(
-      filteredPayload,
-      -offset,
-      catalog,
-      query,
-      {
-        trace: 'trends/breakdown',
-        cache: {
-          enabled: true,
-          eventsRevision,
-          catalogRevision,
-        },
+    return computeBreakdownAnalytics(filteredPayload, -offset, catalog, query, {
+      trace: 'trends/breakdown',
+      cache: {
+        enabled: true,
+        eventsRevision,
+        catalogRevision,
       },
-    );
+    });
   }, [
     catalog,
     catalogRevision,
@@ -574,7 +568,10 @@ const formatBreakdownLabel = (
 };
 
 const normalizeBreakdownKey = (value: string): string =>
-  value.trim().toLowerCase().replace(/[\s_]+/g, ' ');
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_]+/g, ' ');
 
 const colorForBreakdownItem = (
   item: DistributionItem,

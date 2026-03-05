@@ -38,9 +38,7 @@ import {
 import { addAlpha } from '../ui/color';
 import { asLabelText } from '../domain/types';
 import ScreenHeader from '../ui/ScreenHeader';
-import {
-  exportAndShareSqlite,
-} from '../export/sqliteExport';
+import { exportAndShareSqlite } from '../export/sqliteExport';
 
 type RgbColor = { r: number; g: number; b: number };
 type HsvColor = { h: number; s: number; v: number };

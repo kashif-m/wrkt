@@ -56,14 +56,8 @@ const AnalyticsExercises = ({
     state.preferences.themeAccent
   }:${state.preferences.customAccentHex ?? ''}`;
   const styles = useMemo(() => createStyles(themeKey), [themeKey]);
-  const {
-    events,
-    loading,
-    error,
-    catalog,
-    eventsRevision,
-    catalogRevision,
-  } = useAnalyticsData();
+  const { events, loading, error, catalog, eventsRevision, catalogRevision } =
+    useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
   const [metric, setMetric] = useState<ExerciseMetricKey>('estimated_one_rm');
   const [selectedRm, setSelectedRm] = useState('1');

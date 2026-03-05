@@ -244,10 +244,7 @@ const readBridgeCache = <T extends JsonValue>(
   return entry.value as T;
 };
 
-const writeBridgeCache = (
-  cacheKey: string | null,
-  value: JsonValue,
-) => {
+const writeBridgeCache = (cacheKey: string | null, value: JsonValue) => {
   if (!cacheKey) return;
   bridgeCache.set(cacheKey, { value, createdAt: Date.now() });
   if (bridgeCache.size > BRIDGE_CACHE_MAX_ENTRIES) {
@@ -299,13 +296,7 @@ export const compute = async (
     options,
     traceKey,
     payloadBytes(dslText, eventsJson as unknown as string, queryJson),
-    () =>
-      call<JsonObject>(
-        'compute',
-        dsl,
-        eventsJson,
-        queryJson,
-      ),
+    () => call<JsonObject>('compute', dsl, eventsJson, queryJson),
   );
 };
 
@@ -328,33 +319,26 @@ export const simulate = async (
   hypotheticals: JsonObject[],
   query: JsonObject,
   options?: BridgeTraceOptions,
-) =>
-  {
-    const baseJson = JSON.stringify(baseEvents) as JsonText;
-    const hypotheticalJson = JSON.stringify(hypotheticals) as JsonText;
-    const queryJson = stringify(query);
-    const dslText = dsl as unknown as string;
-    const traceKey = `${dslText}|${queryJson}|base:${baseEvents.length}|hyp:${hypotheticals.length}`;
-    return traceBridgeCall(
-      'simulate',
-      options,
-      traceKey,
-      payloadBytes(
-        dslText,
-        baseJson as unknown as string,
-        hypotheticalJson as unknown as string,
-        queryJson,
-      ),
-      () =>
-        call<JsonObject>(
-          'simulate',
-          dsl,
-          baseJson,
-          hypotheticalJson,
-          queryJson,
-        ),
-    );
-  };
+) => {
+  const baseJson = JSON.stringify(baseEvents) as JsonText;
+  const hypotheticalJson = JSON.stringify(hypotheticals) as JsonText;
+  const queryJson = stringify(query);
+  const dslText = dsl as unknown as string;
+  const traceKey = `${dslText}|${queryJson}|base:${baseEvents.length}|hyp:${hypotheticals.length}`;
+  return traceBridgeCall(
+    'simulate',
+    options,
+    traceKey,
+    payloadBytes(
+      dslText,
+      baseJson as unknown as string,
+      hypotheticalJson as unknown as string,
+      queryJson,
+    ),
+    () =>
+      call<JsonObject>('simulate', dsl, baseJson, hypotheticalJson, queryJson),
+  );
+};
 
 export const compileTracker = async (dsl: DslText) =>
   call<JsonObject>('compileTracker', dsl);
@@ -492,13 +476,11 @@ export const computeAnalytics = (
     'computeAnalytics',
     options,
     traceKey,
-    payloadBytes(eventsJson as unknown as string, catalogJson as unknown as string),
-    () =>
-      engine.computeAnalytics(
-        eventsJson,
-        offset,
-        catalogJson,
-      ),
+    payloadBytes(
+      eventsJson as unknown as string,
+      catalogJson as unknown as string,
+    ),
+    () => engine.computeAnalytics(eventsJson, offset, catalogJson),
   );
   const parsed = JSON.parse(result) as AnalyticsSummary;
   writeBridgeCache(cacheKey, parsed as unknown as JsonObject);

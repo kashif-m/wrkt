@@ -53,19 +53,14 @@ export const useAnalyticsSummary = (
     if (!catalog || events.length === 0) return null;
     const offset = new Date().getTimezoneOffset();
     const inputEvents = toAnalyticsInputEvents(events);
-    return computeAnalytics(
-      inputEvents,
-      -offset,
-      catalog,
-      {
-        trace: 'trends/summary',
-        cache: {
-          enabled: true,
-          eventsRevision: revisions?.eventsRevision,
-          catalogRevision: revisions?.catalogRevision,
-        },
+    return computeAnalytics(inputEvents, -offset, catalog, {
+      trace: 'trends/summary',
+      cache: {
+        enabled: true,
+        eventsRevision: revisions?.eventsRevision,
+        catalogRevision: revisions?.catalogRevision,
       },
-    );
+    });
   }, [catalog, events, revisions?.catalogRevision, revisions?.eventsRevision]);
 
   return { summary, loading, error, catalog };

@@ -84,10 +84,7 @@ const CalendarScreen = () => {
   const offsetMinutes = -new Date().getTimezoneOffset();
   const selectedDate = state.selectedDate;
   const catalog = state.catalog.entries;
-  const eventPayload = useMemo(
-    () => toAnalyticsInputEvents(events),
-    [events],
-  );
+  const eventPayload = useMemo(() => toAnalyticsInputEvents(events), [events]);
   const catalogPayload = useMemo(
     () => catalog as unknown as JsonObject[],
     [catalog],
@@ -104,7 +101,8 @@ const CalendarScreen = () => {
   const lastWindowCenterIndexRef = useRef(CALENDAR_CENTER_INDEX);
   const [pageWidth, setPageWidth] = useState(() => Math.max(viewport.width, 1));
   const pageIndices = useMemo(
-    () => Array.from({ length: CALENDAR_TOTAL_PAGES }, (_unused, index) => index),
+    () =>
+      Array.from({ length: CALENDAR_TOTAL_PAGES }, (_unused, index) => index),
     [],
   );
   const committedMonthRef = useRef(startOfMonth(visibleMonth));
@@ -183,7 +181,10 @@ const CalendarScreen = () => {
     if (Math.abs(viewport.width - pageWidth) <= 1) return;
     setPageWidth(viewport.width);
     requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({ index: currentIndexRef.current, animated: false });
+      listRef.current?.scrollToIndex({
+        index: currentIndexRef.current,
+        animated: false,
+      });
     });
   }, [pageWidth, viewport.width]);
 
@@ -202,7 +203,9 @@ const CalendarScreen = () => {
 
   const getMonthStatsKey = useCallback(
     (month: Date) =>
-      `${getMonthBucket(month)}:${state.eventsRevision}:${state.catalogRevision}:${offsetMinutes}`,
+      `${getMonthBucket(month)}:${state.eventsRevision}:${
+        state.catalogRevision
+      }:${offsetMinutes}`,
     [offsetMinutes, state.catalogRevision, state.eventsRevision],
   );
   const getMonthStatsFromCache = useCallback(
@@ -308,7 +311,12 @@ const CalendarScreen = () => {
       return cached;
     }
     const days = buildCalendarDays(month);
-    cacheSet(monthDaysCacheRef.current, monthBucket, days, MONTH_DAYS_CACHE_LIMIT);
+    cacheSet(
+      monthDaysCacheRef.current,
+      monthBucket,
+      days,
+      MONTH_DAYS_CACHE_LIMIT,
+    );
     return days;
   }, []);
   const getPageModel = useCallback(
@@ -351,7 +359,8 @@ const CalendarScreen = () => {
       const currentMonth = committedMonthRef.current;
       const currentMonthKey =
         currentMonth.getFullYear() * 12 + currentMonth.getMonth();
-      const targetMonthKey = targetMonth.getFullYear() * 12 + targetMonth.getMonth();
+      const targetMonthKey =
+        targetMonth.getFullYear() * 12 + targetMonth.getMonth();
       if (currentMonthKey !== targetMonthKey) {
         committedMonthRef.current = startOfMonth(targetMonth);
         dispatch({ type: 'calendar/visibleMonth', date: targetMonth });
@@ -398,10 +407,7 @@ const CalendarScreen = () => {
       const thresholdOffset = event.nativeEvent.contentOffset.x + width * 0.5;
       const nextIndex = Math.max(
         0,
-        Math.min(
-          CALENDAR_TOTAL_PAGES - 1,
-          Math.floor(thresholdOffset / width),
-        ),
+        Math.min(CALENDAR_TOTAL_PAGES - 1, Math.floor(thresholdOffset / width)),
       );
       if (nextIndex === lastWindowCenterIndexRef.current) {
         return;
@@ -573,14 +579,18 @@ const CalendarScreen = () => {
                     <Text style={styles.summaryTitle}>Monthly summary</Text>
                     <Text style={styles.summarySubtitle}>
                       {hasMonthStats
-                        ? `${safeMonthStats.sessions} sessions • ${formatPercent(
+                        ? `${
+                            safeMonthStats.sessions
+                          } sessions • ${formatPercent(
                             safeMonthStats.attendance,
                           )} attendance`
                         : 'Loading monthly summary...'}
                     </Text>
                   </View>
                   {!hasMonthStats ? (
-                    <Text style={styles.summaryValue}>Computing month stats...</Text>
+                    <Text style={styles.summaryValue}>
+                      Computing month stats...
+                    </Text>
                   ) : safeMonthStats.sessions === 0 ? (
                     <Text style={styles.summaryValue}>
                       {safeMonthStats.isFutureMonth
@@ -591,10 +601,14 @@ const CalendarScreen = () => {
                     <View style={styles.summaryBody}>
                       <View style={{ flex: 1 }}>
                         <View style={styles.summaryRow}>
-                          <Text style={styles.summaryLabel}>Top muscle groups</Text>
+                          <Text style={styles.summaryLabel}>
+                            Top muscle groups
+                          </Text>
                           {safeMonthStats.allMuscles.length > 3 ? (
                             <TouchableOpacity
-                              onPress={() => setShowAllMuscles(current => !current)}
+                              onPress={() =>
+                                setShowAllMuscles(current => !current)
+                              }
                             >
                               <Text style={styles.summaryLink}>
                                 {showAllMuscles ? 'Show less' : 'Show all'}
@@ -608,7 +622,10 @@ const CalendarScreen = () => {
                         ).map(item => (
                           <View key={item.group} style={styles.summaryRow}>
                             <View
-                              style={[styles.dot, { backgroundColor: item.color }]}
+                              style={[
+                                styles.dot,
+                                { backgroundColor: item.color },
+                              ]}
                             />
                             <Text style={styles.summaryValue}>
                               {formatLabel(item.group)} · {item.count}
@@ -645,11 +662,15 @@ const CalendarScreen = () => {
                     {page.days.map((day, indexInMonth) => {
                       const dateKey = roundToLocalDay(day.getTime());
                       const colors = dayColorMap.get(dateKey) ?? [];
-                      const isCurrentMonth = day.getMonth() === page.month.getMonth();
+                      const isCurrentMonth =
+                        day.getMonth() === page.month.getMonth();
                       const isSelected = selectedDayBucket === dateKey;
-                      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                      const isLastColumn = (indexInMonth + 1) % DAYS_IN_WEEK === 0;
-                      const isLastRow = indexInMonth >= TOTAL_CELLS - DAYS_IN_WEEK;
+                      const isWeekend =
+                        day.getDay() === 0 || day.getDay() === 6;
+                      const isLastColumn =
+                        (indexInMonth + 1) % DAYS_IN_WEEK === 0;
+                      const isLastRow =
+                        indexInMonth >= TOTAL_CELLS - DAYS_IN_WEEK;
                       return (
                         <TouchableOpacity
                           key={day.toISOString()}
@@ -734,7 +755,8 @@ const CalendarScreen = () => {
                         const target = new Date(displayMonth);
                         target.setFullYear(year, target.getMonth(), 1);
                         const currentMonthKey =
-                          displayMonth.getFullYear() * 12 + displayMonth.getMonth();
+                          displayMonth.getFullYear() * 12 +
+                          displayMonth.getMonth();
                         const targetMonthKey =
                           target.getFullYear() * 12 + target.getMonth();
                         if (targetMonthKey !== currentMonthKey) {
@@ -810,12 +832,7 @@ const startOfMonth = (date: Date) =>
 const getMonthBucket = (date: Date) =>
   new Date(date.getFullYear(), date.getMonth(), 1).getTime();
 
-const cacheSet = <K, V>(
-  cache: Map<K, V>,
-  key: K,
-  value: V,
-  limit: number,
-) => {
+const cacheSet = <K, V>(cache: Map<K, V>, key: K, value: V, limit: number) => {
   if (cache.has(key)) {
     cache.delete(key);
   }
@@ -832,9 +849,7 @@ const cacheSet = <K, V>(
 const toCalendarGroup = (value: string): MuscleGroup =>
   asMuscleGroup(value && value.trim() ? value : 'untracked');
 
-const mapCalendarMuscles = (
-  rows: CalendarMonthResponse['all_muscles'],
-) =>
+const mapCalendarMuscles = (rows: CalendarMonthResponse['all_muscles']) =>
   rows.map(item => {
     const group = toCalendarGroup(item.group);
     return {
@@ -844,9 +859,7 @@ const mapCalendarMuscles = (
     };
   });
 
-const mapCalendarPieData = (
-  analytics: CalendarMonthResponse,
-) =>
+const mapCalendarPieData = (analytics: CalendarMonthResponse) =>
   analytics.pie_data.map(item => {
     const group = toCalendarGroup(item.label);
     return {

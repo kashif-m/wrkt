@@ -1,8 +1,8 @@
 //! Workout-specific planning strategies and catalog helpers.
 
 pub mod analytics;
-pub mod catalog_key;
 pub mod catalog;
+pub mod catalog_key;
 pub mod import;
 pub mod metrics;
 pub mod strategy;

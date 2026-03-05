@@ -1,11 +1,21 @@
-import { MutableRefObject, useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  MutableRefObject,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from 'react';
 import { Platform } from 'react-native';
 import PagerView, {
   PageScrollStateChangedNativeEvent,
   PagerViewOnPageScrollEvent,
   PagerViewOnPageSelectedEvent,
 } from 'react-native-pager-view';
-import { SharedValue, useSharedValue, withTiming } from 'react-native-reanimated';
+import {
+  SharedValue,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import { analyticsUi } from '../theme';
 
 type UsePagerTabsControllerArgs<T extends string> = {
@@ -105,13 +115,7 @@ export const usePagerTabsController = <T extends string>({
     committedIndexRef.current = selectedIndex;
     progress.value = selectedIndex;
     movePagerToIndex(selectedIndex, false);
-  }, [
-    isIos,
-    movePagerToIndex,
-    progress,
-    selectedIndex,
-    selectedTab,
-  ]);
+  }, [isIos, movePagerToIndex, progress, selectedIndex, selectedTab]);
 
   const onTabPress = useCallback(
     (tab: T) => {

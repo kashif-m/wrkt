@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use tracker_analytics::{
-    bucket_ts, Distribution, Granularity, Heatmap, StreakCalculator, round_to_local_day,
-    round_to_local_month,
+    bucket_ts, round_to_local_day, round_to_local_month, Distribution, Granularity, Heatmap,
+    StreakCalculator,
 };
 
 use crate::catalog_key::normalize_catalog_key;
@@ -12,7 +12,9 @@ mod types;
 
 pub use types::*;
 
-use event_metrics::{extract_event_metrics, modality_label, resolve_catalog_entry, EventMetricValues};
+use event_metrics::{
+    extract_event_metrics, modality_label, resolve_catalog_entry, EventMetricValues,
+};
 
 pub fn compute_summary(
     events: &[AnalyticsInputEvent],
@@ -298,7 +300,11 @@ pub fn compute_home_day_analytics(
                 .exercise_order
                 .into_iter()
                 .map(|exercise| {
-                    let descriptions = section.exercise_sets.get(&exercise).cloned().unwrap_or_default();
+                    let descriptions = section
+                        .exercise_sets
+                        .get(&exercise)
+                        .cloned()
+                        .unwrap_or_default();
                     let total_sets = descriptions.len() as i32;
                     HomeExerciseSummary {
                         exercise,
@@ -326,9 +332,18 @@ pub fn compute_home_day_analytics(
 
     let total_sets: i32 = sections
         .iter()
-        .map(|section| section.exercises.iter().map(|exercise| exercise.total_sets).sum::<i32>())
+        .map(|section| {
+            section
+                .exercises
+                .iter()
+                .map(|exercise| exercise.total_sets)
+                .sum::<i32>()
+        })
         .sum();
-    let total_exercises: i32 = sections.iter().map(|section| section.exercises.len() as i32).sum();
+    let total_exercises: i32 = sections
+        .iter()
+        .map(|section| section.exercises.len() as i32)
+        .sum();
     let average_sets_per_exercise = if total_exercises > 0 {
         ((total_sets as f32 / total_exercises as f32).round()) as i32
     } else {
@@ -1375,12 +1390,8 @@ mod tests {
         catalog.insert("Back Squat".into(), strength_entry("legs"));
         catalog.insert("back_squat".into(), strength_entry("legs"));
 
-        let response = compute_home_day_analytics(
-            &events,
-            0,
-            &catalog,
-            &HomeDayQuery { day_bucket: base },
-        );
+        let response =
+            compute_home_day_analytics(&events, 0, &catalog, &HomeDayQuery { day_bucket: base });
 
         assert!(!response.empty_state);
         assert_eq!(response.totals.total_sets, 3);
@@ -1458,12 +1469,10 @@ mod tests {
         assert_eq!(response.all_muscles[0].count, 2);
         assert_eq!(response.all_muscles[1].group, "chest");
         assert_eq!(response.pie_data.len(), 2);
-        assert!(
-            response
-                .pie_data
-                .iter()
-                .any(|item| item.label == "back" && (item.percentage - 66.666664).abs() < 0.05)
-        );
+        assert!(response
+            .pie_data
+            .iter()
+            .any(|item| item.label == "back" && (item.percentage - 66.666664).abs() < 0.05));
     }
 
     #[test]

@@ -62,9 +62,7 @@ const record = (key: string, durationMs: number) => {
   return current;
 };
 
-export const beginBridgePerfTrace = (
-  meta: BridgePerfMeta,
-): (() => void) => {
+export const beginBridgePerfTrace = (meta: BridgePerfMeta): (() => void) => {
   if (!__DEV__) {
     return () => {};
   }
@@ -91,9 +89,9 @@ export const beginBridgePerfTrace = (
       const avg = entry.totalMs / entry.count;
       const payloadKb = meta.payloadBytes / 1024;
       console.log(
-        `[bridge-perf] scope=${meta.scope} fn=${meta.functionName} calls=${entry.count} avg=${avg.toFixed(
-          2,
-        )}ms p50=${p50.toFixed(2)}ms p95=${p95.toFixed(
+        `[bridge-perf] scope=${meta.scope} fn=${meta.functionName} calls=${
+          entry.count
+        } avg=${avg.toFixed(2)}ms p50=${p50.toFixed(2)}ms p95=${p95.toFixed(
           2,
         )}ms last=${durationMs.toFixed(2)}ms payload=${payloadKb.toFixed(
           1,

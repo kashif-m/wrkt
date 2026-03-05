@@ -12,7 +12,13 @@ import Animated, {
   SharedValue,
   useAnimatedStyle,
 } from 'react-native-reanimated';
-import { analyticsUi, getContrastTextColor, palette, radius, spacing } from '../theme';
+import {
+  analyticsUi,
+  getContrastTextColor,
+  palette,
+  radius,
+  spacing,
+} from '../theme';
 
 export type PagerTabDefinition<T extends string> = {
   key: T;
@@ -117,11 +123,7 @@ const PagerTabsRail = <T extends string>({
         {segmentWidth > 0 ? (
           <Animated.View
             pointerEvents="none"
-            style={[
-              styles.indicator,
-              indicatorWidthStyle,
-              indicatorStyle,
-            ]}
+            style={[styles.indicator, indicatorWidthStyle, indicatorStyle]}
           />
         ) : null}
         {tabs.map((tab, index) => (

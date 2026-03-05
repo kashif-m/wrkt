@@ -166,9 +166,7 @@ export const AnalyticsSelect = <T extends string>({
             onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}
             style={{ gap: spacing(0.75) }}
           >
-            <Text style={typography.section}>
-              {unwrapLabelText(title)}
-            </Text>
+            <Text style={typography.section}>{unwrapLabelText(title)}</Text>
             {searchable ? (
               <TextInput
                 value={query}

@@ -284,12 +284,7 @@ export const AnalyticsDashboard = ({
       },
     );
     return response.items.filter(item => item.value > 0);
-  }, [
-    catalog,
-    catalogRevision,
-    eventsRevision,
-    focusEventPayload,
-  ]);
+  }, [catalog, catalogRevision, eventsRevision, focusEventPayload]);
 
   const focusRows = focusBreakdown;
 

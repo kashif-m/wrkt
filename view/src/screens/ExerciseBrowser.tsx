@@ -55,10 +55,7 @@ import {
 } from '../ui/theme';
 import { addAlpha } from '../ui/color';
 import { muscleColorMap } from '../ui/muscleColors';
-import {
-  exerciseSearchScore,
-  normalizeSearchText,
-} from '../exercise/search';
+import { exerciseSearchScore, normalizeSearchText } from '../exercise/search';
 import ScreenHeader from '../ui/ScreenHeader';
 import { BottomSheet, SectionHeading } from '../ui/components';
 import SearchIcon from '../assets/search.svg';
@@ -122,7 +119,10 @@ const estimateManageListHeight = (rowCount: number) => {
   const rowHeight = 72;
   const emptyHeight = 52;
   const separators = Math.max(0, rowCount - 1);
-  return (rowCount > 0 ? rowCount * rowHeight + separators : emptyHeight) + spacing(2);
+  return (
+    (rowCount > 0 ? rowCount * rowHeight + separators : emptyHeight) +
+    spacing(2)
+  );
 };
 
 type ExerciseContextEntry = NonNullable<RootState['browser']['contextEntry']>;
@@ -162,8 +162,7 @@ const ExerciseBrowserListScreen = () => {
     useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
   const catalog = state.catalog.entries;
   const favoriteSlugs = state.catalog.favorites;
-  const { selectedGroup, query, searchExpanded, activeTab } =
-    state.browser;
+  const { selectedGroup, query, searchExpanded, activeTab } = state.browser;
   const listTabController = usePagerTabsController({
     tabs: exerciseListTabs,
     selectedTab: activeTab,
@@ -568,7 +567,9 @@ const ExerciseBrowserListScreen = () => {
                             </Text>
                           ) : (
                             <View style={groupTagWrap}>
-                              {filteredSearchGroups.map(group => renderGroupTag(group))}
+                              {filteredSearchGroups.map(group =>
+                                renderGroupTag(group),
+                              )}
                             </View>
                           )}
                         </View>
@@ -678,9 +679,13 @@ const ExerciseBrowserListScreen = () => {
                         paddingTop: spacing(0.5),
                         paddingBottom: spacing(2),
                       },
-                      !favoritesCardMeasure.scrollEnabled ? { flexGrow: 0 } : null,
+                      !favoritesCardMeasure.scrollEnabled
+                        ? { flexGrow: 0 }
+                        : null,
                     ]}
-                    onContentSizeChange={favoritesCardMeasure.onContentSizeChange}
+                    onContentSizeChange={
+                      favoritesCardMeasure.onContentSizeChange
+                    }
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="interactive"
                     automaticallyAdjustKeyboardInsets
@@ -770,7 +775,10 @@ const ExerciseContextSheet = ({
   const handleArchiveToggle = async () => {
     const nextArchived = !isArchived;
     if (contextEntry.custom) {
-      await actions.archiveCustomExercise(contextEntry.entry.slug, nextArchived);
+      await actions.archiveCustomExercise(
+        contextEntry.entry.slug,
+        nextArchived,
+      );
       return;
     }
     if (nextArchived && isFavorite) {
@@ -841,10 +849,7 @@ const ExerciseContextSheet = ({
   ];
 
   return (
-    <BottomSheet
-      visible={Boolean(contextEntry)}
-      onClose={closeContext}
-    >
+    <BottomSheet visible={Boolean(contextEntry)} onClose={closeContext}>
       <View style={sheetCard()}>
         <View
           style={{
@@ -1120,7 +1125,9 @@ const ExerciseListHeader = ({
     <View style={{ marginTop: spacing(0.5) }}>
       <SectionHeading
         label={asLabelText(
-          selectedGroup ? `${formatLabel(selectedGroup)} exercises` : 'Exercises',
+          selectedGroup
+            ? `${formatLabel(selectedGroup)} exercises`
+            : 'Exercises',
         )}
       />
     </View>
@@ -1690,20 +1697,14 @@ const ManageCustomExercises = ({
   );
 
   const renderManageRow = useCallback(
-    ({
-      item,
-      archived,
-    }: {
-      item: ManageCatalogEntry;
-      archived: boolean;
-    }) => {
+    ({ item, archived }: { item: ManageCatalogEntry; archived: boolean }) => {
       const sourceLabel = archived
         ? item.archiveSource === 'hidden_default'
           ? 'Archived default'
           : 'Archived custom'
         : item.source === asExerciseSource('default')
-          ? 'Default'
-          : 'Custom';
+        ? 'Default'
+        : 'Custom';
       const subtitle = `${sourceLabel} • ${formatLabel(
         item.primary_muscle_group,
       )}`;
@@ -1711,7 +1712,11 @@ const ManageCustomExercises = ({
       return (
         <TouchableOpacity
           onPress={() =>
-            onSelectEntry(item, archived, archived ? item.archiveSource : undefined)
+            onSelectEntry(
+              item,
+              archived,
+              archived ? item.archiveSource : undefined,
+            )
           }
           style={rowStyle()}
         >
