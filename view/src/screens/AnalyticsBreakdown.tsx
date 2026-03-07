@@ -50,25 +50,20 @@ import {
 } from '../components/analytics/analyticsBreakdown';
 import { DonutChart, DonutSlice } from '../components/analytics/DonutChart';
 import { useAnalyticsData } from '../components/analytics/AnalyticsDataContext';
-import { useAppState } from '../state/appContext';
 import { toAnalyticsInputEvents } from '../components/analytics/analyticsPayload';
 
 const AnalyticsBreakdown = () => {
-  const state = useAppState();
   const {
     loading,
     error,
     catalog,
-    eventsByRange,
-    eventsPayloadByRange,
+    getEventsForRange,
+    getPayloadForRange,
     catalogLookup,
     eventsRevision,
     catalogRevision,
   } = useAnalyticsData();
-  const themeKey = `${state.preferences.themeMode}:${
-    state.preferences.themeAccent
-  }:${state.preferences.customAccentHex ?? ''}`;
-  const styles = useMemo(() => createStyles(), [themeKey]);
+  const styles = createStyles();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
   const [metric, setMetric] = useState<BreakdownMetricKey>('volume');
   const [groupBy, setGroupBy] = useState<BreakdownGroupByKey>('muscle');
@@ -101,12 +96,12 @@ const AnalyticsBreakdown = () => {
   );
 
   const filteredEvents = useMemo(
-    () => eventsByRange[range] ?? [],
-    [eventsByRange, range],
+    () => getEventsForRange(range),
+    [getEventsForRange, range],
   );
   const filteredPayload = useMemo(
-    () => eventsPayloadByRange[range] ?? [],
-    [eventsPayloadByRange, range],
+    () => getPayloadForRange(range),
+    [getPayloadForRange, range],
   );
 
   const categoryLookup = useMemo(() => {

@@ -39,7 +39,6 @@ import {
   AnalyticsRangeKey,
   getRangeOption,
 } from '../components/analytics/analyticsRanges';
-import { filterEventsByRange } from '../components/analytics/analyticsUtils';
 import { useAnalyticsData } from '../components/analytics/AnalyticsDataContext';
 import { WorkoutEvent } from '../workoutFlows';
 import { useAppDispatch, useAppState } from '../state/appContext';
@@ -132,14 +131,11 @@ export const AnalyticsDashboard = ({
     loading,
     error,
     catalog,
-    eventsByRange,
-    eventsPayloadByRange,
+    getEventsForRange,
+    getPayloadForRange,
   } = useAnalyticsData();
   const { preferences } = useAppState();
-  const themeKey = `${preferences.themeMode}:${preferences.themeAccent}:${
-    preferences.customAccentHex ?? ''
-  }`;
-  const styles = useMemo(() => createStyles(), [themeKey]);
+  const styles = createStyles();
 
   const [focusWindow, setFocusWindow] = useState<AnalyticsRangeKey>('3m');
   const [consistencyMenuOpen, setConsistencyMenuOpen] = useState(false);
@@ -252,19 +248,11 @@ export const AnalyticsDashboard = ({
   }, [heatmapYears, selectedHeatmapYear]);
 
   const focusEvents = useMemo(() => {
-    if (focusWindow === 'all') {
-      return events;
-    }
-    return (
-      eventsByRange[focusWindow] ?? filterEventsByRange(events, focusWindow)
-    );
-  }, [events, eventsByRange, focusWindow]);
+    return getEventsForRange(focusWindow);
+  }, [focusWindow, getEventsForRange]);
   const focusEventPayload = useMemo(() => {
-    if (focusWindow === 'all') {
-      return eventsPayloadByRange.all ?? [];
-    }
-    return eventsPayloadByRange[focusWindow] ?? [];
-  }, [eventsPayloadByRange, focusWindow]);
+    return getPayloadForRange(focusWindow);
+  }, [focusWindow, getPayloadForRange]);
 
   const focusBreakdown = useMemo(() => {
     if (!catalog || focusEvents.length === 0) return [];
@@ -284,7 +272,13 @@ export const AnalyticsDashboard = ({
       },
     );
     return response.items.filter(item => item.value > 0);
-  }, [catalog, catalogRevision, eventsRevision, focusEventPayload]);
+  }, [
+    catalog,
+    catalogRevision,
+    eventsRevision,
+    focusEventPayload,
+    focusEvents.length,
+  ]);
 
   const focusRows = focusBreakdown;
 

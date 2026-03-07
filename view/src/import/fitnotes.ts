@@ -163,6 +163,10 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
     if (typeof event.distance === 'number') payload.distance = event.distance;
     if (typeof event.duration === 'number') payload.duration = event.duration;
     if (typeof event.pr === 'boolean') payload.pr = event.pr;
+    const dayBucket = roundToLocalDay(ts, offsetMinutes);
+    const weekBucket = roundToLocalWeek(ts, offsetMinutes);
+    payload.day_bucket = dayBucket;
+    payload.week_bucket = weekBucket;
 
     return {
       event_id: asEventId(`import-fitnotes-${logId}`),
@@ -174,8 +178,8 @@ export const applyFitnotesImport = async (bundle: FitNotesImportBundle) => {
         source: asJsonString('fitnotes'),
         duration_unit: asJsonString('s'),
         timezone_offset_minutes: offsetMinutes,
-        day_bucket: roundToLocalDay(ts, offsetMinutes),
-        week_bucket: roundToLocalWeek(ts, offsetMinutes),
+        day_bucket: dayBucket,
+        week_bucket: weekBucket,
       },
     };
   });

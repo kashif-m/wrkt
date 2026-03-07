@@ -14,7 +14,6 @@ import {
   PlannerKind,
   TrackerId,
   asDslText,
-  asEventId,
   asJsonString,
   asLabelText,
   asMetricKey,
@@ -73,13 +72,20 @@ export const initialState: WorkoutState = { events: initialEvents };
 
 const annotateEvent = (event: WorkoutEvent): WorkoutEvent => {
   const offsetMinutes = getLocalOffsetMinutes();
+  const dayBucket = roundToLocalDay(event.ts, offsetMinutes);
+  const weekBucket = roundToLocalWeek(event.ts, offsetMinutes);
   return {
     ...event,
+    payload: {
+      ...(event.payload ?? {}),
+      day_bucket: dayBucket,
+      week_bucket: weekBucket,
+    },
     meta: {
       ...(event.meta ?? {}),
       timezone_offset_minutes: offsetMinutes,
-      day_bucket: roundToLocalDay(event.ts, offsetMinutes),
-      week_bucket: roundToLocalWeek(event.ts, offsetMinutes),
+      day_bucket: dayBucket,
+      week_bucket: weekBucket,
     },
   };
 };

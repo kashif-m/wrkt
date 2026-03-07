@@ -7,12 +7,19 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState, AppStateStatus } from 'react-native';
 import { WorkoutEvent } from '../workoutFlows';
 import { asJsonString, asStorageKey } from '../domain/types';
+import {
+  getLocalOffsetMinutes,
+  roundToLocalDay,
+  roundToLocalWeek,
+} from '../timePolicy';
 import { minutesToSeconds } from '../ui/formatters';
 import { AccentKey, ThemeMode, themeModeOptions } from '../ui/theme';
 import { HomeSplitMode, SummaryConsistencyWindow } from './appState';
 
 const STORAGE_KEY = asStorageKey('strata.workout.events');
+const EVENTS_META_KEY = asStorageKey('strata.workout.events.meta');
 const SETTINGS_KEY = asStorageKey('strata.settings');
+const EVENTS_MIGRATION_VERSION = 2;
 
 let saveTimeout: ReturnType<typeof setTimeout> | null = null;
 let pendingState: WorkoutEvent[] | null = null;
@@ -30,6 +37,10 @@ type PersistedSettings = {
   summaryConsistencyWindow: SummaryConsistencyWindow;
 };
 
+type PersistedEventsMeta = {
+  migrationVersion: number;
+};
+
 const DEFAULT_SETTINGS: PersistedSettings = {
   themeAccent: 'blue',
   themeMode: 'dark',
@@ -38,20 +49,41 @@ const DEFAULT_SETTINGS: PersistedSettings = {
   summaryConsistencyWindow: 'this_month',
 };
 
+const DEFAULT_EVENTS_META: PersistedEventsMeta = {
+  migrationVersion: 0,
+};
+
 const themeModeSet = new Set<ThemeMode>(
   themeModeOptions.map(option => option.key),
 );
 
 export const loadAllEvents = async (): Promise<WorkoutEvent[]> => {
   try {
-    const raw = await AsyncStorage.getItem(STORAGE_KEY);
+    const [raw, metaRaw] = await Promise.all([
+      AsyncStorage.getItem(STORAGE_KEY),
+      AsyncStorage.getItem(EVENTS_META_KEY),
+    ]);
     if (!raw) return [];
     const parsed = JSON.parse(raw) as WorkoutEvent[];
-    const { events, changed } = normalizeDurationUnits(parsed);
-    if (changed) {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(events));
+    const meta = parseEventsMeta(metaRaw);
+    const migrationVersion = meta.migrationVersion;
+    const { events, changed } = applyEventMigrations(parsed, migrationVersion);
+    if (changed || migrationVersion < EVENTS_MIGRATION_VERSION) {
+      await Promise.all([
+        changed
+          ? AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(events))
+          : Promise.resolve(),
+        AsyncStorage.setItem(
+          EVENTS_META_KEY,
+          JSON.stringify({
+            migrationVersion: EVENTS_MIGRATION_VERSION,
+          }),
+        ),
+      ]);
       if (__DEV__) {
-        console.log('[persistence] Migrated duration units to seconds');
+        console.log(
+          `[persistence] Applied events migration v${EVENTS_MIGRATION_VERSION}`,
+        );
       }
     }
     return events;
@@ -207,6 +239,89 @@ const normalizeDurationUnits = (events: WorkoutEvent[]) => {
       meta: {
         ...event.meta,
         duration_unit: asJsonString('s'),
+      },
+    };
+  });
+
+  return { events: normalized, changed };
+};
+
+const parseEventsMeta = (metaRaw: string | null): PersistedEventsMeta => {
+  if (!metaRaw) return DEFAULT_EVENTS_META;
+  try {
+    const parsed = JSON.parse(metaRaw) as Partial<PersistedEventsMeta>;
+    if (
+      typeof parsed.migrationVersion === 'number' &&
+      Number.isFinite(parsed.migrationVersion)
+    ) {
+      return { migrationVersion: Math.max(0, Math.floor(parsed.migrationVersion)) };
+    }
+    return DEFAULT_EVENTS_META;
+  } catch {
+    return DEFAULT_EVENTS_META;
+  }
+};
+
+const applyEventMigrations = (events: WorkoutEvent[], fromVersion: number) => {
+  let nextEvents = events;
+  let changed = false;
+
+  if (fromVersion < 1) {
+    const result = normalizeDurationUnits(nextEvents);
+    nextEvents = result.events;
+    changed = changed || result.changed;
+  }
+
+  if (fromVersion < 2) {
+    const result = backfillPayloadBuckets(nextEvents);
+    nextEvents = result.events;
+    changed = changed || result.changed;
+  }
+
+  return { events: nextEvents, changed };
+};
+
+const readNumeric = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null;
+
+const backfillPayloadBuckets = (events: WorkoutEvent[]) => {
+  let changed = false;
+  const localOffsetMinutes = getLocalOffsetMinutes();
+
+  const normalized = events.map(event => {
+    const payload = (event.payload ?? {}) as Record<string, unknown>;
+    const meta = (event.meta ?? {}) as Record<string, unknown>;
+    const payloadDayBucket = readNumeric(payload.day_bucket);
+    const payloadWeekBucket = readNumeric(payload.week_bucket);
+
+    if (payloadDayBucket !== null && payloadWeekBucket !== null) {
+      return event;
+    }
+
+    const eventOffsetMinutes =
+      readNumeric(meta.timezone_offset_minutes) ?? localOffsetMinutes;
+    const dayBucket =
+      payloadDayBucket ??
+      readNumeric(meta.day_bucket) ??
+      roundToLocalDay(event.ts, eventOffsetMinutes);
+    const weekBucket =
+      payloadWeekBucket ??
+      readNumeric(meta.week_bucket) ??
+      roundToLocalWeek(event.ts, eventOffsetMinutes);
+
+    changed = true;
+    return {
+      ...event,
+      payload: {
+        ...(event.payload ?? {}),
+        day_bucket: dayBucket,
+        week_bucket: weekBucket,
+      },
+      meta: {
+        ...(event.meta ?? {}),
+        timezone_offset_minutes: eventOffsetMinutes,
+        day_bucket: dayBucket,
+        week_bucket: weekBucket,
       },
     };
   });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AnalyticsSummary } from '../../domain/analytics';
 import { JsonObject, computeAnalytics } from '../../TrackerEngine';
 import { WorkoutEvent } from '../../workoutFlows';
@@ -13,6 +13,7 @@ export const useAnalyticsSummary = (
   const [catalog, setCatalog] = useState<JsonObject[] | null>(null);
   const [loading, setLoading] = useState(!providedCatalog);
   const [error, setError] = useState<string | null>(null);
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
 
   useEffect(() => {
     if (providedCatalog && providedCatalog.length > 0) {
@@ -49,19 +50,60 @@ export const useAnalyticsSummary = (
     };
   }, [providedCatalog]);
 
-  const summary = useMemo<AnalyticsSummary | null>(() => {
-    if (!catalog || events.length === 0) return null;
-    const offset = new Date().getTimezoneOffset();
-    const inputEvents = toAnalyticsInputEvents(events);
-    return computeAnalytics(inputEvents, -offset, catalog, {
-      trace: 'trends/summary',
-      cache: {
-        enabled: true,
-        eventsRevision: revisions?.eventsRevision,
-        catalogRevision: revisions?.catalogRevision,
-      },
+  useEffect(() => {
+    if (!catalog || events.length === 0) {
+      setSummary(null);
+      return;
+    }
+
+    let active = true;
+    setLoading(true);
+    setError(null);
+
+    runWhenIdle(() => {
+      try {
+        const offset = new Date().getTimezoneOffset();
+        const inputEvents = toAnalyticsInputEvents(events);
+        const nextSummary = computeAnalytics(inputEvents, -offset, catalog, {
+          trace: 'trends/summary',
+          cache: {
+            enabled: true,
+            eventsRevision: revisions?.eventsRevision,
+            catalogRevision: revisions?.catalogRevision,
+          },
+        });
+        if (active) {
+          setSummary(nextSummary);
+        }
+      } catch (err) {
+        if (active) {
+          setError(err instanceof Error ? err.message : String(err));
+        }
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
     });
+
+    return () => {
+      active = false;
+    };
   }, [catalog, events, revisions?.catalogRevision, revisions?.eventsRevision]);
 
   return { summary, loading, error, catalog };
+};
+
+const runWhenIdle = (task: () => void) => {
+  const idleAPI = globalThis as unknown as {
+    requestIdleCallback?: (
+      callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
+      options?: { timeout: number },
+    ) => number;
+  };
+  if (typeof idleAPI.requestIdleCallback === 'function') {
+    idleAPI.requestIdleCallback(() => task(), { timeout: 350 });
+    return;
+  }
+  setTimeout(task, 32);
 };

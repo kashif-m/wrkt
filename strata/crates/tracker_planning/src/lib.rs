@@ -1,9 +1,14 @@
-//! tracker_planning
+//! tracker_planning - Generic planning and simulation engine
 //!
-//! Core workspace crate placeholder. Implementation will follow the deterministic tracker engine
-//! design so core can be consumed as a submodule from client applications without leaking
-//! domain knowledge.
+//! Provides framework for generating suggestions and running simulations.
 
-#![allow(dead_code)]
+pub mod types;
+pub mod engine;
+pub mod strategies;
 
-// TODO: Add the module implementation for `tracker_planning`.
+pub use types::*;
+pub use engine::*;
+pub use strategies::*;
+
+// Re-export error types
+pub use tracker_ir::error::{ErrorCode, TrackerError, TrackerResult};

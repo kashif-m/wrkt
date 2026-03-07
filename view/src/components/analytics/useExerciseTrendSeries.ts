@@ -16,6 +16,8 @@ type UseExerciseTrendSeriesArgs = {
   exercise: string | null;
   metric: ExerciseMetricKey;
   range: AnalyticsRangeKey;
+  rangeEvents?: WorkoutEvent[];
+  rangePayload?: JsonObject[];
   rmReps?: number | null;
   traceSource?: string;
   revisions?: { eventsRevision: number; catalogRevision: number };
@@ -27,13 +29,15 @@ export const useExerciseTrendSeries = ({
   exercise,
   metric,
   range,
+  rangeEvents,
+  rangePayload,
   rmReps,
   traceSource = 'trends/exercises',
   revisions,
 }: UseExerciseTrendSeriesArgs) => {
   const filteredEvents = useMemo(
-    () => filterEventsByRange(events, range),
-    [events, range],
+    () => rangeEvents ?? filterEventsByRange(events, range),
+    [events, range, rangeEvents],
   );
 
   const groupBy = useMemo(() => groupByForRange(range), [range]);
@@ -65,7 +69,7 @@ export const useExerciseTrendSeries = ({
           : undefined,
     };
     const offsetMinutes = new Date().getTimezoneOffset();
-    const inputEvents = toAnalyticsInputEvents(filteredEvents);
+    const inputEvents = rangePayload ?? toAnalyticsInputEvents(filteredEvents);
     return computeExerciseAnalytics(
       inputEvents,
       -offsetMinutes,
@@ -86,6 +90,7 @@ export const useExerciseTrendSeries = ({
     filteredEvents,
     groupBy,
     metric,
+    rangePayload,
     revisions?.catalogRevision,
     revisions?.eventsRevision,
     rmReps,

@@ -1,6 +1,11 @@
 import React, { createContext, useContext } from 'react';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
-import { EventId, ExerciseName, ExerciseSlug } from '../domain/types';
+import {
+  EventId,
+  ExerciseName,
+  ExerciseSlug,
+  ScreenKeyValue,
+} from '../domain/types';
 import { RootState, Action } from './appState';
 
 export type AppDispatch = React.Dispatch<Action>;
@@ -10,7 +15,10 @@ const AppDispatchContext = createContext<AppDispatch | null>(null);
 const AppActionsContext = createContext<RootStateActions | null>(null);
 
 export type RootStateActions = {
-  navigate: (screen: RootState['nav']['screen']) => void;
+  navigate: (
+    screen: RootState['nav']['screen'],
+    fromScreen?: ScreenKeyValue,
+  ) => void;
   handleBack: () => boolean;
   setSelectedDate: (date: Date) => void;
   shiftDate: (deltaDays: number) => void;

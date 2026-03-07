@@ -3,9 +3,17 @@ import React, {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   useState,
 } from 'react';
-import { Alert, BackHandler, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Alert,
+  BackHandler,
+  Platform,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   NavigationContainer,
@@ -173,6 +181,26 @@ const isPrimaryRoute = (route: ScreenKeyValue) =>
   route === 'analytics' ||
   route === 'more';
 
+const isScreenRoute = (route: string): route is ScreenKeyValue =>
+  route === 'home' ||
+  route === 'calendar' ||
+  route === 'browser' ||
+  route === 'log' ||
+  route === 'analytics' ||
+  route === 'more' ||
+  route === 'history' ||
+  route === 'importSummary';
+
+const primaryRouteOrder: ScreenKeyValue[] = [
+  'home',
+  'calendar',
+  'analytics',
+  'more',
+];
+
+const getPrimaryRouteIndex = (route: ScreenKeyValue) =>
+  primaryRouteOrder.indexOf(route);
+
 const resetBrowserUiState = (dispatch: ReturnType<typeof useAppDispatch>) => {
   dispatch({ type: 'browser/mode', mode: 'groups' });
   dispatch({ type: 'browser/returnMode', mode: 'groups' });
@@ -225,7 +253,7 @@ const PrimaryRoute = ({
           onSelect={key => {
             if (key === asNavKey('browser')) {
               resetBrowserUiState(dispatch);
-              actions.navigate(asScreenKey('browser'));
+              actions.navigate(asScreenKey('browser'), current as ScreenKeyValue);
               return;
             }
             if (key === asNavKey('home')) {
@@ -233,12 +261,15 @@ const PrimaryRoute = ({
                 actions.setSelectedDate(new Date());
               }
               if (current !== asNavKey('home')) {
-                actions.navigate(asScreenKey('home'));
+                actions.navigate(asScreenKey('home'), current as ScreenKeyValue);
               }
               return;
             }
             if (key === current) return;
-            actions.navigate(asScreenKey(key as NavKeyValue));
+            actions.navigate(
+              asScreenKey(key as NavKeyValue),
+              current as ScreenKeyValue,
+            );
           }}
         />
       </View>
@@ -383,9 +414,8 @@ const LogRoute = () => {
 const AppInner = () => {
   const [state, dispatch] = useReducer(reducer, undefined, createInitialState);
   const navigationRef = useNavigationContainerRef<RootStackParamList>();
-  const [currentRouteName, setCurrentRouteName] =
-    useState<ScreenKeyValue>('home');
   const [settingsHydrated, setSettingsHydrated] = useState(false);
+  const browserBackStateRef = useRef(state.browser);
 
   // Apply theme before rendering descendants so accent/mode changes repaint immediately.
   applyThemeSettings({
@@ -536,77 +566,92 @@ const AppInner = () => {
     await refreshCatalog();
   }, [pushScreen, refreshCatalog, refreshFromStorage]);
 
-  const handleBack = useCallback(() => {
-    if (state.browser.menuOpen) {
+  const getCurrentScreen = useCallback((): ScreenKeyValue => {
+    if (!navigationRef.isReady()) {
+      return 'home';
+    }
+    const rootState = navigationRef.getRootState();
+    const activeRoute = getActiveRouteName(rootState);
+    if (isScreenRoute(activeRoute)) {
+      return activeRoute;
+    }
+    const routeName = navigationRef.getCurrentRoute()?.name;
+    if (routeName && isScreenRoute(routeName)) {
+      return routeName;
+    }
+    return 'home';
+  }, [navigationRef]);
+
+  useEffect(() => {
+    browserBackStateRef.current = state.browser;
+  }, [state.browser]);
+
+  const interceptBrowserBack = useCallback(() => {
+    const browserState = browserBackStateRef.current;
+    if (browserState.menuOpen) {
       dispatch({ type: 'browser/menu', open: false });
       return true;
     }
-    if (state.browser.searchExpanded) {
+    if (browserState.searchExpanded) {
       dispatch({ type: 'browser/search', expanded: false });
       dispatch({ type: 'browser/query', query: asSearchQuery('') });
       return true;
     }
-    if (state.browser.contextEntry) {
+    if (browserState.contextEntry) {
       dispatch({ type: 'browser/context', context: null });
       return true;
     }
+    return false;
+  }, [dispatch]);
 
-    const activeRouteName =
-      navigationRef.isReady() && navigationRef.getRootState()
-        ? getActiveRouteName(navigationRef.getRootState())
-        : currentRouteName;
-    const currentScreen = asScreenKey(activeRouteName);
-
-    if (currentScreen === asScreenKey('importSummary')) {
-      if (navigationRef.isReady()) {
-        navigationRef.goBack();
-      }
+  const handleBack = useCallback(() => {
+    if (interceptBrowserBack()) {
       return true;
     }
 
-    if (
-      currentScreen === asScreenKey('calendar') ||
-      currentScreen === asScreenKey('analytics') ||
-      currentScreen === asScreenKey('more')
-    ) {
-      if (navigationRef.isReady()) {
-        navigationRef.goBack();
-      }
-      return true;
+    if (!navigationRef.isReady()) {
+      return false;
     }
-
-    if (navigationRef.isReady() && navigationRef.canGoBack()) {
+    const canGoBack = navigationRef.canGoBack();
+    if (canGoBack) {
       navigationRef.goBack();
       return true;
     }
-
-    if (currentScreen !== asScreenKey('home')) {
-      if (navigationRef.isReady()) {
-        navigationRef.dispatch(StackActions.popToTop());
-      }
+    const topScreen = getCurrentScreen();
+    if (topScreen !== 'home') {
+      navigationRef.dispatch(StackActions.replace('home'));
       return true;
     }
-
     return false;
-  }, [currentRouteName, navigationRef, state.browser]);
+  }, [getCurrentScreen, interceptBrowserBack, navigationRef]);
+
+  const handleHardwareBack = useCallback(() => {
+    if (interceptBrowserBack()) {
+      return true;
+    }
+    return handleBack();
+  }, [handleBack, interceptBrowserBack]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener(
       'hardwareBackPress',
-      handleBack,
+      handleHardwareBack,
     );
     return () => subscription.remove();
-  }, [handleBack]);
+  }, [handleHardwareBack]);
 
   const actions = useMemo(
     () => ({
-      navigate: (screen: ScreenKey) => {
-        if (!navigationRef.isReady()) return;
+      navigate: (screen: ScreenKey, fromScreen?: ScreenKeyValue) => {
         const target = unwrapScreenKey(screen);
-        if (currentRouteName === target) return;
+        if (!navigationRef.isReady()) return;
+        const current = fromScreen ?? getCurrentScreen();
+        if (current === target) return;
         if (isPrimaryRoute(target as ScreenKeyValue)) {
-          const current = currentRouteName;
           if (target === 'home') {
+            if (current === 'home') {
+              return;
+            }
             navigationRef.dispatch(StackActions.popToTop());
             return;
           }
@@ -615,9 +660,29 @@ const AppInner = () => {
             return;
           }
           if (isPrimaryRoute(current)) {
-            navigationRef.dispatch(
-              StackActions.replace(target as ScreenKeyValue),
-            );
+            const currentIndex = getPrimaryRouteIndex(current);
+            const targetIndex = getPrimaryRouteIndex(target as ScreenKeyValue);
+            if (targetIndex > currentIndex) {
+              navigationRef.dispatch(StackActions.push(target as ScreenKeyValue));
+              return;
+            }
+            if (targetIndex < currentIndex) {
+              const rootState = navigationRef.getRootState();
+              const stackIndex = rootState.index ?? 0;
+              const routes = rootState.routes ?? [];
+              let popCount: number | null = null;
+              for (let idx = stackIndex - 1; idx >= 0; idx -= 1) {
+                if (routes[idx]?.name === target) {
+                  popCount = stackIndex - idx;
+                  break;
+                }
+              }
+              if (popCount && popCount > 0) {
+                navigationRef.dispatch(StackActions.pop(popCount));
+                return;
+              }
+            }
+            navigationRef.dispatch(StackActions.replace(target as ScreenKeyValue));
             return;
           }
           navigationRef.dispatch(StackActions.popToTop());
@@ -972,7 +1037,7 @@ const AppInner = () => {
     }),
     [
       beginImport,
-      currentRouteName,
+      getCurrentScreen,
       handleBack,
       pushScreen,
       refreshCatalog,
@@ -990,17 +1055,13 @@ const AppInner = () => {
   const baseStatusBarStyle =
     contrastColor(palette.background) === '#0f172a' ? 'dark' : 'light';
 
-  const handleNavStateChange = useCallback(() => {
-    const rootState = navigationRef.getRootState();
-    const activeRoute = getActiveRouteName(rootState);
-    setCurrentRouteName(activeRoute);
-  }, [navigationRef]);
-
   const browserGestureEnabled =
     state.browser.mode === 'groups' &&
     !state.browser.searchExpanded &&
     !state.browser.menuOpen &&
     !state.browser.contextEntry;
+  const primaryScreenAnimation =
+    Platform.OS === 'ios' ? 'slide_from_right' : 'default';
 
   return (
     <AppProvider state={state} dispatch={dispatch} actions={actions}>
@@ -1009,11 +1070,7 @@ const AppInner = () => {
         edges={['left', 'right', 'bottom']}
       >
         <View style={{ flex: 1, backgroundColor: palette.background }}>
-          <NavigationContainer
-            ref={navigationRef}
-            onReady={handleNavStateChange}
-            onStateChange={handleNavStateChange}
-          >
+          <NavigationContainer ref={navigationRef}>
             <Stack.Navigator
               initialRouteName="home"
               screenOptions={{
@@ -1028,17 +1085,26 @@ const AppInner = () => {
               <Stack.Screen
                 name="calendar"
                 component={CalendarRoute}
-                options={{ animation: 'none' }}
+                options={{
+                  animation: primaryScreenAnimation,
+                  animationTypeForReplace: 'pop',
+                }}
               />
               <Stack.Screen
                 name="analytics"
                 component={AnalyticsRoute}
-                options={{ animation: 'none' }}
+                options={{
+                  animation: primaryScreenAnimation,
+                  animationTypeForReplace: 'pop',
+                }}
               />
               <Stack.Screen
                 name="more"
                 component={MoreRoute}
-                options={{ animation: 'none' }}
+                options={{
+                  animation: primaryScreenAnimation,
+                  animationTypeForReplace: 'pop',
+                }}
               />
               <Stack.Screen
                 name="browser"

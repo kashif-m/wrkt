@@ -6,6 +6,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+// Consolidated LoggingMode from catalog module
+pub use crate::catalog::LoggingMode;
+
 /// Epley formula for estimating one-rep max from weight and reps.
 ///
 /// Formula: 1RM = weight × (1 + reps / 30)
@@ -132,31 +135,6 @@ pub fn detect_pr(
     }
 }
 
-/// Logging mode for exercise sets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LoggingMode {
-    RepsWeight,
-    Reps,
-    Time,
-    Distance,
-    TimeDistance,
-    DistanceWeight,
-}
-
-impl LoggingMode {
-    pub fn from_str(s: &str) -> Self {
-        match s {
-            "reps_weight" => LoggingMode::RepsWeight,
-            "reps" => LoggingMode::Reps,
-            "time" => LoggingMode::Time,
-            "distance" => LoggingMode::Distance,
-            "time_distance" => LoggingMode::TimeDistance,
-            "distance_weight" => LoggingMode::DistanceWeight,
-            _ => LoggingMode::RepsWeight,
-        }
-    }
-}
-
 /// Calculates a score for a set based on logging mode.
 ///
 /// Scoring logic:
@@ -191,6 +169,26 @@ pub fn score_set(
             let d = distance.unwrap_or(0.0);
             let w = weight.unwrap_or(0.0);
             d * w
+        }
+        LoggingMode::Mixed => {
+            // Mixed mode: use available fields to calculate best metric
+            // Priority: 1RM > volume > duration > distance
+            if let (Some(w), Some(r)) = (weight, reps) {
+                if w > 0.0 && r > 0 {
+                    return estimate_one_rm(w, r);
+                }
+            }
+            if let (Some(w), Some(r)) = (weight, reps) {
+                if w > 0.0 && r > 0 {
+                    return w * r as f64;
+                }
+            }
+            if let Some(d) = duration {
+                if d > 0.0 {
+                    return d;
+                }
+            }
+            distance.unwrap_or(0.0)
         }
     }
 }
@@ -241,7 +239,7 @@ pub fn build_pr_payload(
     existing_event: Option<&ExistingEventInfo>,
     logging_mode: &str,
 ) -> SetPayload {
-    let mode = LoggingMode::from_str(logging_mode);
+    let mode = LoggingMode::from_str(logging_mode).unwrap_or(LoggingMode::RepsWeight);
 
     // Calculate score for the new payload
     let current_score = score_set(

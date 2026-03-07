@@ -56,8 +56,16 @@ const AnalyticsExercises = ({
     state.preferences.themeAccent
   }:${state.preferences.customAccentHex ?? ''}`;
   const styles = useMemo(() => createStyles(themeKey), [themeKey]);
-  const { events, loading, error, catalog, eventsRevision, catalogRevision } =
-    useAnalyticsData();
+  const {
+    events,
+    loading,
+    error,
+    catalog,
+    eventsRevision,
+    catalogRevision,
+    getEventsForRange,
+    getPayloadForRange,
+  } = useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
   const [metric, setMetric] = useState<ExerciseMetricKey>('estimated_one_rm');
   const [selectedRm, setSelectedRm] = useState('1');
@@ -139,12 +147,23 @@ const AnalyticsExercises = ({
     setSelectedExercise(focusExercise);
   }, [focusExercise]);
 
+  const rangeEvents = useMemo(
+    () => getEventsForRange(range),
+    [getEventsForRange, range],
+  );
+  const rangePayload = useMemo(
+    () => getPayloadForRange(range),
+    [getPayloadForRange, range],
+  );
+
   const { chartData, exerciseEventsInRange } = useExerciseTrendSeries({
     events,
     catalog,
     exercise: selectedExercise,
     metric,
     range,
+    rangeEvents,
+    rangePayload,
     rmReps: metric === 'pr_by_rm' && selectedRm ? Number(selectedRm) : null,
     traceSource: 'trends/exercises',
     revisions: { eventsRevision, catalogRevision },

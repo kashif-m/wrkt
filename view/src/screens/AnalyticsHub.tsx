@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { View } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import ScreenHeader from '../ui/ScreenHeader';
@@ -39,11 +39,25 @@ const createStyles = () => ({
 const AnalyticsHub = () => {
   const { preferences } = useAppState();
   const [tab, setTab] = useState<AnalyticsTabKey>('summary');
+  const [mountedTabs, setMountedTabs] = useState<
+    Record<AnalyticsTabKey, boolean>
+  >({
+    summary: true,
+    workouts: false,
+    breakdown: false,
+    exercises: false,
+  });
   const pagerController = usePagerTabsController({
     tabs: ANALYTICS_TABS,
     selectedTab: tab,
     onTabChange: setTab,
   });
+
+  useEffect(() => {
+    setMountedTabs(current =>
+      current[tab] ? current : { ...current, [tab]: true },
+    );
+  }, [tab]);
 
   const themeKey = `${preferences.themeMode}:${preferences.themeAccent}:${
     preferences.customAccentHex ?? ''
@@ -90,7 +104,7 @@ const AnalyticsHub = () => {
         >
           {ANALYTICS_TABS.map(tabKey => (
             <View key={tabKey} style={styles.page}>
-              {renderTab(tabKey)}
+              {mountedTabs[tabKey] ? renderTab(tabKey) : null}
             </View>
           ))}
         </PagerView>

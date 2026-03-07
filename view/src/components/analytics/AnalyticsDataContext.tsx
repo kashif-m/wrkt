@@ -1,21 +1,17 @@
 import React, {
+  useCallback,
   createContext,
   useContext,
   useEffect,
   useMemo,
   useRef,
 } from 'react';
-import {
-  JsonObject,
-  computeBreakdownAnalytics,
-  computeExerciseAnalytics,
-  computeWorkoutAnalytics,
-} from '../../TrackerEngine';
+import { JsonObject } from '../../TrackerEngine';
 import { WorkoutEvent } from '../../workoutFlows';
 import { AnalyticsSummary } from '../../domain/analytics';
 import { useAppState } from '../../state/appContext';
 import { useAnalyticsSummary } from './useAnalyticsSummary';
-import { analyticsRangeOptions, AnalyticsRangeKey } from './analyticsRanges';
+import { AnalyticsRangeKey } from './analyticsRanges';
 import { filterEventsByRange } from './analyticsUtils';
 import { toAnalyticsInputEvents } from './analyticsPayload';
 
@@ -28,8 +24,8 @@ type AnalyticsDataContextValue = {
   error: string | null;
   catalog: JsonObject[] | null;
   catalogLookup: Map<string, string>;
-  eventsByRange: Record<AnalyticsRangeKey, WorkoutEvent[]>;
-  eventsPayloadByRange: Record<AnalyticsRangeKey, JsonObject[]>;
+  getEventsForRange: (range: AnalyticsRangeKey) => WorkoutEvent[];
+  getPayloadForRange: (range: AnalyticsRangeKey) => JsonObject[];
 };
 
 const AnalyticsDataContext = createContext<AnalyticsDataContextValue | null>(
@@ -65,115 +61,42 @@ export const AnalyticsDataProvider = ({
     return map;
   }, [catalog]);
 
-  const eventsByRange = useMemo(() => {
-    const ranges = analyticsRangeOptions.map(option => option.key);
-    return ranges.reduce<Record<AnalyticsRangeKey, WorkoutEvent[]>>(
-      (acc, range) => {
-        acc[range] = filterEventsByRange(events, range);
-        return acc;
-      },
-      {} as Record<AnalyticsRangeKey, WorkoutEvent[]>,
-    );
-  }, [events]);
-
-  const eventsPayloadByRange = useMemo(() => {
-    return Object.entries(eventsByRange).reduce<
-      Record<AnalyticsRangeKey, JsonObject[]>
-    >((acc, [range, rangeEvents]) => {
-      acc[range as AnalyticsRangeKey] = toAnalyticsInputEvents(rangeEvents);
-      return acc;
-    }, {} as Record<AnalyticsRangeKey, JsonObject[]>);
-  }, [eventsByRange]);
-
-  const prewarmKeyRef = useRef<string | null>(null);
+  const eventsByRangeCacheRef = useRef(new Map<string, WorkoutEvent[]>());
+  const payloadByRangeCacheRef = useRef(new Map<string, JsonObject[]>());
 
   useEffect(() => {
-    if (!catalog || events.length === 0) return;
-    const prewarmKey = `${eventsRevision}:${catalogRevision}`;
-    if (prewarmKeyRef.current === prewarmKey) return;
-    prewarmKeyRef.current = prewarmKey;
+    eventsByRangeCacheRef.current.clear();
+    payloadByRangeCacheRef.current.clear();
+  }, [eventsRevision]);
 
-    const timeout = setTimeout(() => {
-      const offsetMinutes = -new Date().getTimezoneOffset();
-      const windowEvents = eventsByRange['1m'] ?? [];
-      const windowPayload = eventsPayloadByRange['1m'] ?? [];
-      if (windowEvents.length === 0 || windowPayload.length === 0) return;
-
-      const firstExercise = windowEvents.find(
-        event => typeof event.payload?.exercise === 'string',
-      )?.payload?.exercise as string | undefined;
-
-      computeWorkoutAnalytics(
-        windowPayload,
-        offsetMinutes,
-        catalog,
-        {
-          metric: 'volume',
-          group_by: 'week',
-          filter: {
-            kind: 'exercise',
-            value: firstExercise ?? null,
-          },
-        },
-        {
-          trace: 'trends/prewarm-workouts',
-          cache: {
-            enabled: true,
-            eventsRevision,
-            catalogRevision,
-          },
-        },
-      );
-
-      computeBreakdownAnalytics(
-        windowPayload,
-        offsetMinutes,
-        catalog,
-        {
-          metric: 'volume',
-          group_by: 'muscle',
-        },
-        {
-          trace: 'trends/prewarm-breakdown',
-          cache: {
-            enabled: true,
-            eventsRevision,
-            catalogRevision,
-          },
-        },
-      );
-
-      if (firstExercise) {
-        computeExerciseAnalytics(
-          windowPayload,
-          offsetMinutes,
-          catalog,
-          {
-            exercise: firstExercise,
-            metric: 'estimated_one_rm',
-            group_by: 'week',
-          },
-          {
-            trace: 'trends/prewarm-exercises',
-            cache: {
-              enabled: true,
-              eventsRevision,
-              catalogRevision,
-            },
-          },
-        );
+  const getEventsForRange = useCallback(
+    (range: AnalyticsRangeKey): WorkoutEvent[] => {
+      const cacheKey = `${eventsRevision}:${range}`;
+      const cached = eventsByRangeCacheRef.current.get(cacheKey);
+      if (cached) {
+        return cached;
       }
-    }, 0);
+      const filtered =
+        range === 'all' ? events : filterEventsByRange(events, range);
+      eventsByRangeCacheRef.current.set(cacheKey, filtered);
+      return filtered;
+    },
+    [events, eventsRevision],
+  );
 
-    return () => clearTimeout(timeout);
-  }, [
-    catalog,
-    catalogRevision,
-    events,
-    eventsByRange,
-    eventsPayloadByRange,
-    eventsRevision,
-  ]);
+  const getPayloadForRange = useCallback(
+    (range: AnalyticsRangeKey): JsonObject[] => {
+      const cacheKey = `${eventsRevision}:${range}`;
+      const cached = payloadByRangeCacheRef.current.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+      const payload = toAnalyticsInputEvents(getEventsForRange(range));
+      payloadByRangeCacheRef.current.set(cacheKey, payload);
+      return payload;
+    },
+    [eventsRevision, getEventsForRange],
+  );
 
   const value = useMemo<AnalyticsDataContextValue>(
     () => ({
@@ -185,8 +108,8 @@ export const AnalyticsDataProvider = ({
       error,
       catalog,
       catalogLookup,
-      eventsByRange,
-      eventsPayloadByRange,
+      getEventsForRange,
+      getPayloadForRange,
     }),
     [
       catalog,
@@ -194,9 +117,9 @@ export const AnalyticsDataProvider = ({
       catalogRevision,
       error,
       events,
-      eventsByRange,
-      eventsPayloadByRange,
       eventsRevision,
+      getEventsForRange,
+      getPayloadForRange,
       loading,
       summary,
     ],

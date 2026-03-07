@@ -9,6 +9,10 @@ use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
+// Error handling modules (Phase 1)
+pub mod error;
+pub mod error_legacy;
+
 /// Uniquely identifies a tracker configuration.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct TrackerId(String);

@@ -55,8 +55,8 @@ const AnalyticsWorkouts = () => {
     error,
     catalog,
     catalogLookup,
-    eventsByRange,
-    eventsPayloadByRange,
+    getEventsForRange,
+    getPayloadForRange,
   } = useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
   const [metric, setMetric] = useState<WorkoutMetricKey>('volume');
@@ -90,12 +90,12 @@ const AnalyticsWorkouts = () => {
   );
 
   const filteredEvents = useMemo(
-    () => eventsByRange[range] ?? [],
-    [eventsByRange, range],
+    () => getEventsForRange(range),
+    [getEventsForRange, range],
   );
   const filteredPayload = useMemo(
-    () => eventsPayloadByRange[range] ?? [],
-    [eventsPayloadByRange, range],
+    () => getPayloadForRange(range),
+    [getPayloadForRange, range],
   );
 
   const exerciseOptions = useMemo<AnalyticsSelectOption<string>[]>(() => {

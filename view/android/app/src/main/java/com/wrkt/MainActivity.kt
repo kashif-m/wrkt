@@ -1,5 +1,6 @@
 package com.wrkt
 
+import android.os.Build
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate
 import com.facebook.react.defaults.DefaultNewArchitectureEntryPoint.fabricEnabled
@@ -17,4 +18,14 @@ class MainActivity : ReactActivity() {
      * which allows you to enable New Architecture with a single boolean flags [fabricEnabled]
      */
     override fun createReactActivityDelegate(): ReactActivityDelegate = DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
+
+    override fun invokeDefaultOnBackPressed() {
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            if (!moveTaskToBack(false)) {
+                super.invokeDefaultOnBackPressed()
+            }
+            return
+        }
+        super.invokeDefaultOnBackPressed()
+    }
 }

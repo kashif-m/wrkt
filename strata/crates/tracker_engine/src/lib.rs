@@ -14,6 +14,9 @@ use tracker_ir::{
     SimulationOutput, TimeGrain, Timestamp, TrackerDefinition, TrackerId,
 };
 
+// Phase 1: New error handling system (coexists with legacy)
+pub mod error_adapter;
+
 /// Engine-level error codes surfaced across FFI boundaries.
 #[derive(Debug, Error)]
 pub enum EngineError {

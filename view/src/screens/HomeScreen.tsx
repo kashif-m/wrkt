@@ -18,7 +18,11 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { DonutChart } from '../components/analytics/DonutChart';
-import { computeHomeDaysAnalytics, JsonObject } from '../TrackerEngine';
+import {
+  computeCalendarMonthAnalytics,
+  computeHomeDaysAnalytics,
+  JsonObject,
+} from '../TrackerEngine';
 import {
   DistributionItem,
   HomeDayResponse,
@@ -132,10 +136,63 @@ const HomeScreen = () => {
       Array.from({ length: HOME_PAGER_TOTAL_PAGES }, (_unused, index) => index),
     [],
   );
+  const prewarmKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     setExpandedExercises({});
   }, [selectedDate]);
+
+  // Pre-warm native bridge cache for adjacent calendar months.
+  useEffect(() => {
+    const prewarmKey = `${state.eventsRevision}:${state.catalogRevision}:${offsetMinutes}`;
+    if (prewarmKeyRef.current === prewarmKey) {
+      return;
+    }
+    prewarmKeyRef.current = prewarmKey;
+
+    const runPrewarm = () => {
+      const currentMonth = startOfMonth(new Date());
+      const prevMonth = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth() - 1,
+        1,
+      );
+      const nextMonth = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth() + 1,
+        1,
+      );
+
+      [prevMonth, currentMonth, nextMonth].forEach(month => {
+        const monthBucket = getMonthBucket(month);
+        runWhenIdle(() => {
+          computeCalendarMonthAnalytics(
+            eventPayload,
+            offsetMinutes,
+            catalogPayload,
+            { month_bucket: monthBucket },
+            {
+              trace: 'home/prewarm',
+              cache: {
+                enabled: true,
+                eventsRevision: state.eventsRevision,
+                catalogRevision: state.catalogRevision,
+              },
+            },
+          );
+        });
+      });
+    };
+
+    const timer = setTimeout(runPrewarm, 1200);
+    return () => clearTimeout(timer);
+  }, [
+    catalogPayload,
+    eventPayload,
+    offsetMinutes,
+    state.catalogRevision,
+    state.eventsRevision,
+  ]);
 
   const buildDayModel = useCallback(
     (date: Date, analytics?: HomeDayResponse): HomeDayModel => {
@@ -426,7 +483,7 @@ const HomeScreen = () => {
           <ChevronLeftIcon width={20} height={20} color={palette.text} />
         </TouchableOpacity>
         <TouchableOpacity
-          onPress={() => actions.navigate(asScreenKey('calendar'))}
+          onPress={() => actions.navigate(asScreenKey('calendar'), 'home')}
           style={{ alignItems: 'center' }}
         >
           <Text
@@ -923,6 +980,26 @@ const formatSetLabel = (chunk: SetChunk): DisplayLabel => {
     return chunk.description;
   }
   return asDisplayLabel(`${chunk.count} sets · ${chunk.description}`);
+};
+
+const startOfMonth = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), 1);
+
+const getMonthBucket = (date: Date) =>
+  new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+
+const runWhenIdle = (task: () => void) => {
+  const idleAPI = globalThis as unknown as {
+    requestIdleCallback?: (
+      callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
+      options?: { timeout: number },
+    ) => number;
+  };
+  if (typeof idleAPI.requestIdleCallback === 'function') {
+    idleAPI.requestIdleCallback(() => task(), { timeout: 350 });
+    return;
+  }
+  setTimeout(task, 32);
 };
 
 const createStyles = () => ({

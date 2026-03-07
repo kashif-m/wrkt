@@ -24,7 +24,7 @@ pub enum Modality {
     Mobility,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LoggingMode {
     Reps,
@@ -34,6 +34,45 @@ pub enum LoggingMode {
     TimeDistance,
     DistanceWeight,
     Mixed,
+}
+
+impl LoggingMode {
+    /// Parse from string representation
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s {
+            "reps" => Some(Self::Reps),
+            "reps_weight" => Some(Self::RepsWeight),
+            "time" => Some(Self::Time),
+            "distance" => Some(Self::Distance),
+            "time_distance" => Some(Self::TimeDistance),
+            "distance_weight" => Some(Self::DistanceWeight),
+            "mixed" => Some(Self::Mixed),
+            _ => None,
+        }
+    }
+
+    /// Returns true if this mode uses weight
+    pub fn uses_weight(&self) -> bool {
+        matches!(self, Self::RepsWeight | Self::DistanceWeight | Self::Mixed)
+    }
+
+    /// Returns true if this mode uses reps
+    pub fn uses_reps(&self) -> bool {
+        matches!(self, Self::Reps | Self::RepsWeight | Self::Mixed)
+    }
+
+    /// Returns true if this mode uses time/duration
+    pub fn uses_time(&self) -> bool {
+        matches!(self, Self::Time | Self::TimeDistance | Self::Mixed)
+    }
+
+    /// Returns true if this mode uses distance
+    pub fn uses_distance(&self) -> bool {
+        matches!(
+            self,
+            Self::Distance | Self::TimeDistance | Self::DistanceWeight | Self::Mixed
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

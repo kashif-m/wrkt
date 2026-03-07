@@ -168,7 +168,8 @@ pub extern "C" fn strata_score_set(
         Ok(s) => s,
         Err(_) => "reps_weight",
     };
-    let mode = workout_pack::LoggingMode::from_str(mode_str);
+    let mode = workout_pack::LoggingMode::from_str(mode_str)
+        .unwrap_or(workout_pack::LoggingMode::RepsWeight);
 
     let weight_opt = if weight > 0.0 { Some(weight) } else { None };
     let reps_opt = if reps > 0 { Some(reps) } else { None };
@@ -337,9 +338,17 @@ pub extern "C" fn strata_compute_home_day_analytics(
     query_json_ptr: *const c_char,
 ) -> FfiResult {
     handle(|| {
+        eprintln!("[FFI] strata_compute_home_day_analytics called");
+
         let events_json = cstr_to_str(events_json_ptr)?;
+        eprintln!("[FFI] events_json length: {} bytes", events_json.len());
+
         let events: Vec<workout_pack::analytics::AnalyticsInputEvent> =
-            serde_json::from_str(events_json).map_err(|e| e.to_string())?;
+            serde_json::from_str(events_json).map_err(|e| {
+                eprintln!("[FFI] Failed to parse events: {}", e);
+                e.to_string()
+            })?;
+        eprintln!("[FFI] Parsed {} events", events.len());
 
         let catalog_json = cstr_to_str(catalog_json_ptr)?;
         let entries: Vec<workout_pack::ExerciseDefinition> =
@@ -357,6 +366,8 @@ pub extern "C" fn strata_compute_home_day_analytics(
             &map,
             &query,
         );
+
+        eprintln!("[FFI] Response has {} sections", response.sections.len());
         Ok(response)
     })
 }
