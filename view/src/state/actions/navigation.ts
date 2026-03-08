@@ -34,7 +34,9 @@ export const resetBrowserState = (): BrowserAction[] => [
 /**
  * Navigation actions
  */
-export const navigateTo = (screen: ScreenKeyValue): { type: 'navigate'; screen: ScreenKeyValue } => ({
+export const navigateTo = (
+  screen: ScreenKeyValue,
+): { type: 'navigate'; screen: ScreenKeyValue } => ({
   type: 'navigate',
   screen,
 });

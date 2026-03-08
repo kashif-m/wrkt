@@ -28,9 +28,7 @@ export type {
   WorkoutState,
 } from './domain/generated/workoutDomainContract';
 
-export const WORKOUT_DSL: DslText = asDslText(
-  'workout_builtin',
-);
+export const WORKOUT_DSL: DslText = asDslText('workout_builtin');
 
 const TRACKER_ID_FALLBACK: TrackerId = asTrackerId('workout');
 let trackerIdentifier: TrackerId = TRACKER_ID_FALLBACK;

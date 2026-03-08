@@ -189,12 +189,7 @@ const CalendarScreen = () => {
     globalDayColorMapCache.catalogRevision = state.catalogRevision;
     globalDayColorMapCache.value = buckets;
     return buckets;
-  }, [
-    catalogMap,
-    events,
-    state.catalogRevision,
-    state.eventsRevision,
-  ]);
+  }, [catalogMap, events, state.catalogRevision, state.eventsRevision]);
 
   const monthForIndex = useCallback((index: number) => {
     return shiftMonth(baseMonthRef.current, index - CALENDAR_CENTER_INDEX);
@@ -362,21 +357,24 @@ const CalendarScreen = () => {
     requestMonthStats(shiftMonth(centerMonth, -1), 'low');
     requestMonthStats(shiftMonth(centerMonth, 1), 'low');
   }, [centerMonth, requestMonthStats]);
-  const getMonthDays = useCallback((month: Date): CalendarDayCell[] => {
-    const monthCacheKey = `${getMonthBucket(month)}:${offsetMinutes}`;
-    const cached = monthDaysCacheRef.current.get(monthCacheKey);
-    if (cached) {
-      return cached;
-    }
-    const days = buildCalendarDays(month, offsetMinutes);
-    cacheSet(
-      monthDaysCacheRef.current,
-      monthCacheKey,
-      days,
-      MONTH_DAYS_CACHE_LIMIT,
-    );
-    return days;
-  }, [offsetMinutes]);
+  const getMonthDays = useCallback(
+    (month: Date): CalendarDayCell[] => {
+      const monthCacheKey = `${getMonthBucket(month)}:${offsetMinutes}`;
+      const cached = monthDaysCacheRef.current.get(monthCacheKey);
+      if (cached) {
+        return cached;
+      }
+      const days = buildCalendarDays(month, offsetMinutes);
+      cacheSet(
+        monthDaysCacheRef.current,
+        monthCacheKey,
+        days,
+        MONTH_DAYS_CACHE_LIMIT,
+      );
+      return days;
+    },
+    [offsetMinutes],
+  );
   const getPageModel = useCallback(
     (index: number): CalendarPageModel => {
       const month = monthForIndex(index);
@@ -992,7 +990,8 @@ const buildMonthInputEvents = (
 ): JsonObject[] => {
   const filtered: JsonObject[] = [];
   events.forEach(event => {
-    const dayBucket = readEventDayBucket(event) ?? roundToLocalDay(event.ts, offsetMinutes);
+    const dayBucket =
+      readEventDayBucket(event) ?? roundToLocalDay(event.ts, offsetMinutes);
     const eventMonthBucket = getMonthBucket(new Date(dayBucket));
     if (eventMonthBucket !== monthBucket) {
       return;
@@ -1019,9 +1018,10 @@ const cacheSet = <K, V>(cache: Map<K, V>, key: K, value: V, limit: number) => {
 const readBucket = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
 
-const readEventDayBucket = (
-  event: { payload?: JsonObject; meta?: JsonObject },
-): number | null => {
+const readEventDayBucket = (event: {
+  payload?: JsonObject;
+  meta?: JsonObject;
+}): number | null => {
   const payload = (event.payload ?? {}) as Record<string, unknown>;
   const meta = (event.meta ?? {}) as Record<string, unknown>;
   return readBucket(payload.day_bucket) ?? readBucket(meta.day_bucket);
@@ -1030,7 +1030,10 @@ const readEventDayBucket = (
 const runWhenIdle = (task: () => void) => {
   const idleAPI = globalThis as unknown as {
     requestIdleCallback?: (
-      callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
+      callback: (deadline: {
+        didTimeout: boolean;
+        timeRemaining: () => number;
+      }) => void,
       options?: { timeout: number },
     ) => number;
   };

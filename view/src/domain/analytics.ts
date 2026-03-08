@@ -42,22 +42,31 @@ export type {
   WorkoutMetricsSeries,
 } from './generated/workoutApiContract';
 
-const WORKOUT_METRIC_KEY_SET = new Set<string>(WORKOUT_VIEW_METRIC_KEYS.workouts);
-const BREAKDOWN_METRIC_KEY_SET = new Set<string>(WORKOUT_VIEW_METRIC_KEYS.breakdown);
-const EXERCISE_METRIC_KEY_SET = new Set<string>(WORKOUT_VIEW_METRIC_KEYS.exercise_series);
+const WORKOUT_METRIC_KEY_SET = new Set<string>(
+  WORKOUT_VIEW_METRIC_KEYS.workouts,
+);
+const BREAKDOWN_METRIC_KEY_SET = new Set<string>(
+  WORKOUT_VIEW_METRIC_KEYS.breakdown,
+);
+const EXERCISE_METRIC_KEY_SET = new Set<string>(
+  WORKOUT_VIEW_METRIC_KEYS.exercise_series,
+);
 
 const WORKOUT_METRIC_FALLBACK = WORKOUT_VIEW_METRIC_KEYS.workouts[0];
 const BREAKDOWN_METRIC_FALLBACK = WORKOUT_VIEW_METRIC_KEYS.breakdown[0];
 const EXERCISE_METRIC_FALLBACK = WORKOUT_VIEW_METRIC_KEYS.exercise_series[0];
 
-export const ALL_DSL_METRIC_KEYS = WORKOUT_METRIC_KEYS as readonly DslMetricKey[];
+export const ALL_DSL_METRIC_KEYS =
+  WORKOUT_METRIC_KEYS as readonly DslMetricKey[];
 
 export const normalizeWorkoutMetricKey = (value: string): WorkoutMetricKey =>
   (WORKOUT_METRIC_KEY_SET.has(value)
     ? value
     : WORKOUT_METRIC_FALLBACK) as WorkoutMetricKey;
 
-export const normalizeBreakdownMetricKey = (value: string): BreakdownMetricKey =>
+export const normalizeBreakdownMetricKey = (
+  value: string,
+): BreakdownMetricKey =>
   (BREAKDOWN_METRIC_KEY_SET.has(value)
     ? value
     : BREAKDOWN_METRIC_FALLBACK) as BreakdownMetricKey;

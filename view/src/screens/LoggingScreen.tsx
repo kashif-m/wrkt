@@ -422,7 +422,10 @@ const LoggingScreen = () => {
       exercise: selectedExercise?.display_name ?? null,
       metric: selectedTrendMetric,
       range: selectedTrendRange,
-      rmReps: selectedTrendMetric === 'max_weight_at_reps' ? selectedTrendRmReps : null,
+      rmReps:
+        selectedTrendMetric === 'max_weight_at_reps'
+          ? selectedTrendRmReps
+          : null,
       traceSource: 'logging/trends',
       revisions: {
         eventsRevision: state.eventsRevision,
@@ -688,10 +691,7 @@ const LoggingScreen = () => {
   const ctaKeyboardLift = Math.max(0, keyboardInset - insets.bottom);
 
   return (
-    <TouchableWithoutFeedback
-      onPress={Keyboard.dismiss}
-      accessible={false}
-    >
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
       <View style={{ flex: 1 }}>
         {!selectedExercise ? (
           <ScrollView
@@ -710,31 +710,269 @@ const LoggingScreen = () => {
           </ScrollView>
         ) : (
           <View style={{ flex: 1 }}>
-          <PagerTabsRail
-            tabs={sessionTabDefinitions}
-            activeKey={sessionTab}
-            progress={sessionTabController.progress}
-            onSelect={handleSessionTabPress}
-            containerStyle={styles.sessionRailWrap}
-          />
+            <PagerTabsRail
+              tabs={sessionTabDefinitions}
+              activeKey={sessionTab}
+              progress={sessionTabController.progress}
+              onSelect={handleSessionTabPress}
+              containerStyle={styles.sessionRailWrap}
+            />
 
-          <PagerView
-            ref={sessionTabController.pagerRef}
-            style={{ flex: 1 }}
-            initialPage={sessionTabController.selectedIndex}
-            offscreenPageLimit={1}
-            scrollEnabled={!interactionLocked}
-            overdrag={false}
-            onPageSelected={sessionTabController.onPageSelected}
-            onPageScroll={sessionTabController.onPageScroll}
-            onPageScrollStateChanged={
-              sessionTabController.onPageScrollStateChanged
-            }
-          >
-            <View key="Track" style={styles.sessionPage}>
-              <View style={styles.sessionPage}>
+            <PagerView
+              ref={sessionTabController.pagerRef}
+              style={{ flex: 1 }}
+              initialPage={sessionTabController.selectedIndex}
+              offscreenPageLimit={1}
+              scrollEnabled={!interactionLocked}
+              overdrag={false}
+              onPageSelected={sessionTabController.onPageSelected}
+              onPageScroll={sessionTabController.onPageScroll}
+              onPageScrollStateChanged={
+                sessionTabController.onPageScrollStateChanged
+              }
+            >
+              <View key="Track" style={styles.sessionPage}>
+                <View style={styles.sessionPage}>
+                  <ScrollView
+                    style={styles.sessionPage}
+                    keyboardShouldPersistTaps="handled"
+                    directionalLockEnabled
+                    contentContainerStyle={{
+                      paddingHorizontal: spacing(2),
+                      paddingTop: spacing(1.25),
+                      paddingBottom: spacing(2),
+                    }}
+                  >
+                    <Card style={styles.sessionContentCard}>
+                      <View style={styles.dateRow}>
+                        <TouchableOpacity
+                          onPress={() => shiftLogDate(-1)}
+                          style={styles.dateButton}
+                        >
+                          <ChevronLeftIcon
+                            width={16}
+                            height={16}
+                            color={palette.text}
+                          />
+                        </TouchableOpacity>
+                        <View style={{ alignItems: 'center', flex: 1 }}>
+                          <Text
+                            style={{ color: palette.text, fontWeight: '600' }}
+                          >
+                            {formatDateLabel(loggingDate)}
+                          </Text>
+                          <Text
+                            style={{ color: palette.mutedText, fontSize: 12 }}
+                          >
+                            {loggingDate.toLocaleDateString(undefined, {
+                              weekday: 'short',
+                              month: 'short',
+                              day: 'numeric',
+                            })}
+                          </Text>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => shiftLogDate(1)}
+                          style={styles.dateButton}
+                        >
+                          <ChevronRightIcon
+                            width={16}
+                            height={16}
+                            color={palette.text}
+                          />
+                        </TouchableOpacity>
+                      </View>
+                      <View style={{ gap: spacing(1) }}>
+                        {fieldDefinitions.map(definition => (
+                          <Stepper
+                            key={definition.key}
+                            label={definition.label}
+                            unit={definition.unit}
+                            value={fields[definition.key]}
+                            onInputRef={ref => {
+                              fieldInputRefs.current[definition.key] = ref;
+                            }}
+                            onIncrement={() => {
+                              setFieldValue(definition.key, definition.step);
+                            }}
+                            onDecrement={() => {
+                              setFieldValue(definition.key, -definition.step);
+                            }}
+                            onChange={value => {
+                              dispatch({
+                                type: 'log/fields',
+                                fields: {
+                                  ...fields,
+                                  [definition.key]: asNumericInput(value),
+                                },
+                              });
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <View style={{ marginTop: spacing(2) }}>
+                        {todaySets.length === 0 ? (
+                          <BodyText style={{ color: palette.mutedText }}>
+                            No sets logged today.
+                          </BodyText>
+                        ) : (
+                          todaySets.map((set, index) => (
+                            <SetRow
+                              key={set.event_id}
+                              event={set}
+                              highlightColor={getMuscleColor(
+                                selectedExercise?.primary_muscle_group,
+                              )}
+                              onPress={() => handleSelectSet(set)}
+                              active={editingEventId === set.event_id}
+                              previousActive={
+                                index > 0 &&
+                                editingEventId === todaySets[index - 1].event_id
+                              }
+                              isLast={index === todaySets.length - 1}
+                              pr={prEventIdsToday.has(set.event_id)}
+                            />
+                          ))
+                        )}
+                      </View>
+                    </Card>
+                    <Pressable
+                      onPress={clearEditingSelection}
+                      style={{ minHeight: spacing(4) }}
+                    />
+                  </ScrollView>
+                  <View
+                    style={[
+                      styles.trackStickyCta,
+                      {
+                        paddingTop: ctaPaddingTop,
+                        paddingBottom: ctaPaddingBottom,
+                        marginBottom: ctaKeyboardLift,
+                      },
+                    ]}
+                  >
+                    {editingEventId ? (
+                      <>
+                        <Animated.View style={updateCtaStyle}>
+                          <PrimaryButton
+                            label={asLabelText('Update set')}
+                            onPress={handleUpdateSet}
+                            disabled={trackDisabled}
+                          />
+                        </Animated.View>
+                        <Animated.View style={deleteCtaStyle}>
+                          <TouchableOpacity
+                            onPress={handleDeleteSet}
+                            style={styles.dangerButton}
+                          >
+                            <Text
+                              style={{ color: '#fffaf2', fontWeight: '600' }}
+                            >
+                              Delete set
+                            </Text>
+                          </TouchableOpacity>
+                        </Animated.View>
+                      </>
+                    ) : (
+                      <PrimaryButton
+                        label={asLabelText('Log set')}
+                        onPress={handleAddSet}
+                        disabled={trackDisabled}
+                      />
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              <View
+                key="History"
+                style={styles.sessionPage}
+                onLayout={handleHistoryPageLayout}
+              >
+                <Card
+                  style={
+                    historyShouldFillHeight
+                      ? [
+                          styles.sessionContentCard,
+                          styles.historyCard,
+                          styles.historyCardExpanded,
+                          styles.historyCardFrame,
+                        ]
+                      : [
+                          styles.sessionContentCard,
+                          styles.historyCard,
+                          styles.historyCardFrame,
+                        ]
+                  }
+                >
+                  {historySections.length === 0 ? (
+                    <BodyText
+                      style={{
+                        color: palette.mutedText,
+                        paddingHorizontal: spacing(2),
+                      }}
+                    >
+                      Log sets to unlock history.
+                    </BodyText>
+                  ) : (
+                    <SectionList
+                      sections={historySections}
+                      keyExtractor={item => item.event_id}
+                      onTouchStart={clearEditingSelection}
+                      onScrollBeginDrag={clearEditingSelection}
+                      initialNumToRender={16}
+                      maxToRenderPerBatch={16}
+                      windowSize={7}
+                      removeClippedSubviews={Platform.OS === 'android'}
+                      keyboardShouldPersistTaps="handled"
+                      directionalLockEnabled
+                      scrollEnabled={historyShouldFillHeight}
+                      showsVerticalScrollIndicator={false}
+                      stickySectionHeadersEnabled={false}
+                      style={
+                        historyShouldFillHeight
+                          ? styles.historyListExpanded
+                          : styles.historyListCompact
+                      }
+                      contentContainerStyle={{
+                        paddingHorizontal: spacing(2),
+                        paddingBottom: spacing(1),
+                      }}
+                      renderSectionHeader={({ section }) => (
+                        <Text
+                          style={{
+                            color: palette.mutedText,
+                            marginTop: spacing(0.75),
+                            marginBottom: spacing(0.5),
+                          }}
+                        >
+                          {section.title}
+                        </Text>
+                      )}
+                      renderItem={({ item, index, section }) => (
+                        <SetRow
+                          event={item}
+                          compact
+                          onPress={() => handleSelectSet(item)}
+                          active={editingEventId === item.event_id}
+                          previousActive={
+                            index > 0 &&
+                            editingEventId === section.data[index - 1].event_id
+                          }
+                          isLast={index === section.data.length - 1}
+                          pr={prEventIdsAll.has(item.event_id)}
+                        />
+                      )}
+                    />
+                  )}
+                </Card>
+              </View>
+
+              <View key="Trends" style={styles.sessionPage}>
                 <ScrollView
                   style={styles.sessionPage}
+                  onTouchStart={clearEditingSelection}
+                  onScrollBeginDrag={clearEditingSelection}
                   keyboardShouldPersistTaps="handled"
                   directionalLockEnabled
                   contentContainerStyle={{
@@ -744,95 +982,86 @@ const LoggingScreen = () => {
                   }}
                 >
                   <Card style={styles.sessionContentCard}>
-                    <View style={styles.dateRow}>
-                      <TouchableOpacity
-                        onPress={() => shiftLogDate(-1)}
-                        style={styles.dateButton}
-                      >
-                        <ChevronLeftIcon
-                          width={16}
-                          height={16}
-                          color={palette.text}
-                        />
-                      </TouchableOpacity>
-                      <View style={{ alignItems: 'center', flex: 1 }}>
-                        <Text
-                          style={{ color: palette.text, fontWeight: '600' }}
-                        >
-                          {formatDateLabel(loggingDate)}
-                        </Text>
-                        <Text
-                          style={{ color: palette.mutedText, fontSize: 12 }}
-                        >
-                          {loggingDate.toLocaleDateString(undefined, {
-                            weekday: 'short',
-                            month: 'short',
-                            day: 'numeric',
-                          })}
-                        </Text>
-                      </View>
-                      <TouchableOpacity
-                        onPress={() => shiftLogDate(1)}
-                        style={styles.dateButton}
-                      >
-                        <ChevronRightIcon
-                          width={16}
-                          height={16}
-                          color={palette.text}
-                        />
-                      </TouchableOpacity>
-                    </View>
                     <View style={{ gap: spacing(1) }}>
-                      {fieldDefinitions.map(definition => (
-                        <Stepper
-                          key={definition.key}
-                          label={definition.label}
-                          unit={definition.unit}
-                          value={fields[definition.key]}
-                          onInputRef={ref => {
-                            fieldInputRefs.current[definition.key] = ref;
-                          }}
-                          onIncrement={() => {
-                            setFieldValue(definition.key, definition.step);
-                          }}
-                          onDecrement={() => {
-                            setFieldValue(definition.key, -definition.step);
-                          }}
-                          onChange={value => {
-                            dispatch({
-                              type: 'log/fields',
-                              fields: {
-                                ...fields,
-                                [definition.key]: asNumericInput(value),
-                              },
-                            });
-                          }}
+                      {trendMetricOptions.length > 0 ? (
+                        <AnalyticsInlineSelect
+                          title={asLabelText('Metric')}
+                          options={trendMetricOptions}
+                          selected={selectedTrendMetric}
+                          onSelect={metric =>
+                            dispatch({ type: 'log/trendMetric', metric })
+                          }
+                          onInteractionLockChange={handleInteractionLockChange}
                         />
-                      ))}
-                    </View>
-                    <View style={{ marginTop: spacing(2) }}>
-                      {todaySets.length === 0 ? (
+                      ) : (
                         <BodyText style={{ color: palette.mutedText }}>
-                          No sets logged today.
+                          No metrics available for this range.
+                        </BodyText>
+                      )}
+                      <View style={{ gap: spacing(0.5) }}>
+                        <Text
+                          style={{
+                            color: palette.mutedText,
+                            fontWeight: '600',
+                            fontSize: 12,
+                          }}
+                        >
+                          RANGE
+                        </Text>
+                        <AnalyticsRangeSelector
+                          selected={selectedTrendRange}
+                          onSelect={range =>
+                            dispatch({ type: 'log/trendRange', range })
+                          }
+                          options={analyticsRangeOptions.map(
+                            option => option.key,
+                          )}
+                          onInteractionLockChange={handleInteractionLockChange}
+                        />
+                      </View>
+                      {selectedTrendMetric === 'max_weight_at_reps' &&
+                      trendRmOptions.length > 0 ? (
+                        <AnalyticsInlineSelect
+                          title={asLabelText('RM')}
+                          options={trendRmOptions}
+                          selected={
+                            selectedTrendRmReps === null
+                              ? trendRmOptions[0].key
+                              : `${selectedTrendRmReps}`
+                          }
+                          onSelect={value =>
+                            dispatch({
+                              type: 'log/trendRm',
+                              rmReps: Number(value),
+                            })
+                          }
+                          onInteractionLockChange={handleInteractionLockChange}
+                        />
+                      ) : null}
+                      {selectedTrendMetric === 'max_weight_at_reps' &&
+                      trendRmOptions.length === 0 ? (
+                        <BodyText style={{ color: palette.mutedText }}>
+                          No RM-specific records in this range.
+                        </BodyText>
+                      ) : null}
+                      {displayTrendData.length === 0 ? (
+                        <BodyText style={{ color: palette.mutedText }}>
+                          No trend data for this selection.
                         </BodyText>
                       ) : (
-                        todaySets.map((set, index) => (
-                          <SetRow
-                            key={set.event_id}
-                            event={set}
-                            highlightColor={getMuscleColor(
-                              selectedExercise?.primary_muscle_group,
-                            )}
-                            onPress={() => handleSelectSet(set)}
-                            active={editingEventId === set.event_id}
-                            previousActive={
-                              index > 0 &&
-                              editingEventId === todaySets[index - 1].event_id
+                        <View style={{ height: 220 }}>
+                          <SkiaTrendChart
+                            data={displayTrendData}
+                            height={220}
+                            unit={unitForExerciseMetric(selectedTrendMetric)}
+                            showTooltip
+                            rangeKey={selectedTrendRange}
+                            countLabel="set"
+                            onInteractionLockChange={
+                              handleInteractionLockChange
                             }
-                            isLast={index === todaySets.length - 1}
-                            pr={prEventIdsToday.has(set.event_id)}
                           />
-                        ))
+                        </View>
                       )}
                     </View>
                   </Card>
@@ -841,233 +1070,8 @@ const LoggingScreen = () => {
                     style={{ minHeight: spacing(4) }}
                   />
                 </ScrollView>
-                <View
-                  style={[
-                    styles.trackStickyCta,
-                    {
-                      paddingTop: ctaPaddingTop,
-                      paddingBottom: ctaPaddingBottom,
-                      marginBottom: ctaKeyboardLift,
-                    },
-                  ]}
-                >
-                  {editingEventId ? (
-                    <>
-                      <Animated.View style={updateCtaStyle}>
-                        <PrimaryButton
-                          label={asLabelText('Update set')}
-                          onPress={handleUpdateSet}
-                          disabled={trackDisabled}
-                        />
-                      </Animated.View>
-                      <Animated.View style={deleteCtaStyle}>
-                        <TouchableOpacity
-                          onPress={handleDeleteSet}
-                          style={styles.dangerButton}
-                        >
-                          <Text style={{ color: '#fffaf2', fontWeight: '600' }}>
-                            Delete set
-                          </Text>
-                        </TouchableOpacity>
-                      </Animated.View>
-                    </>
-                  ) : (
-                    <PrimaryButton
-                      label={asLabelText('Log set')}
-                      onPress={handleAddSet}
-                      disabled={trackDisabled}
-                    />
-                  )}
-                </View>
               </View>
-            </View>
-
-            <View
-              key="History"
-              style={styles.sessionPage}
-              onLayout={handleHistoryPageLayout}
-            >
-              <Card
-                style={
-                  historyShouldFillHeight
-                    ? [
-                        styles.sessionContentCard,
-                        styles.historyCard,
-                        styles.historyCardExpanded,
-                        styles.historyCardFrame,
-                      ]
-                    : [
-                        styles.sessionContentCard,
-                        styles.historyCard,
-                        styles.historyCardFrame,
-                      ]
-                }
-              >
-                {historySections.length === 0 ? (
-                  <BodyText
-                    style={{
-                      color: palette.mutedText,
-                      paddingHorizontal: spacing(2),
-                    }}
-                  >
-                    Log sets to unlock history.
-                  </BodyText>
-                ) : (
-                  <SectionList
-                    sections={historySections}
-                    keyExtractor={item => item.event_id}
-                    onTouchStart={clearEditingSelection}
-                    onScrollBeginDrag={clearEditingSelection}
-                    initialNumToRender={16}
-                    maxToRenderPerBatch={16}
-                    windowSize={7}
-                    removeClippedSubviews={Platform.OS === 'android'}
-                    keyboardShouldPersistTaps="handled"
-                    directionalLockEnabled
-                    scrollEnabled={historyShouldFillHeight}
-                    showsVerticalScrollIndicator={false}
-                    stickySectionHeadersEnabled={false}
-                    style={
-                      historyShouldFillHeight
-                        ? styles.historyListExpanded
-                        : styles.historyListCompact
-                    }
-                    contentContainerStyle={{
-                      paddingHorizontal: spacing(2),
-                      paddingBottom: spacing(1),
-                    }}
-                    renderSectionHeader={({ section }) => (
-                      <Text
-                        style={{
-                          color: palette.mutedText,
-                          marginTop: spacing(0.75),
-                          marginBottom: spacing(0.5),
-                        }}
-                      >
-                        {section.title}
-                      </Text>
-                    )}
-                    renderItem={({ item, index, section }) => (
-                      <SetRow
-                        event={item}
-                        compact
-                        onPress={() => handleSelectSet(item)}
-                        active={editingEventId === item.event_id}
-                        previousActive={
-                          index > 0 &&
-                          editingEventId === section.data[index - 1].event_id
-                        }
-                        isLast={index === section.data.length - 1}
-                        pr={prEventIdsAll.has(item.event_id)}
-                      />
-                    )}
-                  />
-                )}
-              </Card>
-            </View>
-
-            <View key="Trends" style={styles.sessionPage}>
-              <ScrollView
-                style={styles.sessionPage}
-                onTouchStart={clearEditingSelection}
-                onScrollBeginDrag={clearEditingSelection}
-                keyboardShouldPersistTaps="handled"
-                directionalLockEnabled
-                contentContainerStyle={{
-                  paddingHorizontal: spacing(2),
-                  paddingTop: spacing(1.25),
-                  paddingBottom: spacing(2),
-                }}
-              >
-                <Card style={styles.sessionContentCard}>
-                  <View style={{ gap: spacing(1) }}>
-                    {trendMetricOptions.length > 0 ? (
-                      <AnalyticsInlineSelect
-                        title={asLabelText('Metric')}
-                        options={trendMetricOptions}
-                        selected={selectedTrendMetric}
-                        onSelect={metric =>
-                          dispatch({ type: 'log/trendMetric', metric })
-                        }
-                        onInteractionLockChange={handleInteractionLockChange}
-                      />
-                    ) : (
-                      <BodyText style={{ color: palette.mutedText }}>
-                        No metrics available for this range.
-                      </BodyText>
-                    )}
-                    <View style={{ gap: spacing(0.5) }}>
-                      <Text
-                        style={{
-                          color: palette.mutedText,
-                          fontWeight: '600',
-                          fontSize: 12,
-                        }}
-                      >
-                        RANGE
-                      </Text>
-                      <AnalyticsRangeSelector
-                        selected={selectedTrendRange}
-                        onSelect={range =>
-                          dispatch({ type: 'log/trendRange', range })
-                        }
-                        options={analyticsRangeOptions.map(
-                          option => option.key,
-                        )}
-                        onInteractionLockChange={handleInteractionLockChange}
-                      />
-                    </View>
-                    {selectedTrendMetric === 'max_weight_at_reps' &&
-                    trendRmOptions.length > 0 ? (
-                      <AnalyticsInlineSelect
-                        title={asLabelText('RM')}
-                        options={trendRmOptions}
-                        selected={
-                          selectedTrendRmReps === null
-                            ? trendRmOptions[0].key
-                            : `${selectedTrendRmReps}`
-                        }
-                        onSelect={value =>
-                          dispatch({
-                            type: 'log/trendRm',
-                            rmReps: Number(value),
-                          })
-                        }
-                        onInteractionLockChange={handleInteractionLockChange}
-                      />
-                    ) : null}
-                    {selectedTrendMetric === 'max_weight_at_reps' &&
-                    trendRmOptions.length === 0 ? (
-                      <BodyText style={{ color: palette.mutedText }}>
-                        No RM-specific records in this range.
-                      </BodyText>
-                    ) : null}
-                    {displayTrendData.length === 0 ? (
-                      <BodyText style={{ color: palette.mutedText }}>
-                        No trend data for this selection.
-                      </BodyText>
-                    ) : (
-                      <View style={{ height: 220 }}>
-                        <SkiaTrendChart
-                          data={displayTrendData}
-                          height={220}
-                          unit={unitForExerciseMetric(selectedTrendMetric)}
-                          showTooltip
-                          rangeKey={selectedTrendRange}
-                          countLabel="set"
-                          onInteractionLockChange={handleInteractionLockChange}
-                        />
-                      </View>
-                    )}
-                  </View>
-                </Card>
-                <Pressable
-                  onPress={clearEditingSelection}
-                  style={{ minHeight: spacing(4) }}
-                />
-              </ScrollView>
-            </View>
-          </PagerView>
+            </PagerView>
           </View>
         )}
       </View>

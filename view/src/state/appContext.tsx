@@ -31,10 +31,7 @@ export type RootStateActions = {
     tab: RootState['logging']['tab'],
   ) => void;
   logSet: (payload: SetPayload) => Promise<void>;
-  updateSet: (
-    eventId: EventId,
-    payload: SetPayload,
-  ) => Promise<void>;
+  updateSet: (eventId: EventId, payload: SetPayload) => Promise<void>;
   deleteSet: (eventId: EventId) => Promise<void>;
   saveCustomExercise: (
     values: ExerciseCatalogEntry,

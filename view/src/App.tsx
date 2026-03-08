@@ -252,7 +252,10 @@ const PrimaryRoute = ({
           onSelect={key => {
             if (key === asNavKey('browser')) {
               resetBrowserUiState(dispatch);
-              actions.navigate(asScreenKey('browser'), current as ScreenKeyValue);
+              actions.navigate(
+                asScreenKey('browser'),
+                current as ScreenKeyValue,
+              );
               return;
             }
             if (key === asNavKey('home')) {
@@ -260,7 +263,10 @@ const PrimaryRoute = ({
                 actions.setSelectedDate(new Date());
               }
               if (current !== asNavKey('home')) {
-                actions.navigate(asScreenKey('home'), current as ScreenKeyValue);
+                actions.navigate(
+                  asScreenKey('home'),
+                  current as ScreenKeyValue,
+                );
               }
               return;
             }
@@ -635,7 +641,9 @@ const AppInner = () => {
             const currentIndex = getPrimaryRouteIndex(current);
             const targetIndex = getPrimaryRouteIndex(target as ScreenKeyValue);
             if (targetIndex > currentIndex) {
-              navigationRef.dispatch(StackActions.push(target as ScreenKeyValue));
+              navigationRef.dispatch(
+                StackActions.push(target as ScreenKeyValue),
+              );
               return;
             }
             if (targetIndex < currentIndex) {
@@ -654,7 +662,9 @@ const AppInner = () => {
                 return;
               }
             }
-            navigationRef.dispatch(StackActions.replace(target as ScreenKeyValue));
+            navigationRef.dispatch(
+              StackActions.replace(target as ScreenKeyValue),
+            );
             return;
           }
           navigationRef.dispatch(StackActions.popToTop());
@@ -783,10 +793,7 @@ const AppInner = () => {
         // Persist in background (debounced)
         scheduleSave(finalEvents);
       },
-      updateSet: async (
-        eventId: EventId,
-        payload: SetPayload,
-      ) => {
+      updateSet: async (eventId: EventId, payload: SetPayload) => {
         const existing = state.events.find(event => event.event_id === eventId);
         if (!existing) return;
         const normalizedPayload = enrichSetPayloadWithCatalog(

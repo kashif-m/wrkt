@@ -991,7 +991,10 @@ const getMonthBucket = (date: Date) =>
 const runWhenIdle = (task: () => void) => {
   const idleAPI = globalThis as unknown as {
     requestIdleCallback?: (
-      callback: (deadline: { didTimeout: boolean; timeRemaining: () => number }) => void,
+      callback: (deadline: {
+        didTimeout: boolean;
+        timeRemaining: () => number;
+      }) => void,
       options?: { timeout: number },
     ) => number;
   };

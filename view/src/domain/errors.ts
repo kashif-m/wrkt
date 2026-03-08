@@ -128,7 +128,15 @@ export interface TrackerError {
 /**
  * Error categories
  */
-export type ErrorCategory = 'success' | 'parsing' | 'validation' | 'evaluation' | 'catalog' | 'planning' | 'storage' | 'unknown';
+export type ErrorCategory =
+  | 'success'
+  | 'parsing'
+  | 'validation'
+  | 'evaluation'
+  | 'catalog'
+  | 'planning'
+  | 'storage'
+  | 'unknown';
 
 /**
  * Get category for an error code
@@ -149,10 +157,18 @@ export function getErrorCategory(code: ErrorCode): ErrorCategory {
  */
 export function getErrorSeverity(code: ErrorCode): ErrorSeverity {
   if (code === ErrorCode.Success) return ErrorSeverity.Success;
-  if (code === ErrorCode.FieldNotFound || code === ErrorCode.CatalogEntryNotFound) {
+  if (
+    code === ErrorCode.FieldNotFound ||
+    code === ErrorCode.CatalogEntryNotFound
+  ) {
     return ErrorSeverity.Warning;
   }
-  if (code === ErrorCode.DivisionByZero || code === ErrorCode.CircularDependency || code === ErrorCode.SqliteError || code === ErrorCode.FileIoError) {
+  if (
+    code === ErrorCode.DivisionByZero ||
+    code === ErrorCode.CircularDependency ||
+    code === ErrorCode.SqliteError ||
+    code === ErrorCode.FileIoError
+  ) {
     return ErrorSeverity.Fatal;
   }
   return ErrorSeverity.Error;
@@ -192,7 +208,8 @@ export function parseError(json: string): TrackerError {
     code: parsed.code as ErrorCode,
     message: parsed.message,
     context: parsed.context || {},
-    severity: (parsed.severity as ErrorSeverity) || getErrorSeverity(parsed.code),
+    severity:
+      (parsed.severity as ErrorSeverity) || getErrorSeverity(parsed.code),
     sourceLocation: parsed.source_location,
     timestampMs: parsed.timestamp_ms,
   };

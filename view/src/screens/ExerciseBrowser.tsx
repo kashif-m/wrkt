@@ -1845,10 +1845,7 @@ const ManageCustomExercises = ({
         progress={tabController.progress}
         onSelect={key => tabController.onTabPress(key as ManageTab)}
       />
-      <View
-        style={{ flex: 1 }}
-        onLayout={handleListViewportLayout}
-      >
+      <View style={{ flex: 1 }} onLayout={handleListViewportLayout}>
         <PagerView
           ref={tabController.pagerRef}
           style={{ flex: 1 }}

@@ -1,9 +1,4 @@
-import React, {
-  useCallback,
-  createContext,
-  useContext,
-  useMemo,
-} from 'react';
+import React, { useCallback, createContext, useContext, useMemo } from 'react';
 import {
   JsonObject,
   getWorkoutAnalyticsCapabilities,
@@ -39,7 +34,11 @@ const MAX_RANGE_CACHE_ENTRIES = 64;
 const globalEventsByRangeCache = new Map<string, WorkoutEvent[]>();
 const globalPayloadByRangeCache = new Map<string, JsonObject[]>();
 
-const writeBoundedCache = <T,>(cache: Map<string, T>, key: string, value: T) => {
+const writeBoundedCache = <T,>(
+  cache: Map<string, T>,
+  key: string,
+  value: T,
+) => {
   cache.set(key, value);
   if (cache.size > MAX_RANGE_CACHE_ENTRIES) {
     const firstKey = cache.keys().next().value as string | undefined;

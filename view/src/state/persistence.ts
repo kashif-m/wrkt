@@ -254,7 +254,9 @@ const parseEventsMeta = (metaRaw: string | null): PersistedEventsMeta => {
       typeof parsed.migrationVersion === 'number' &&
       Number.isFinite(parsed.migrationVersion)
     ) {
-      return { migrationVersion: Math.max(0, Math.floor(parsed.migrationVersion)) };
+      return {
+        migrationVersion: Math.max(0, Math.floor(parsed.migrationVersion)),
+      };
     }
     return DEFAULT_EVENTS_META;
   } catch {

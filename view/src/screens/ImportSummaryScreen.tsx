@@ -24,7 +24,9 @@ const ImportSummaryScreen = () => {
           </Text>
           <PrimaryButton
             label={asLabelText('Back to more')}
-            onPress={() => actions.navigate(asScreenKey('more'), 'importSummary')}
+            onPress={() =>
+              actions.navigate(asScreenKey('more'), 'importSummary')
+            }
           />
         </View>
       </ScreenContainer>

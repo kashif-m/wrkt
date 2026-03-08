@@ -25,8 +25,7 @@ FfiResult strata_compute_workout_tracker(const char* events_json, const char* qu
 FfiResult strata_simulate(const char* dsl, const char* base_events_json,
                           const char* hypotheticals_json, const char* query_json);
 FfiResult strata_simulate_workout_tracker(const char* base_events_json,
-                                          const char* hypotheticals_json,
-                                          const char* query_json);
+                                          const char* hypotheticals_json, const char* query_json);
 FfiResult strata_exercise_catalog(void);
 FfiResult strata_validate_exercise(const char* entry_json);
 FfiResult strata_import_fitnotes(const char* path);
@@ -108,10 +107,11 @@ void installTrackerEngineBinding(Runtime& rt) {
     return makeStringResult(runtime, callStrata(ffi));
   });
 
-  makeFunction("compileWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
-    auto ffi = strata_compile_workout_tracker();
-    return makeStringResult(runtime, callStrata(ffi));
-  });
+  makeFunction("compileWorkoutTracker",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 auto ffi = strata_compile_workout_tracker();
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
 
   makeFunction("validateEvent", [](Runtime& runtime, const Value* args, size_t count) -> Value {
     if (count < 2 || !args[0].isString() || !args[1].isString()) {
@@ -123,14 +123,15 @@ void installTrackerEngineBinding(Runtime& rt) {
     return makeStringResult(runtime, callStrata(ffi));
   });
 
-  makeFunction("validateWorkoutEvent", [](Runtime& runtime, const Value* args, size_t count) -> Value {
-    if (count < 1 || !args[0].isString()) {
-      throw std::invalid_argument("validateWorkoutEvent requires event JSON");
-    }
-    auto event_json = args[0].asString(runtime).utf8(runtime);
-    auto ffi = strata_validate_workout_event(event_json.c_str());
-    return makeStringResult(runtime, callStrata(ffi));
-  });
+  makeFunction("validateWorkoutEvent",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 if (count < 1 || !args[0].isString()) {
+                   throw std::invalid_argument("validateWorkoutEvent requires event JSON");
+                 }
+                 auto event_json = args[0].asString(runtime).utf8(runtime);
+                 auto ffi = strata_validate_workout_event(event_json.c_str());
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
 
   makeFunction("compute", [](Runtime& runtime, const Value* args, size_t count) -> Value {
     if (count < 2) {
@@ -144,16 +145,17 @@ void installTrackerEngineBinding(Runtime& rt) {
     return makeStringResult(runtime, callStrata(ffi));
   });
 
-  makeFunction("computeWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
-    if (count < 1) {
-      throw std::invalid_argument("computeWorkoutTracker requires events JSON");
-    }
-    auto events_json = args[0].asString(runtime).utf8(runtime);
-    std::string query_json =
-        count >= 2 && args[1].isString() ? args[1].asString(runtime).utf8(runtime) : "{}";
-    auto ffi = strata_compute_workout_tracker(events_json.c_str(), query_json.c_str());
-    return makeStringResult(runtime, callStrata(ffi));
-  });
+  makeFunction(
+      "computeWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+        if (count < 1) {
+          throw std::invalid_argument("computeWorkoutTracker requires events JSON");
+        }
+        auto events_json = args[0].asString(runtime).utf8(runtime);
+        std::string query_json =
+            count >= 2 && args[1].isString() ? args[1].asString(runtime).utf8(runtime) : "{}";
+        auto ffi = strata_compute_workout_tracker(events_json.c_str(), query_json.c_str());
+        return makeStringResult(runtime, callStrata(ffi));
+      });
 
   makeFunction("simulate", [](Runtime& runtime, const Value* args, size_t count) -> Value {
     if (count < 3) {
@@ -169,18 +171,20 @@ void installTrackerEngineBinding(Runtime& rt) {
     return makeStringResult(runtime, callStrata(ffi));
   });
 
-  makeFunction("simulateWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
-    if (count < 2) {
-      throw std::invalid_argument("simulateWorkoutTracker requires base events + hypotheticals JSON");
-    }
-    auto base_json = args[0].asString(runtime).utf8(runtime);
-    auto hypo_json = args[1].asString(runtime).utf8(runtime);
-    std::string query_json =
-        count >= 3 && args[2].isString() ? args[2].asString(runtime).utf8(runtime) : "{}";
-    auto ffi =
-        strata_simulate_workout_tracker(base_json.c_str(), hypo_json.c_str(), query_json.c_str());
-    return makeStringResult(runtime, callStrata(ffi));
-  });
+  makeFunction(
+      "simulateWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+        if (count < 2) {
+          throw std::invalid_argument(
+              "simulateWorkoutTracker requires base events + hypotheticals JSON");
+        }
+        auto base_json = args[0].asString(runtime).utf8(runtime);
+        auto hypo_json = args[1].asString(runtime).utf8(runtime);
+        std::string query_json =
+            count >= 3 && args[2].isString() ? args[2].asString(runtime).utf8(runtime) : "{}";
+        auto ffi = strata_simulate_workout_tracker(base_json.c_str(), hypo_json.c_str(),
+                                                   query_json.c_str());
+        return makeStringResult(runtime, callStrata(ffi));
+      });
 
   makeFunction("getExerciseCatalog",
                [](Runtime& runtime, const Value* args, size_t count) -> Value {

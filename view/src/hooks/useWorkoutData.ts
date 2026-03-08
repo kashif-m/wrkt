@@ -22,9 +22,7 @@ export type DataDispatch = {
   ) => void;
 };
 
-export const useWorkoutData = (
-  dispatch: DataDispatch,
-) => {
+export const useWorkoutData = (dispatch: DataDispatch) => {
   const refreshFromStorage = useCallback(async () => {
     const loadedEvents = await fetchEvents();
     dispatch.setEvents(loadedEvents);

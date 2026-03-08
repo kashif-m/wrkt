@@ -1,9 +1,4 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -240,14 +235,17 @@ export const BottomSheet = ({
   const insets = useSafeAreaInsets();
   const modalRef = useRef<BottomSheetModal>(null);
   const openedRef = useRef(false);
-  const snapPoint = `${Math.round(Math.min(Math.max(maxHeightRatio, 0.35), 0.95) * 100)}%`;
+  const snapPoint = `${Math.round(
+    Math.min(Math.max(maxHeightRatio, 0.35), 0.95) * 100,
+  )}%`;
   const expandedSnapPoint =
     typeof expandedHeightRatio === 'number'
-      ? `${Math.round(Math.min(Math.max(expandedHeightRatio, 0.35), 0.98) * 100)}%`
+      ? `${Math.round(
+          Math.min(Math.max(expandedHeightRatio, 0.35), 0.98) * 100,
+        )}%`
       : null;
   const snapPoints = useMemo(
-    () =>
-      expandedSnapPoint ? [snapPoint, expandedSnapPoint] : [snapPoint],
+    () => (expandedSnapPoint ? [snapPoint, expandedSnapPoint] : [snapPoint]),
     [expandedSnapPoint, snapPoint],
   );
   const renderBackdrop = useCallback(

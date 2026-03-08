@@ -21,7 +21,10 @@ impl Heatmap {
         Self::calculate_from_day_buckets(&day_buckets, offset_minutes)
     }
 
-    pub fn calculate_from_day_buckets(day_buckets: &[i64], offset_minutes: i32) -> Vec<HeatmapPoint> {
+    pub fn calculate_from_day_buckets(
+        day_buckets: &[i64],
+        offset_minutes: i32,
+    ) -> Vec<HeatmapPoint> {
         if day_buckets.is_empty() {
             return Vec::new();
         }
@@ -102,7 +105,10 @@ mod tests {
     #[test]
     fn positive_offset_serializes_local_day_date() {
         // 2026-03-07 04:00:00 UTC == 2026-03-07 09:30:00 IST.
-        let event_ts = Utc.with_ymd_and_hms(2026, 3, 7, 4, 0, 0).unwrap().timestamp_millis();
+        let event_ts = Utc
+            .with_ymd_and_hms(2026, 3, 7, 4, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let points = Heatmap::calculate(&[event_ts], 330);
         assert_eq!(points.len(), 1);
         assert_eq!(points[0].date, "2026-03-07");

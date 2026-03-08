@@ -69,7 +69,11 @@ export const resolveFooterLayout = ({
     minBottom,
   });
   const footerBottomPadding =
-    visible && keyboardOverlap > 0 ? openBottom : visible ? footerClosedBottom : 0;
+    visible && keyboardOverlap > 0
+      ? openBottom
+      : visible
+      ? footerClosedBottom
+      : 0;
   const footerLift = visible
     ? resolveKeyboardLift({ keyboardOverlap, keyboardGap })
     : 0;

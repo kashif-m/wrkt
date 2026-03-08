@@ -367,7 +367,8 @@ export const computeWorkoutTracker = async (
     options,
     traceKey,
     payloadBytes(eventsJson as unknown as string, queryJson),
-    () => parse<JsonObject>(engine.computeWorkoutTracker(eventsJson, queryJson)),
+    () =>
+      parse<JsonObject>(engine.computeWorkoutTracker(eventsJson, queryJson)),
   );
 };
 
@@ -391,7 +392,10 @@ export const simulateWorkoutTracker = async (
       hypotheticalJson as unknown as string,
       queryJson,
     ),
-    () => parse<JsonObject>(engine.simulateWorkoutTracker(baseJson, hypotheticalJson, queryJson)),
+    () =>
+      parse<JsonObject>(
+        engine.simulateWorkoutTracker(baseJson, hypotheticalJson, queryJson),
+      ),
   );
 };
 

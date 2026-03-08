@@ -1,5 +1,8 @@
 import React from 'react';
-import { NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  useNavigationContainerRef,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -33,7 +36,7 @@ enableScreens();
 
 /**
  * Main App Navigator component
- * 
+ *
  * NOTE: This component expects to be wrapped by AppProvider by its parent.
  * Do not wrap with AppProvider here - it's provided by App.tsx
  */
@@ -45,7 +48,7 @@ export const AppNavigator: React.FC = () => {
       <SafeAreaProvider>
         <NavigationContainer
           ref={navigationRef}
-          onStateChange={(state) => {
+          onStateChange={state => {
             const route = getActiveRouteName(state);
             // Track screen changes for analytics
           }}
@@ -63,7 +66,10 @@ export const AppNavigator: React.FC = () => {
             <Stack.Screen name="browser" component={ExerciseBrowser} />
             <Stack.Screen name="log" component={LoggingScreen} />
             <Stack.Screen name="history" component={HistoryScreen} />
-            <Stack.Screen name="importSummary" component={ImportSummaryScreen} />
+            <Stack.Screen
+              name="importSummary"
+              component={ImportSummaryScreen}
+            />
           </Stack.Navigator>
         </NavigationContainer>
       </SafeAreaProvider>
