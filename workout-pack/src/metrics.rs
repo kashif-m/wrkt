@@ -254,10 +254,6 @@ pub fn build_pr_payload(
         return payload;
     }
 
-    // Check if existing event already has PR
-    let existing_pr = existing_event
-        .as_ref()
-        .map_or(false, |e| e.pr.unwrap_or(false));
     let existing_pr_ts = existing_event.as_ref().and_then(|e| e.pr_ts.or(Some(e.ts)));
     let existing_event_id = existing_event.as_ref().map(|e| e.event_id.as_str());
 
@@ -305,12 +301,15 @@ pub fn build_pr_payload(
         }
     }
 
-    // Determine if this is a PR
-    let is_pr = existing_pr || best_score.map_or(true, |best| current_score > best);
+    // Determine if this event is currently a PR after update/create.
+    // Updates must be able to demote a previously tagged PR.
+    let is_new_pr = best_score.map_or(true, |best| current_score > best);
+    payload.pr = Some(is_new_pr);
 
-    if is_pr {
-        payload.pr = Some(true);
+    if is_new_pr {
         payload.pr_ts = existing_pr_ts.or(Some(event_ts));
+    } else {
+        payload.pr_ts = None;
     }
 
     payload
@@ -385,5 +384,38 @@ mod tests {
         // Lower performance than previous
         let result = detect_pr("bench_press", &events, Some(80.0), Some(5));
         assert!(!result.is_pr);
+    }
+
+    #[test]
+    fn test_build_pr_payload_demotes_existing_pr_on_weaker_update() {
+        let payload = SetPayload {
+            exercise: "Bench Press".into(),
+            reps: Some(5),
+            weight: Some(70.0),
+            duration: None,
+            distance: None,
+            pr: None,
+            pr_ts: None,
+        };
+        let events = vec![
+            serde_json::json!({
+                "event_id":"evt-1",
+                "payload":{"exercise":"Bench Press","weight":80.0,"reps":5}
+            }),
+            serde_json::json!({
+                "event_id":"evt-2",
+                "payload":{"exercise":"Bench Press","weight":75.0,"reps":5}
+            }),
+        ];
+        let existing = ExistingEventInfo {
+            event_id: "evt-3".into(),
+            ts: 1_000,
+            pr: Some(true),
+            pr_ts: Some(900),
+        };
+
+        let result = build_pr_payload(payload, 2_000, &events, Some(&existing), "reps_weight");
+        assert_eq!(result.pr, Some(false));
+        assert_eq!(result.pr_ts, None);
     }
 }

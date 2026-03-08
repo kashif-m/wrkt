@@ -36,7 +36,7 @@ const LEFT_MARGIN = 24;
 const TOP_MARGIN = 22;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const DAY_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 const MONTH_LABELS = [
   'Jan',
   'Feb',
@@ -77,8 +77,8 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
         ? today
         : naturalYearEnd;
 
-    const gridStart = startOfWeekMonday(yearStart);
-    const gridEnd = endOfWeekSunday(yearEnd);
+    const gridStart = startOfWeekSunday(yearStart);
+    const gridEnd = endOfWeekSaturday(yearEnd);
     const totalDays = daysBetween(gridStart, gridEnd) + 1;
     const columns = Math.max(1, Math.ceil(totalDays / 7));
 
@@ -94,7 +94,7 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
     for (let dayOffset = 0; dayOffset < totalDays; dayOffset += 1) {
       const date = shiftDays(gridStart, dayOffset);
       const week = Math.floor(dayOffset / 7);
-      const row = toMondayIndex(date);
+      const row = toSundayIndex(date);
       const inYear =
         date.getFullYear() === selectedYear &&
         date.getTime() >= yearStart.getTime() &&
@@ -250,11 +250,11 @@ export const SkiaHeatmap: React.FC<SkiaHeatmapProps> = ({
 };
 
 const normalizeDateKey = (point: HeatmapPoint): string | null => {
-  if (typeof point.date === 'string' && point.date.length >= 10) {
-    return point.date.slice(0, 10);
-  }
   if (typeof point.timestamp === 'number' && Number.isFinite(point.timestamp)) {
     return toDateKey(new Date(point.timestamp));
+  }
+  if (typeof point.date === 'string' && point.date.length >= 10) {
+    return point.date.slice(0, 10);
   }
   return null;
 };
@@ -269,19 +269,19 @@ const toDateKey = (date: Date): string => {
 const startOfDay = (date: Date): Date =>
   new Date(date.getFullYear(), date.getMonth(), date.getDate());
 
-const startOfWeekMonday = (date: Date): Date => {
+const startOfWeekSunday = (date: Date): Date => {
   const normalized = startOfDay(date);
-  const offset = toMondayIndex(normalized);
+  const offset = toSundayIndex(normalized);
   return shiftDays(normalized, -offset);
 };
 
-const endOfWeekSunday = (date: Date): Date => {
+const endOfWeekSaturday = (date: Date): Date => {
   const normalized = startOfDay(date);
-  const offset = 6 - toMondayIndex(normalized);
+  const offset = 6 - toSundayIndex(normalized);
   return shiftDays(normalized, offset);
 };
 
-const toMondayIndex = (date: Date): number => (date.getDay() + 6) % 7;
+const toSundayIndex = (date: Date): number => date.getDay();
 
 const shiftDays = (date: Date, deltaDays: number): Date => {
   const shifted = new Date(date);

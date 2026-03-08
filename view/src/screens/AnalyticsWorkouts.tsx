@@ -13,7 +13,6 @@ import { AnalyticsRangeKey } from '../components/analytics/analyticsRanges';
 import {
   formatBucketLabel,
   groupByForRange,
-  isWorkoutMetricRelevant,
   metricSignalsFromEvents,
 } from '../components/analytics/analyticsUtils';
 import { SkiaTrendChart } from '../components/analytics/SkiaTrendChart';
@@ -26,6 +25,7 @@ import {
 } from '../domain/types';
 import { formatMuscleLabel, secondsToMinutes } from '../ui/formatters';
 import {
+  DEFAULT_WORKOUT_METRIC_KEY,
   WorkoutAnalyticsQuery,
   WorkoutFilterKind,
   WorkoutMetricKey,
@@ -39,6 +39,7 @@ import { AnalyticsChartHeader } from '../components/analytics/AnalyticsChartHead
 import { AnalyticsChartModal } from '../components/analytics/AnalyticsChartModal';
 import {
   metricLabelForSelection,
+  workoutMetricEnabledForSignals,
   unitForMetric,
   workoutFilterOptions,
   workoutMetricOptions,
@@ -55,11 +56,14 @@ const AnalyticsWorkouts = () => {
     error,
     catalog,
     catalogLookup,
+    analyticsCapabilities,
     getEventsForRange,
     getPayloadForRange,
   } = useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
-  const [metric, setMetric] = useState<WorkoutMetricKey>('volume');
+  const [metric, setMetric] = useState<WorkoutMetricKey>(
+    DEFAULT_WORKOUT_METRIC_KEY,
+  );
   const [filterKind, setFilterKind] = useState<WorkoutFilterKind>('exercise');
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
   const [selectedMuscle, setSelectedMuscle] = useState<string | null>(null);
@@ -193,11 +197,17 @@ const AnalyticsWorkouts = () => {
   }, [catalogLookup, filterKind, filterValue, filteredEvents]);
 
   const metricOptions = useMemo(() => {
-    const signals = metricSignalsFromEvents(contextEvents);
-    return workoutMetricOptions.filter(option =>
-      isWorkoutMetricRelevant(option.key, signals),
+    const allowedMetrics = new Set(
+      analyticsCapabilities?.views?.workouts?.metrics ?? [],
     );
-  }, [contextEvents]);
+    const signals = metricSignalsFromEvents(contextEvents);
+    return workoutMetricOptions.filter(option => {
+      if (allowedMetrics.size > 0 && !allowedMetrics.has(option.key)) {
+        return false;
+      }
+      return workoutMetricEnabledForSignals(option.key, signals);
+    });
+  }, [analyticsCapabilities, contextEvents]);
 
   useEffect(() => {
     if (metricOptions.length === 0) return;
@@ -242,7 +252,7 @@ const AnalyticsWorkouts = () => {
 
   const chartData = useMemo(() => {
     if (!workoutSeries) return [];
-    const isDurationMetric = metric === 'active_duration';
+    const isDurationMetric = metric === 'total_active_duration';
     return workoutSeries.points.map(point => ({
       ...point,
       value: isDurationMetric ? secondsToMinutes(point.value) : point.value,
@@ -250,7 +260,9 @@ const AnalyticsWorkouts = () => {
     }));
   }, [metric, workoutSeries]);
   const pointCountLabel =
-    metric === 'volume' || metric === 'sets' || metric === 'reps'
+    metric === 'total_volume' ||
+    metric === 'total_sets' ||
+    metric === 'total_reps'
       ? 'set'
       : 'entry';
 

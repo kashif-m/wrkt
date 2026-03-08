@@ -435,11 +435,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "tracker_dsl"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracker_ir",
+]
+
+[[package]]
 name = "tracker_engine"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "serde_json",
  "thiserror",
+ "tracker_dsl",
  "tracker_eval",
  "tracker_ir",
 ]
@@ -612,8 +623,12 @@ dependencies = [
 name = "workout_ffi"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "serde_json",
+ "tracker_analytics",
+ "tracker_engine",
  "tracker_ffi_core",
+ "tracker_ir",
  "workout_pack",
 ]
 
@@ -626,6 +641,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tracker_analytics",
+ "tracker_dsl",
  "tracker_engine",
  "tracker_ir",
 ]

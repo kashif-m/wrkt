@@ -1,11 +1,16 @@
 [package]
 name = "tracker_engine"
-version = "0.1.0"
-edition = "2021"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme.workspace = true
+description.workspace = true
 
 [dependencies]
-serde_json = "1"
-thiserror = "1"
-tracker_ir = { path = "../tracker_ir" }
-tracker_eval = { path = "../tracker_eval" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracker_ir.workspace = true
+tracker_eval.workspace = true
+tracker_dsl.workspace = true

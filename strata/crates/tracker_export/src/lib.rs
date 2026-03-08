@@ -255,16 +255,16 @@ mod tests {
     fn generic_sqlite_round_trip_preserves_payload() {
         let payload = GenericExportPayload {
             trackers: vec![GenericTrackerRecord {
-                tracker_id: "tracker.workout".to_string(),
-                dsl: "tracker \"workout\" {}".to_string(),
+                tracker_id: "tracker.sample".to_string(),
+                dsl: "tracker \"sample\" {}".to_string(),
                 version: Some(1),
                 meta: json!({ "scope": "test" }),
             }],
             events: vec![GenericEventRecord {
                 event_id: "evt-1".to_string(),
-                tracker_id: "tracker.workout".to_string(),
+                tracker_id: "tracker.sample".to_string(),
                 ts: 1_704_067_200_000,
-                payload: json!({ "exercise": "Bench Press", "reps": 8 }),
+                payload: json!({ "group_key": "segment_a", "value_a": 8 }),
                 meta: json!({ "source": "unit_test" }),
             }],
             kv_meta: HashMap::from([(String::from("key"), json!({ "ok": true }))]),
@@ -283,7 +283,7 @@ mod tests {
 
         assert_eq!(imported.payload.trackers.len(), 1);
         assert_eq!(imported.payload.events.len(), 1);
-        assert_eq!(imported.payload.trackers[0].tracker_id, "tracker.workout");
+        assert_eq!(imported.payload.trackers[0].tracker_id, "tracker.sample");
         assert_eq!(imported.payload.events[0].event_id, "evt-1");
         assert_eq!(
             imported.payload.kv_meta.get("key"),

@@ -35,16 +35,43 @@ pub struct AnalyticsSummary {
     pub prs: Vec<PersonalRecord>,
 }
 
+#[cfg(test)]
+mod tests {
+    use super::ExerciseMetric;
+
+    #[test]
+    fn exercise_metric_accepts_only_canonical_1rm_key() {
+        let canonical: ExerciseMetric = serde_json::from_str("\"max_est_1rm\"")
+            .expect("canonical metric key should deserialize");
+        assert!(matches!(canonical, ExerciseMetric::MaxEst1rm));
+
+        let legacy = serde_json::from_str::<ExerciseMetric>("\"estimated_one_rm\"");
+        assert!(legacy.is_err());
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum WorkoutMetric {
-    Volume,
-    Sets,
-    Reps,
-    Duration,
-    Distance,
-    ActiveDuration,
-    LoadDistance,
+    TotalVolume,
+    TotalSets,
+    TotalReps,
+    TotalDistance,
+    TotalActiveDuration,
+    TotalLoadDistance,
+}
+
+impl WorkoutMetric {
+    pub fn as_key(&self) -> &'static str {
+        match self {
+            WorkoutMetric::TotalVolume => "total_volume",
+            WorkoutMetric::TotalSets => "total_sets",
+            WorkoutMetric::TotalReps => "total_reps",
+            WorkoutMetric::TotalDistance => "total_distance",
+            WorkoutMetric::TotalActiveDuration => "total_active_duration",
+            WorkoutMetric::TotalLoadDistance => "total_load_distance",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -94,20 +121,42 @@ pub struct WorkoutMetricsSeries {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum ExerciseMetric {
-    EstimatedOneRm,
+    #[serde(rename = "max_est_1rm")]
+    MaxEst1rm,
     MaxWeight,
-    WorkoutWeight,
-    PrByRm,
+    TotalWeight,
+    MaxWeightAtReps,
     MaxReps,
-    MaxVolume,
-    WorkoutVolume,
-    WorkoutReps,
+    MaxSetVolume,
+    TotalVolume,
+    TotalReps,
     MaxDistance,
-    WorkoutDistance,
+    TotalDistance,
     MaxActiveDuration,
-    WorkoutActiveDuration,
+    TotalActiveDuration,
     MaxLoadDistance,
-    WorkoutLoadDistance,
+    TotalLoadDistance,
+}
+
+impl ExerciseMetric {
+    pub fn as_key(&self) -> &'static str {
+        match self {
+            ExerciseMetric::MaxEst1rm => "max_est_1rm",
+            ExerciseMetric::MaxWeight => "max_weight",
+            ExerciseMetric::TotalWeight => "total_weight",
+            ExerciseMetric::MaxWeightAtReps => "max_weight_at_reps",
+            ExerciseMetric::MaxReps => "max_reps",
+            ExerciseMetric::MaxSetVolume => "max_set_volume",
+            ExerciseMetric::TotalVolume => "total_volume",
+            ExerciseMetric::TotalReps => "total_reps",
+            ExerciseMetric::MaxDistance => "max_distance",
+            ExerciseMetric::TotalDistance => "total_distance",
+            ExerciseMetric::MaxActiveDuration => "max_active_duration",
+            ExerciseMetric::TotalActiveDuration => "total_active_duration",
+            ExerciseMetric::MaxLoadDistance => "max_load_distance",
+            ExerciseMetric::TotalLoadDistance => "total_load_distance",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -227,12 +276,25 @@ pub struct CalendarMonthResponse {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum BreakdownMetric {
-    Volume,
-    Sets,
-    Reps,
-    Distance,
-    ActiveDuration,
-    LoadDistance,
+    TotalVolume,
+    TotalSets,
+    TotalReps,
+    TotalDistance,
+    TotalActiveDuration,
+    TotalLoadDistance,
+}
+
+impl BreakdownMetric {
+    pub fn as_key(&self) -> &'static str {
+        match self {
+            BreakdownMetric::TotalVolume => "total_volume",
+            BreakdownMetric::TotalSets => "total_sets",
+            BreakdownMetric::TotalReps => "total_reps",
+            BreakdownMetric::TotalDistance => "total_distance",
+            BreakdownMetric::TotalActiveDuration => "total_active_duration",
+            BreakdownMetric::TotalLoadDistance => "total_load_distance",
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]

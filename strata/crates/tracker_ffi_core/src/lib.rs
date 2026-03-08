@@ -2,30 +2,15 @@ use serde::Serialize;
 use serde_json::json;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use tracker_engine::error_adapter::{ErrorAdapter, ErrorCode, TrackerError};
 use tracker_engine::{self, EngineError};
 use tracker_export::{export_generic_sqlite, import_generic_sqlite, GenericExportPayload};
+use tracker_ir::error::{ErrorCode, TrackerError};
 use tracker_ir::{NormalizedEvent, Query, TrackerDefinition};
 
 #[repr(C)]
 pub struct FfiResult {
     pub success: bool,
     pub data: *mut c_char,
-}
-
-// Feature flag for dual-mode error handling
-// When true, uses structured errors; when false, uses legacy strings
-static USE_STRUCTURED_ERRORS: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(true);
-
-/// Enable structured error responses (default)
-pub fn enable_structured_errors() {
-    USE_STRUCTURED_ERRORS.store(true, std::sync::atomic::Ordering::SeqCst);
-}
-
-/// Disable structured errors, use legacy string format
-pub fn disable_structured_errors() {
-    USE_STRUCTURED_ERRORS.store(false, std::sync::atomic::Ordering::SeqCst);
 }
 
 pub fn strata_free_string(ptr: *mut c_char) {
@@ -168,9 +153,14 @@ fn success<T: Serialize>(value: T) -> FfiResult {
 }
 
 fn error(message: String) -> FfiResult {
+    let payload = if is_structured_error(&message) {
+        message
+    } else {
+        TrackerError::new_simple(ErrorCode::Unknown, message).to_json()
+    };
     FfiResult {
         success: false,
-        data: string_to_c(message),
+        data: string_to_c(payload),
     }
 }
 
@@ -184,21 +174,47 @@ fn string_to_c(value: String) -> *mut c_char {
 }
 
 /// Convert error to FFI response string
-/// Uses structured JSON format when USE_STRUCTURED_ERRORS is true
 fn to_ffi_error(error: EngineError) -> String {
-    if USE_STRUCTURED_ERRORS.load(std::sync::atomic::Ordering::SeqCst) {
-        // Convert to structured error and serialize to JSON
-        let tracker_error = ErrorAdapter::adapt_old(&error);
-        tracker_error.to_json()
-    } else {
-        // Legacy string format
-        to_engine_error_string(error)
+    engine_error_to_tracker_error(&error).to_json()
+}
+
+fn engine_error_to_tracker_error(error: &EngineError) -> TrackerError {
+    match error {
+        EngineError::DslParse(msg) => {
+            TrackerError::new_simple(ErrorCode::DslParseError, format!("DSL parse error: {msg}"))
+                .with_context(serde_json::json!({"original": msg}))
+        }
+        EngineError::EventValidation(msg) => TrackerError::new_simple(
+            ErrorCode::EventValidationFailed,
+            format!("event validation error: {msg}"),
+        )
+        .with_context(serde_json::json!({"original": msg})),
+        EngineError::TrackerMismatch { expected, actual } => TrackerError::new_simple(
+            ErrorCode::TrackerMismatch,
+            format!("tracker mismatch (expected {expected}, found {actual})"),
+        )
+        .with_context(serde_json::json!({
+            "expected": expected.as_str(),
+            "actual": actual.as_str()
+        })),
+        EngineError::StateMismatch { expected, actual } => TrackerError::new_simple(
+            ErrorCode::StateMismatch,
+            format!("state tracker mismatch (expected {expected}, found {actual})"),
+        )
+        .with_context(serde_json::json!({
+            "expected": expected.as_str(),
+            "actual": actual.as_str()
+        })),
+        EngineError::Evaluation(msg) => TrackerError::new_simple(
+            ErrorCode::MetricEvaluationFailed,
+            format!("evaluation error: {msg}"),
+        )
+        .with_context(serde_json::json!({"original": msg})),
     }
 }
 
-/// Legacy error formatter (kept for backward compatibility)
 pub fn to_engine_error_string(error: EngineError) -> String {
-    error.to_string()
+    engine_error_to_tracker_error(&error).to_json()
 }
 
 /// Check if a response is a structured error (JSON with code field)
@@ -209,8 +225,7 @@ pub fn is_structured_error(response: &str) -> bool {
 /// Parse FFI response to check if it's an error
 pub fn parse_ffi_response(response: &str) -> Result<serde_json::Value, TrackerError> {
     if is_structured_error(response) {
-        // Try to parse as TrackerError
-        match TrackerError::from_json(response) {
+        return match TrackerError::from_json(response) {
             Ok(err) if err.code != ErrorCode::Success => Err(err),
             Ok(_) => serde_json::from_str(response).map_err(|e| {
                 TrackerError::new_simple(
@@ -224,22 +239,33 @@ pub fn parse_ffi_response(response: &str) -> Result<serde_json::Value, TrackerEr
                     format!("Failed to parse response: {}", e),
                 )
             }),
-        }
-    } else {
-        // Legacy format - assume success unless it starts with "Error" or similar
-        if response.to_lowercase().starts_with("error")
-            || response.to_lowercase().starts_with("[error]")
-            || response.to_lowercase().contains("failed")
-            || response.to_lowercase().contains("invalid")
-        {
-            Err(TrackerError::new_simple(ErrorCode::Unknown, response))
-        } else {
-            serde_json::from_str(response).map_err(|_| {
-                TrackerError::new_simple(
-                    ErrorCode::DeserializationFailed,
-                    format!("Invalid JSON response: {}", response),
-                )
-            })
-        }
+        };
+    }
+    serde_json::from_str(response).map_err(|_| {
+        TrackerError::new_simple(
+            ErrorCode::DeserializationFailed,
+            format!("Invalid JSON response: {}", response),
+        )
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_errors_serialize_as_structured_payloads() {
+        let payload = to_engine_error_string(EngineError::DslParse("bad tracker".to_string()));
+        assert!(is_structured_error(&payload));
+        let parsed = TrackerError::from_json(&payload).expect("structured TrackerError payload");
+        assert_eq!(parsed.code, ErrorCode::DslParseError);
+    }
+
+    #[test]
+    fn parse_ffi_response_returns_tracker_error() {
+        let err_json =
+            TrackerError::new_simple(ErrorCode::MetricEvaluationFailed, "bad metric").to_json();
+        let err = parse_ffi_response(&err_json).expect_err("should map to TrackerError");
+        assert_eq!(err.code, ErrorCode::MetricEvaluationFailed);
     }
 }

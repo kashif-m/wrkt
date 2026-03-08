@@ -3,6 +3,7 @@ import {
   BreakdownGroupByKey,
   BreakdownMetricKey,
 } from '../../domain/analytics';
+import { WORKOUT_VIEW_METRIC_CONFIG } from '../../domain/generated/workoutDslContract';
 
 export type BreakdownMetricOption = {
   key: BreakdownMetricKey;
@@ -15,22 +16,61 @@ export type BreakdownGroupOption = {
   label: LabelText;
 };
 
-export const breakdownMetricOptions: ReadonlyArray<BreakdownMetricOption> = [
-  { key: 'volume', label: asLabelText('Volume'), unit: 'vol' },
-  { key: 'sets', label: asLabelText('Sets'), unit: 'sets' },
-  { key: 'reps', label: asLabelText('Reps'), unit: 'reps' },
-  { key: 'distance', label: asLabelText('Distance'), unit: 'm' },
-  {
-    key: 'active_duration',
-    label: asLabelText('Active duration'),
-    unit: 'min',
-  },
-  {
-    key: 'load_distance',
-    label: asLabelText('Load distance'),
-    unit: 'kg*m',
-  },
-];
+type BreakdownMetricSignals = {
+  hasAny: boolean;
+  hasWeight: boolean;
+  hasReps: boolean;
+  hasDistance: boolean;
+  hasDuration: boolean;
+};
+
+const viewConfig = WORKOUT_VIEW_METRIC_CONFIG.breakdown;
+
+const signalForRequirement = (
+  requirement: string,
+  signals: BreakdownMetricSignals,
+): boolean => {
+  switch (requirement) {
+    case 'any':
+      return signals.hasAny;
+    case 'weight':
+      return signals.hasWeight;
+    case 'reps':
+      return signals.hasReps;
+    case 'distance':
+      return signals.hasDistance;
+    case 'duration':
+      return signals.hasDuration;
+    default:
+      return false;
+  }
+};
+
+const breakdownMetricMeta: Record<
+  BreakdownMetricKey,
+  { label: LabelText; unit: string }
+> = (
+  Object.entries(viewConfig) as Array<
+    [
+      BreakdownMetricKey,
+      { label?: string; unit?: string; requires?: readonly string[] },
+    ]
+  >
+).reduce((acc, [key, config]) => {
+  acc[key] = {
+    label: asLabelText(config.label ?? key),
+    unit: config.unit ?? '',
+  };
+  return acc;
+}, {} as Record<BreakdownMetricKey, { label: LabelText; unit: string }>);
+
+export const breakdownMetricOptions: ReadonlyArray<BreakdownMetricOption> = (
+  Object.keys(viewConfig) as BreakdownMetricKey[]
+).map(key => ({
+  key,
+  label: breakdownMetricMeta[key].label,
+  unit: breakdownMetricMeta[key].unit,
+}));
 
 export const breakdownGroupOptions: ReadonlyArray<BreakdownGroupOption> = [
   { key: 'muscle', label: asLabelText('Muscle group') },
@@ -39,4 +79,14 @@ export const breakdownGroupOptions: ReadonlyArray<BreakdownGroupOption> = [
 ];
 
 export const unitForBreakdownMetric = (metric: BreakdownMetricKey): string =>
-  breakdownMetricOptions.find(option => option.key === metric)?.unit ?? '';
+  breakdownMetricMeta[metric]?.unit ?? '';
+
+export const breakdownMetricEnabledForSignals = (
+  metric: BreakdownMetricKey,
+  signals: BreakdownMetricSignals,
+): boolean => {
+  const requires = viewConfig[metric]?.requires ?? [];
+  return requires.every(requirement =>
+    signalForRequirement(requirement, signals),
+  );
+};

@@ -72,7 +72,7 @@ impl StreakCalculator {
         }
 
         // 3. Check if current streak is still active
-        // (last workout must be today or yesterday for streak to continue)
+        // (last active day must be today or yesterday for streak to continue)
         let today = round_to_local_day(
             std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -83,7 +83,7 @@ impl StreakCalculator {
 
         let current_streak = if let Some(&last) = days.last() {
             let gap = today - last;
-            // If last workout was today or yesterday, streak continues
+            // If last active day was today or yesterday, streak continues
             if gap < DAY_MS * 2 {
                 segment_len
             } else {

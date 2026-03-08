@@ -16,10 +16,7 @@ import { BodyText, Card, SectionHeading } from '../ui/components';
 import { palette, spacing, typography } from '../ui/theme';
 import { AnalyticsRangeSelector } from '../components/analytics/AnalyticsRangeSelector';
 import { AnalyticsRangeKey } from '../components/analytics/analyticsRanges';
-import {
-  isBreakdownMetricRelevant,
-  metricSignalsFromEvents,
-} from '../components/analytics/analyticsUtils';
+import { metricSignalsFromEvents } from '../components/analytics/analyticsUtils';
 import { computeBreakdownAnalytics } from '../TrackerEngine';
 import {
   ColorHex,
@@ -40,11 +37,13 @@ import {
   BreakdownGroupByKey,
   BreakdownMetricKey,
   BreakdownQuery,
+  DEFAULT_BREAKDOWN_METRIC_KEY,
   DistributionItem,
 } from '../domain/analytics';
 import { AnalyticsInlineSelect } from '../components/analytics/AnalyticsInlineSelect';
 import {
   breakdownGroupOptions,
+  breakdownMetricEnabledForSignals,
   breakdownMetricOptions,
   unitForBreakdownMetric,
 } from '../components/analytics/analyticsBreakdown';
@@ -57,6 +56,7 @@ const AnalyticsBreakdown = () => {
     loading,
     error,
     catalog,
+    analyticsCapabilities,
     getEventsForRange,
     getPayloadForRange,
     catalogLookup,
@@ -65,7 +65,9 @@ const AnalyticsBreakdown = () => {
   } = useAnalyticsData();
   const styles = createStyles();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
-  const [metric, setMetric] = useState<BreakdownMetricKey>('volume');
+  const [metric, setMetric] = useState<BreakdownMetricKey>(
+    DEFAULT_BREAKDOWN_METRIC_KEY,
+  );
   const [groupBy, setGroupBy] = useState<BreakdownGroupByKey>('muscle');
   const [showAllRows, setShowAllRows] = useState(false);
   const [activeSliceIndex, setActiveSliceIndex] = useState(0);
@@ -121,11 +123,17 @@ const AnalyticsBreakdown = () => {
     if (!catalog || filteredEvents.length === 0) {
       return [];
     }
-    const signals = metricSignalsFromEvents(filteredEvents);
-    return breakdownMetricOptions.filter(option =>
-      isBreakdownMetricRelevant(option.key, signals),
+    const allowedMetrics = new Set(
+      analyticsCapabilities?.views?.breakdown?.metrics ?? [],
     );
-  }, [catalog, filteredEvents]);
+    const signals = metricSignalsFromEvents(filteredEvents);
+    return breakdownMetricOptions.filter(option => {
+      if (allowedMetrics.size > 0 && !allowedMetrics.has(option.key)) {
+        return false;
+      }
+      return breakdownMetricEnabledForSignals(option.key, signals);
+    });
+  }, [analyticsCapabilities, catalog, filteredEvents]);
 
   useEffect(() => {
     if (metricOptions.length === 0) return;
@@ -541,7 +549,7 @@ const formatMetricValue = (
   value: number,
   metric: BreakdownMetricKey,
 ): string => {
-  if (metric === 'active_duration') {
+  if (metric === 'total_active_duration') {
     return formatTrimmedNumber(secondsToMinutes(value));
   }
   return formatNumericValue(value);

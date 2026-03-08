@@ -33,8 +33,6 @@ export type ColorHex = Brand<string, 'ColorHex'>;
 export type ColorValue = Brand<string, 'ColorValue'>;
 export type ToastToneValue = 'success' | 'info' | 'danger';
 export type ToastTone = Brand<ToastToneValue, 'ToastTone'>;
-export type PlannerKindValue = 'strength' | 'hypertrophy' | 'conditioning';
-export type PlannerKind = Brand<PlannerKindValue, 'PlannerKind'>;
 export type AnalyticsRangeKeyValue =
   | '1w'
   | '2w'
@@ -145,10 +143,6 @@ export const asToastTone = (value: ToastToneValue): ToastTone =>
   value as ToastTone;
 export const unwrapToastTone = (value: ToastTone): ToastToneValue =>
   value as ToastToneValue;
-export const asPlannerKind = (value: PlannerKindValue): PlannerKind =>
-  value as PlannerKind;
-export const unwrapPlannerKind = (value: PlannerKind): PlannerKindValue =>
-  value as PlannerKindValue;
 export const asAnalyticsRangeKey = (
   value: AnalyticsRangeKeyValue,
 ): AnalyticsRangeKey => value as AnalyticsRangeKey;

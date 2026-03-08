@@ -15,6 +15,7 @@ import {
 } from '../domain/types';
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
 import { WorkoutEvent } from '../workoutFlows';
+import type { SetPayload } from '../domain/generated/workoutDomainContract';
 
 // Define strictly for casting
 type JsonObject = any;
@@ -44,7 +45,10 @@ export const buildPrPayload = (
     unwrapLoggingMode(mode),
   );
 
-  return result as unknown as SetPayload & { pr?: boolean; pr_ts?: number };
+  return {
+    ...(payloadJson as JsonObject),
+    ...(result as JsonObject),
+  } as unknown as SetPayload & { pr?: boolean; pr_ts?: number };
 };
 
 const readNumber = (value: unknown): number | null =>
@@ -84,12 +88,4 @@ export const scoreFromPayload = (
     unwrapLoggingMode(mode),
   );
   return score > 0 ? score : null;
-};
-
-export type SetPayload = {
-  exercise: ExerciseName;
-  reps?: number;
-  weight?: number;
-  duration?: number;
-  distance?: number;
 };

@@ -11,7 +11,6 @@ use std::fmt;
 
 // Error handling modules (Phase 1)
 pub mod error;
-pub mod error_legacy;
 
 /// Uniquely identifies a tracker configuration.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -73,21 +72,223 @@ impl From<i64> for Timestamp {
     }
 }
 
-/// Result of compiling a tracker DSL string.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// Semantic version attached to tracker definitions.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TrackerVersion {
+    pub major: u32,
+    pub minor: u32,
+    pub patch: u32,
+}
+
+impl TrackerVersion {
+    pub const fn new(major: u32, minor: u32, patch: u32) -> Self {
+        Self {
+            major,
+            minor,
+            patch,
+        }
+    }
+}
+
+impl Default for TrackerVersion {
+    fn default() -> Self {
+        Self::new(1, 0, 0)
+    }
+}
+
+/// Schema field type supported by tracker payloads.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum FieldType {
+    Text,
+    Float,
+    Int,
+    Bool,
+    Duration,
+    Timestamp,
+    Enum(Vec<String>),
+}
+
+/// Field specification declared in DSL schema.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct FieldDefinition {
+    pub name: String,
+    pub field_type: FieldType,
+    pub optional: bool,
+    pub default_value: Option<Value>,
+}
+
+/// Scalar and conditional expression model used by derives/metrics/alerts.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Expression {
+    Number(f64),
+    Int(i64),
+    Bool(bool),
+    Text(String),
+    Null,
+    Field(String),
+    Binary {
+        op: BinaryOperator,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    Conditional {
+        condition: Box<Condition>,
+        then_expr: Box<Expression>,
+        else_expr: Box<Expression>,
+    },
+    Function {
+        name: String,
+        args: Vec<Expression>,
+    },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum BinaryOperator {
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Condition {
+    True,
+    False,
+    Comparison {
+        op: ComparisonOperator,
+        left: Box<Expression>,
+        right: Box<Expression>,
+    },
+    And(Vec<Condition>),
+    Or(Vec<Condition>),
+    Not(Box<Condition>),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum ComparisonOperator {
+    Eq,
+    Neq,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
+}
+
+/// Derived field declaration.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct DeriveDefinition {
+    pub name: String,
+    pub expr: Expression,
+}
+
+/// Supported time grains for aggregations.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TimeGrain {
+    Day,
+    Week,
+    Month,
+    Quarter,
+    Year,
+    AllTime,
+    Custom,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AggregationFunc {
+    Sum,
+    Max,
+    Min,
+    Avg,
+    Count,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub enum GroupByDimension {
+    Field(String),
+    Time(TimeGrain),
+}
+
+/// Aggregation declared for one metric.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AggregationDefinition {
+    pub func: AggregationFunc,
+    pub target: Option<Expression>,
+    pub group_by: Vec<GroupByDimension>,
+    pub over: Option<TimeGrain>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct MetricDefinition {
+    pub name: String,
+    pub aggregation: AggregationDefinition,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct AlertDefinition {
+    pub name: String,
+    pub expr: Expression,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct PlanningStrategyDefinition {
+    pub name: String,
+    pub params: BTreeMap<String, Value>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+pub struct PlanningDefinition {
+    pub strategies: Vec<PlanningStrategyDefinition>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ViewDefinition {
+    pub name: String,
+    pub params: BTreeMap<String, Value>,
+}
+
+/// Result of compiling tracker DSL into validated IR.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TrackerDefinition {
     tracker_id: TrackerId,
+    tracker_name: String,
+    version: TrackerVersion,
     dsl: String,
+    fields: Vec<FieldDefinition>,
+    derives: Vec<DeriveDefinition>,
+    metrics: Vec<MetricDefinition>,
+    alerts: Vec<AlertDefinition>,
+    planning: Option<PlanningDefinition>,
+    #[serde(default)]
+    views: Vec<ViewDefinition>,
 }
 
 impl TrackerDefinition {
-    /// Builds a tracker definition directly from DSL text using a deterministic hash as the ID.
-    pub fn from_dsl(dsl: &str) -> Self {
-        let hash = blake3::hash(dsl.as_bytes()).to_hex();
-        let tracker_id = TrackerId::new(format!("tracker_{}", &hash[..12]));
+    pub fn new(
+        tracker_name: impl Into<String>,
+        version: TrackerVersion,
+        dsl: impl Into<String>,
+        fields: Vec<FieldDefinition>,
+        derives: Vec<DeriveDefinition>,
+        metrics: Vec<MetricDefinition>,
+        alerts: Vec<AlertDefinition>,
+        planning: Option<PlanningDefinition>,
+        views: Vec<ViewDefinition>,
+    ) -> Self {
+        let tracker_name = tracker_name.into();
+        let dsl = dsl.into();
+        let tracker_id = build_tracker_id(&tracker_name, version, &dsl);
         Self {
             tracker_id,
-            dsl: dsl.to_owned(),
+            tracker_name,
+            version,
+            dsl,
+            fields,
+            derives,
+            metrics,
+            alerts,
+            planning,
+            views,
         }
     }
 
@@ -95,9 +296,51 @@ impl TrackerDefinition {
         &self.tracker_id
     }
 
+    pub fn tracker_name(&self) -> &str {
+        &self.tracker_name
+    }
+
+    pub fn version(&self) -> TrackerVersion {
+        self.version
+    }
+
     pub fn dsl(&self) -> &str {
         &self.dsl
     }
+
+    pub fn fields(&self) -> &[FieldDefinition] {
+        &self.fields
+    }
+
+    pub fn derives(&self) -> &[DeriveDefinition] {
+        &self.derives
+    }
+
+    pub fn metrics(&self) -> &[MetricDefinition] {
+        &self.metrics
+    }
+
+    pub fn alerts(&self) -> &[AlertDefinition] {
+        &self.alerts
+    }
+
+    pub fn planning(&self) -> Option<&PlanningDefinition> {
+        self.planning.as_ref()
+    }
+
+    pub fn views(&self) -> &[ViewDefinition] {
+        &self.views
+    }
+}
+
+fn build_tracker_id(name: &str, version: TrackerVersion, dsl: &str) -> TrackerId {
+    let hash = blake3::hash(dsl.as_bytes()).to_hex();
+    let normalized = name
+        .chars()
+        .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
+        .collect::<String>()
+        .to_lowercase();
+    TrackerId::new(format!("{}_v{}_{}", normalized, version.major, &hash[..8]))
 }
 
 /// Normalized event shape consumed by the engine.
@@ -143,6 +386,10 @@ impl NormalizedEvent {
         &self.payload
     }
 
+    pub fn payload_mut(&mut self) -> &mut Value {
+        &mut self.payload
+    }
+
     pub fn meta(&self) -> &Value {
         &self.meta
     }
@@ -159,18 +406,6 @@ impl TimeWindow {
     pub fn contains(&self, ts: Timestamp) -> bool {
         ts >= self.start && ts <= self.end
     }
-}
-
-/// Supported time grains for aggregations.
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-pub enum TimeGrain {
-    Day,
-    Week,
-    Month,
-    Quarter,
-    Year,
-    AllTime,
-    Custom,
 }
 
 /// Query input for compute/simulate.
@@ -216,21 +451,13 @@ impl EngineState {
     }
 }
 
-impl EngineState {
-    pub fn from_events(tracker_id: TrackerId, events: Vec<NormalizedEvent>) -> Self {
-        Self { tracker_id, events }
-    }
-}
-
 /// Engine output returned by stateless compute.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngineOutput {
     pub total_events: usize,
     pub window_events: usize,
     pub metrics: BTreeMap<String, Value>,
-    pub prs: Vec<Value>,
     pub alerts: Vec<Value>,
-    pub suggestions: Vec<Value>,
 }
 
 impl Default for EngineOutput {
@@ -239,9 +466,7 @@ impl Default for EngineOutput {
             total_events: 0,
             window_events: 0,
             metrics: BTreeMap::new(),
-            prs: Vec::new(),
             alerts: Vec::new(),
-            suggestions: Vec::new(),
         }
     }
 }
@@ -250,7 +475,6 @@ impl Default for EngineOutput {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EngineOutputDelta {
     pub total_events_delta: isize,
-    pub window_events_delta: isize,
     pub metrics: BTreeMap<String, Value>,
 }
 
@@ -258,7 +482,6 @@ impl Default for EngineOutputDelta {
     fn default() -> Self {
         Self {
             total_events_delta: 0,
-            window_events_delta: 0,
             metrics: BTreeMap::new(),
         }
     }

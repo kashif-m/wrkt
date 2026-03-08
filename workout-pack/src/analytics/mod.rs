@@ -1,12 +1,14 @@
 use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 use tracker_analytics::{
-    bucket_ts, round_to_local_day, round_to_local_month, Distribution, Granularity, Heatmap,
-    StreakCalculator,
+    bucket_ts, round_to_local_day, round_to_local_month, round_to_local_week, Distribution,
+    Granularity,
 };
+use tracker_engine::{compute_metric_by_name, MetricComputeOptions, MetricFilter, MetricFilterOp};
+use tracker_ir::{EventId, GroupByDimension, NormalizedEvent, Timestamp};
 
 use crate::catalog_key::normalize_catalog_key;
-use crate::metrics::estimate_one_rm;
-
+mod composite_summary;
 mod event_metrics;
 mod types;
 
@@ -16,150 +18,71 @@ use event_metrics::{
     extract_event_metrics, modality_label, resolve_catalog_entry, EventMetricValues,
 };
 
+const MILLIS_PER_DAY: i64 = 86_400_000;
+
+fn load_view_metric_keys() -> HashMap<String, Vec<String>> {
+    crate::compiled_workout_view_metrics().into_iter().collect()
+}
+
+fn load_view_metric_config() -> serde_json::Map<String, serde_json::Value> {
+    crate::compiled_workout_view_metric_config()
+        .as_object()
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn load_view_default_metrics() -> HashMap<String, String> {
+    crate::compiled_workout_view_default_metrics()
+        .into_iter()
+        .collect()
+}
+
+fn metric_name_for(view_name: &str, metric_key: &str) -> Option<String> {
+    static VIEW_METRIC_KEYS: OnceLock<HashMap<String, Vec<String>>> = OnceLock::new();
+    let keys = VIEW_METRIC_KEYS
+        .get_or_init(load_view_metric_keys)
+        .get(view_name)?;
+    if keys.iter().any(|metric| metric == metric_key) {
+        Some(metric_key.to_string())
+    } else {
+        None
+    }
+}
+
+pub fn analytics_capabilities() -> serde_json::Value {
+    let metrics = load_view_metric_keys();
+    let configs = load_view_metric_config();
+    let defaults = load_view_default_metrics();
+    let mut views = serde_json::Map::new();
+    for (view_name, mut metric_names) in metrics {
+        metric_names.sort();
+        let metric_config = configs
+            .get(&view_name)
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        let default_metric = defaults
+            .get(&view_name)
+            .cloned()
+            .or_else(|| metric_names.first().cloned())
+            .unwrap_or_default();
+        views.insert(
+            view_name,
+            serde_json::json!({
+                "metrics": metric_names,
+                "default_metric": default_metric,
+                "metric_config": metric_config,
+            }),
+        );
+    }
+    serde_json::json!({ "views": views })
+}
+
 pub fn compute_summary(
     events: &[AnalyticsInputEvent],
     offset_minutes: i32,
     catalog_map: &HashMap<String, CatalogEntryLite>, // Exercise Name -> Catalog meta
 ) -> AnalyticsSummary {
-    // DEBUG: Log input
-    eprintln!(
-        "[analytics::compute_summary] Called with {} events",
-        events.len()
-    );
-    eprintln!(
-        "[analytics::compute_summary] offset_minutes: {}",
-        offset_minutes
-    );
-    eprintln!(
-        "[analytics::compute_summary] catalog_map has {} entries",
-        catalog_map.len()
-    );
-
-    // 1. Consistency & Heatmap
-    // Filter for valid completion events (assuming all saved events are valid)
-    let timestamps: Vec<i64> = events.iter().map(|e| e.ts).collect();
-    eprintln!(
-        "[analytics::compute_summary] Extracted {} timestamps",
-        timestamps.len()
-    );
-
-    let consistency = StreakCalculator::calculate(&timestamps, offset_minutes);
-    let heatmap = Heatmap::calculate(&timestamps, offset_minutes);
-
-    eprintln!(
-        "[analytics::compute_summary] Consistency: current_streak={}, longest_streak={}",
-        consistency.current_streak, consistency.longest_streak
-    );
-
-    // 2. Muscle Split
-    let mut muscle_counts: HashMap<String, f32> = HashMap::new();
-
-    // 3. Volume Trend (Last 12 weeks)
-    let mut volume_buckets: HashMap<i64, (f32, i32)> = HashMap::new(); // bucket -> (volume, count)
-
-    // 4. PRs
-    struct PrTracking {
-        one_rm: f32,
-        max_weight: f32,
-        max_reps: i32,
-        best_volume: f32,
-    }
-    let mut pr_map: HashMap<String, PrTracking> = HashMap::new();
-
-    for event in events {
-        // Parse Payload
-        let exercise_name = event
-            .payload
-            .get("exercise")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown");
-
-        let metrics = extract_event_metrics(event, exercise_name, catalog_map);
-        let volume = metrics.volume;
-
-        // Muscle Split - accumulate volume per muscle group
-        if volume > 0.0 {
-            if let Some(entry) = resolve_catalog_entry(event, exercise_name, catalog_map) {
-                *muscle_counts.entry(entry.muscle.clone()).or_insert(0.0) += volume;
-            }
-        }
-
-        // Volume Trend (Weekly)
-        let week_bucket = bucket_ts(event.ts, Granularity::Week, offset_minutes);
-        // Only keep if within last 6 months? Or return all and let UI slice?
-        // Returning all is fine for now, robust.
-        let entry = volume_buckets.entry(week_bucket).or_insert((0.0, 0));
-        entry.0 += volume;
-        entry.1 += 1; // Set count
-
-        // PRs
-        if metrics.reps > 0 && metrics.weight > 0.0 {
-            // Epley Formula
-            let est_1rm = metrics.weight * (1.0 + metrics.reps as f32 / 30.0);
-
-            let tracker = pr_map
-                .entry(exercise_name.to_string())
-                .or_insert(PrTracking {
-                    one_rm: 0.0,
-                    max_weight: 0.0,
-                    max_reps: 0,
-                    best_volume: 0.0,
-                });
-
-            if est_1rm > tracker.one_rm {
-                tracker.one_rm = est_1rm;
-            }
-            if metrics.weight > tracker.max_weight {
-                tracker.max_weight = metrics.weight;
-            }
-            if metrics.reps > tracker.max_reps {
-                tracker.max_reps = metrics.reps;
-            }
-            if volume > tracker.best_volume {
-                tracker.best_volume = volume;
-            }
-        }
-    }
-
-    // Finalize Muscle Split
-    let muscle_split = Distribution::calculate(muscle_counts.into_iter().collect());
-
-    // Finalize Volume
-    let mut recent_volume: Vec<VolumePoint> = volume_buckets
-        .into_iter()
-        .map(|(ts, (vol, cnt))| {
-            // Need a Label function?
-            // We'll return just TS, UI formats it. But VolumePoint struct has label.
-            // We can format simple YYYY-MM-DD for debug/label.
-            VolumePoint {
-                label: "".to_string(), // TODO: Format date if needed, or leave empty for UI
-                volume: vol,
-                count: cnt,
-                bucket: ts,
-            }
-        })
-        .collect();
-    recent_volume.sort_by_key(|p| p.bucket);
-
-    // Finalize PRs
-    let prs: Vec<PersonalRecord> = pr_map
-        .into_iter()
-        .map(|(name, t)| PersonalRecord {
-            exercise: name,
-            one_rm: t.one_rm,
-            max_weight: t.max_weight,
-            max_reps: t.max_reps,
-            best_volume: t.best_volume,
-        })
-        .collect();
-
-    AnalyticsSummary {
-        consistency,
-        heatmap,
-        muscle_split,
-        recent_volume,
-        prs,
-    }
+    composite_summary::compute_summary(events, offset_minutes, catalog_map)
 }
 
 fn muscle_title(label: &str) -> String {
@@ -255,28 +178,18 @@ fn condense_set_descriptions(descriptions: Vec<String>) -> Vec<HomeSetChunk> {
 
 pub fn compute_home_day_analytics(
     events: &[AnalyticsInputEvent],
-    offset_minutes: i32,
+    _offset_minutes: i32,
     catalog_map: &HashMap<String, CatalogEntryLite>,
     query: &HomeDayQuery,
 ) -> HomeDayResponse {
-    eprintln!(
-        "[analytics::compute_home_day_analytics] Called with {} events for day_bucket={}",
-        events.len(),
-        query.day_bucket
-    );
-
     let day_start = query.day_bucket;
-    let day_end = day_start + 24 * 60 * 60 * 1000; // Add 24 hours in ms
+    let day_end = day_start + MILLIS_PER_DAY;
 
     let mut day_events: Vec<_> = events
         .iter()
         .filter(|e| e.ts >= day_start && e.ts < day_end)
         .collect();
 
-    eprintln!(
-        "[analytics::compute_home_day_analytics] Filtered to {} events for this day",
-        day_events.len()
-    );
     day_events.sort_by_key(|event| event.ts);
 
     #[derive(Default)]
@@ -557,46 +470,201 @@ pub fn compute_calendar_month_analytics(
     }
 }
 
-fn matches_filter(
-    event: &AnalyticsInputEvent,
-    exercise_name: &str,
-    filter: &WorkoutAnalyticsFilter,
+fn events_for_engine(
+    events: &[AnalyticsInputEvent],
+    offset_minutes: i32,
     catalog_map: &HashMap<String, CatalogEntryLite>,
-) -> bool {
+) -> Vec<NormalizedEvent> {
+    let def = crate::compiled_workout_definition();
+    events
+        .iter()
+        .enumerate()
+        .map(|(index, event)| {
+            let mut payload = event.payload.clone();
+            if let Some(payload_obj) = payload.as_object_mut() {
+                if payload_obj
+                    .get("day_bucket")
+                    .and_then(serde_json::Value::as_i64)
+                    .is_none()
+                {
+                    payload_obj.insert(
+                        "day_bucket".to_string(),
+                        serde_json::json!(round_to_local_day(event.ts, offset_minutes)),
+                    );
+                }
+                if payload_obj
+                    .get("week_bucket")
+                    .and_then(serde_json::Value::as_i64)
+                    .is_none()
+                {
+                    payload_obj.insert(
+                        "week_bucket".to_string(),
+                        serde_json::json!(round_to_local_week(event.ts, offset_minutes)),
+                    );
+                }
+                if payload_obj
+                    .get("month_bucket")
+                    .and_then(serde_json::Value::as_i64)
+                    .is_none()
+                {
+                    payload_obj.insert(
+                        "month_bucket".to_string(),
+                        serde_json::json!(round_to_local_month(event.ts, offset_minutes)),
+                    );
+                }
+
+                let exercise_name = payload_obj
+                    .get("exercise")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("Unknown");
+                if let Some(entry) = resolve_catalog_entry(event, exercise_name, catalog_map) {
+                    payload_obj.insert("muscle".to_string(), serde_json::json!(entry.muscle));
+                    payload_obj.insert(
+                        "category".to_string(),
+                        serde_json::json!(modality_label(&entry.modality)),
+                    );
+                } else {
+                    if payload_obj
+                        .get("muscle")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none()
+                    {
+                        payload_obj.insert("muscle".to_string(), serde_json::json!("Unmapped"));
+                    }
+                    if payload_obj
+                        .get("category")
+                        .and_then(serde_json::Value::as_str)
+                        .is_none()
+                    {
+                        let fallback_category = payload_obj
+                            .get("modality")
+                            .and_then(serde_json::Value::as_str)
+                            .map(|value| value.to_lowercase())
+                            .unwrap_or_else(|| "unmapped".to_string());
+                        payload_obj
+                            .insert("category".to_string(), serde_json::json!(fallback_category));
+                    }
+                }
+            }
+            NormalizedEvent::new(
+                EventId::new(format!("analytics-{index}-{}", event.ts)),
+                def.tracker_id().clone(),
+                Timestamp::new(event.ts),
+                payload,
+                serde_json::json!({}),
+            )
+        })
+        .collect()
+}
+
+fn grouped_metric_values(value: serde_json::Value) -> HashMap<String, f32> {
+    match value {
+        serde_json::Value::Object(map) => map
+            .into_iter()
+            .filter_map(|(key, value)| value.as_f64().map(|number| (key, number as f32)))
+            .collect(),
+        serde_json::Value::Number(number) => number
+            .as_f64()
+            .map(|value| {
+                [("__total__".to_string(), value as f32)]
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => HashMap::new(),
+    }
+}
+
+fn grouped_metric_counts(value: serde_json::Value) -> HashMap<String, i32> {
+    match value {
+        serde_json::Value::Object(map) => map
+            .into_iter()
+            .filter_map(|(key, value)| value.as_f64().map(|number| (key, number as i32)))
+            .collect(),
+        serde_json::Value::Number(number) => number
+            .as_f64()
+            .map(|value| {
+                [("__total__".to_string(), value as i32)]
+                    .into_iter()
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => HashMap::new(),
+    }
+}
+
+fn workout_group_field(group_by: &WorkoutGroupBy) -> &'static str {
+    match group_by {
+        WorkoutGroupBy::Workout => "day_bucket",
+        WorkoutGroupBy::Week => "week_bucket",
+        WorkoutGroupBy::Month => "month_bucket",
+    }
+}
+
+fn exercise_group_field(group_by: &ExerciseGroupBy) -> &'static str {
+    match group_by {
+        ExerciseGroupBy::Workout => "day_bucket",
+        ExerciseGroupBy::Week => "week_bucket",
+        ExerciseGroupBy::Month => "month_bucket",
+    }
+}
+
+fn workout_filters(filter: &WorkoutAnalyticsFilter) -> Vec<MetricFilter> {
     match filter.kind {
-        WorkoutFilterKind::None => true,
+        WorkoutFilterKind::None => vec![],
         WorkoutFilterKind::Exercise => filter
             .value
-            .as_deref()
-            .map(|value| value == exercise_name)
-            .unwrap_or(true),
-        WorkoutFilterKind::Muscle => {
-            let target = match filter.value.as_deref() {
-                Some(value) => value,
-                None => return true,
-            };
-            match resolve_catalog_entry(event, exercise_name, catalog_map) {
-                Some(entry) => entry.muscle == target,
-                None => false,
-            }
+            .as_ref()
+            .map(|value| MetricFilter {
+                field: "exercise".to_string(),
+                op: MetricFilterOp::Eq,
+                value: serde_json::json!(value),
+            })
+            .into_iter()
+            .collect(),
+        WorkoutFilterKind::Muscle => filter
+            .value
+            .as_ref()
+            .map(|value| MetricFilter {
+                field: "muscle".to_string(),
+                op: MetricFilterOp::Eq,
+                value: serde_json::json!(value),
+            })
+            .into_iter()
+            .collect(),
+    }
+}
+
+fn exercise_filters(query: &ExerciseSeriesQuery) -> Vec<MetricFilter> {
+    let mut filters = vec![MetricFilter {
+        field: "exercise".to_string(),
+        op: MetricFilterOp::Eq,
+        value: serde_json::json!(query.exercise),
+    }];
+    if matches!(query.metric, ExerciseMetric::MaxWeightAtReps) {
+        if let Some(rm_reps) = query.rm_reps.filter(|reps| *reps > 0) {
+            filters.push(MetricFilter {
+                field: "reps".to_string(),
+                op: MetricFilterOp::Eq,
+                value: serde_json::json!(rm_reps),
+            });
         }
     }
+    filters
 }
 
-fn group_bucket(ts: i64, group_by: WorkoutGroupBy, offset_minutes: i32) -> i64 {
-    match group_by {
-        WorkoutGroupBy::Workout => bucket_ts(ts, Granularity::Day, offset_minutes),
-        WorkoutGroupBy::Week => bucket_ts(ts, Granularity::Week, offset_minutes),
-        WorkoutGroupBy::Month => bucket_ts(ts, Granularity::Month, offset_minutes),
-    }
+fn as_total_number(value: serde_json::Value) -> f32 {
+    value.as_f64().unwrap_or(0.0) as f32
 }
 
-fn exercise_group_bucket(ts: i64, group_by: ExerciseGroupBy, offset_minutes: i32) -> i64 {
-    match group_by {
-        ExerciseGroupBy::Workout => bucket_ts(ts, Granularity::Day, offset_minutes),
-        ExerciseGroupBy::Week => bucket_ts(ts, Granularity::Week, offset_minutes),
-        ExerciseGroupBy::Month => bucket_ts(ts, Granularity::Month, offset_minutes),
+fn parse_bucket_key(key: &str) -> Option<i64> {
+    if let Ok(value) = key.parse::<i64>() {
+        return Some(value);
     }
+    key.parse::<f64>()
+        .ok()
+        .filter(|value| value.is_finite())
+        .map(|value| value.round() as i64)
 }
 
 fn finalize_series(
@@ -627,74 +695,53 @@ pub fn compute_workout_metrics(
     catalog_map: &HashMap<String, CatalogEntryLite>,
     query: &WorkoutAnalyticsQuery,
 ) -> WorkoutMetricsSeries {
-    match query.metric {
-        WorkoutMetric::Duration => {
-            let mut spans: HashMap<i64, (i64, i64)> = HashMap::new();
-            for event in events {
-                let exercise_name = event
-                    .payload
-                    .get("exercise")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
+    let def = crate::compiled_workout_definition();
+    let engine_events = events_for_engine(events, offset_minutes, catalog_map);
+    let Some(metric_name) = metric_name_for("workouts", query.metric.as_key()) else {
+        return finalize_series(query.metric.clone(), query.group_by.clone(), HashMap::new());
+    };
+    let group_field = workout_group_field(&query.group_by).to_string();
+    let filters = workout_filters(&query.filter);
 
-                if !matches_filter(event, exercise_name, &query.filter, catalog_map) {
-                    continue;
-                }
+    let values = compute_metric_by_name(
+        &def,
+        &engine_events,
+        &metric_name,
+        MetricComputeOptions {
+            group_by: Some(vec![GroupByDimension::Field(group_field.clone())]),
+            time_window: None,
+            filters: filters.clone(),
+        },
+    )
+    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-                let day_bucket = bucket_ts(event.ts, Granularity::Day, offset_minutes);
-                let entry = spans.entry(day_bucket).or_insert((event.ts, event.ts));
-                if event.ts < entry.0 {
-                    entry.0 = event.ts;
-                }
-                if event.ts > entry.1 {
-                    entry.1 = event.ts;
-                }
-            }
+    let counts = compute_metric_by_name(
+        &def,
+        &engine_events,
+        "total_sets",
+        MetricComputeOptions {
+            group_by: Some(vec![GroupByDimension::Field(group_field)]),
+            time_window: None,
+            filters,
+        },
+    )
+    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-            let mut buckets: HashMap<i64, (f32, i32)> = HashMap::new();
-            for (day_bucket, (min_ts, max_ts)) in spans {
-                let duration_seconds = ((max_ts - min_ts) as f32 / 1000.0).max(0.0);
-                let bucket = group_bucket(day_bucket, query.group_by.clone(), offset_minutes);
-                let entry = buckets.entry(bucket).or_insert((0.0, 0));
-                entry.0 += duration_seconds;
-                entry.1 += 1;
-            }
-
-            finalize_series(query.metric.clone(), query.group_by.clone(), buckets)
+    let value_map = grouped_metric_values(values);
+    let count_map = grouped_metric_counts(counts);
+    let mut buckets: HashMap<i64, (f32, i32)> = HashMap::new();
+    for (key, value) in value_map {
+        if value <= 0.0 {
+            continue;
         }
-        _ => {
-            let mut buckets: HashMap<i64, (f32, i32)> = HashMap::new();
-            for event in events {
-                let exercise_name = event
-                    .payload
-                    .get("exercise")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Unknown");
-
-                if !matches_filter(event, exercise_name, &query.filter, catalog_map) {
-                    continue;
-                }
-
-                let metrics = extract_event_metrics(event, exercise_name, catalog_map);
-                let value = match query.metric {
-                    WorkoutMetric::Volume => metrics.volume,
-                    WorkoutMetric::Sets => 1.0,
-                    WorkoutMetric::Reps => metrics.reps as f32,
-                    WorkoutMetric::Duration => 0.0,
-                    WorkoutMetric::Distance => metrics.distance,
-                    WorkoutMetric::ActiveDuration => metrics.active_duration,
-                    WorkoutMetric::LoadDistance => metrics.load_distance,
-                };
-
-                let bucket = group_bucket(event.ts, query.group_by.clone(), offset_minutes);
-                let entry = buckets.entry(bucket).or_insert((0.0, 0));
-                entry.0 += value;
-                entry.1 += 1;
-            }
-
-            finalize_series(query.metric.clone(), query.group_by.clone(), buckets)
-        }
+        let Some(bucket) = parse_bucket_key(&key) else {
+            continue;
+        };
+        let count = *count_map.get(&key).unwrap_or(&0);
+        buckets.insert(bucket, (value, count));
     }
+
+    finalize_series(query.metric.clone(), query.group_by.clone(), buckets)
 }
 
 pub fn compute_breakdown(
@@ -703,66 +750,117 @@ pub fn compute_breakdown(
     catalog_map: &HashMap<String, CatalogEntryLite>,
     query: &BreakdownQuery,
 ) -> BreakdownResponse {
-    let mut buckets: HashMap<String, f32> = HashMap::new();
-    let mut workouts: HashSet<i64> = HashSet::new();
-    let mut totals_sets = 0;
-    let mut totals_reps = 0;
-    let mut totals_volume = 0.0;
-    let mut totals_distance = 0.0;
-    let mut totals_active_duration = 0.0;
-    let mut totals_load_distance = 0.0;
-    let mut qa_unmapped_events = 0;
+    let def = crate::compiled_workout_definition();
+    let engine_events = events_for_engine(events, offset_minutes, catalog_map);
+    let Some(metric_name) = metric_name_for("breakdown", query.metric.as_key()) else {
+        return BreakdownResponse {
+            metric: query.metric.clone(),
+            group_by: query.group_by.clone(),
+            items: Vec::new(),
+            totals: BreakdownTotals {
+                workouts: 0,
+                sets: 0,
+                reps: 0,
+                volume: 0.0,
+                distance: 0.0,
+                active_duration: 0.0,
+                load_distance: 0.0,
+            },
+            qa_unmapped_events: 0,
+        };
+    };
+    let group_field = match query.group_by {
+        BreakdownGroupBy::Muscle => "muscle",
+        BreakdownGroupBy::Exercise => "exercise",
+        BreakdownGroupBy::Category => "category",
+    };
 
+    let grouped = compute_metric_by_name(
+        &def,
+        &engine_events,
+        &metric_name,
+        MetricComputeOptions {
+            group_by: Some(vec![GroupByDimension::Field(group_field.to_string())]),
+            time_window: None,
+            filters: vec![],
+        },
+    )
+    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
+    let buckets = grouped_metric_values(grouped)
+        .into_iter()
+        .filter(|(_, value)| *value > 0.0)
+        .collect::<Vec<_>>();
+    let items = Distribution::calculate(buckets);
+
+    let mut workouts: HashSet<i64> = HashSet::new();
+    let mut qa_unmapped_events = 0;
     for event in events {
+        workouts.insert(round_to_local_day(event.ts, offset_minutes));
         let exercise_name = event
             .payload
             .get("exercise")
             .and_then(|v| v.as_str())
             .unwrap_or("Unknown");
-        let metrics = extract_event_metrics(event, exercise_name, catalog_map);
-
-        totals_sets += 1;
-        totals_reps += metrics.reps;
-        totals_volume += metrics.volume;
-        totals_distance += metrics.distance;
-        totals_active_duration += metrics.active_duration;
-        totals_load_distance += metrics.load_distance;
-
-        let day_bucket = bucket_ts(event.ts, Granularity::Day, offset_minutes);
-        workouts.insert(day_bucket);
-
-        let catalog_entry = resolve_catalog_entry(event, exercise_name, catalog_map);
-        if catalog_entry.is_none() {
+        if resolve_catalog_entry(event, exercise_name, catalog_map).is_none() {
             qa_unmapped_events += 1;
         }
-
-        let label = match query.group_by {
-            BreakdownGroupBy::Muscle => catalog_entry
-                .map(|entry| entry.muscle.clone())
-                .unwrap_or_else(|| "Unmapped".to_string()),
-            BreakdownGroupBy::Exercise => exercise_name.to_string(),
-            BreakdownGroupBy::Category => catalog_entry
-                .map(|entry| modality_label(&entry.modality))
-                .unwrap_or_else(|| "other".to_string()),
-        };
-
-        let value = match query.metric {
-            BreakdownMetric::Volume => metrics.volume,
-            BreakdownMetric::Sets => 1.0,
-            BreakdownMetric::Reps => metrics.reps as f32,
-            BreakdownMetric::Distance => metrics.distance,
-            BreakdownMetric::ActiveDuration => metrics.active_duration,
-            BreakdownMetric::LoadDistance => metrics.load_distance,
-        };
-
-        if value <= 0.0 {
-            continue;
-        }
-
-        *buckets.entry(label).or_insert(0.0) += value;
     }
 
-    let items = Distribution::calculate(buckets.into_iter().collect());
+    let totals_sets = as_total_number(
+        compute_metric_by_name(
+            &def,
+            &engine_events,
+            "total_sets",
+            MetricComputeOptions::default(),
+        )
+        .unwrap_or(serde_json::json!(0.0)),
+    ) as i32;
+    let totals_reps = as_total_number(
+        compute_metric_by_name(
+            &def,
+            &engine_events,
+            "total_reps",
+            MetricComputeOptions::default(),
+        )
+        .unwrap_or(serde_json::json!(0.0)),
+    ) as i32;
+    let totals_volume = as_total_number(
+        compute_metric_by_name(
+            &def,
+            &engine_events,
+            "total_volume",
+            MetricComputeOptions::default(),
+        )
+        .unwrap_or(serde_json::json!(0.0)),
+    );
+    let totals_distance = as_total_number(
+        compute_metric_by_name(
+            &def,
+            &engine_events,
+            "total_distance",
+            MetricComputeOptions::default(),
+        )
+        .unwrap_or(serde_json::json!(0.0)),
+    );
+    let totals_active_duration = as_total_number(
+        compute_metric_by_name(
+            &def,
+            &engine_events,
+            "total_active_duration",
+            MetricComputeOptions::default(),
+        )
+        .unwrap_or(serde_json::json!(0.0)),
+    );
+    let totals_load_distance = as_total_number(
+        compute_metric_by_name(
+            &def,
+            &engine_events,
+            "total_load_distance",
+            MetricComputeOptions::default(),
+        )
+        .unwrap_or(serde_json::json!(0.0)),
+    );
+
     BreakdownResponse {
         metric: query.metric.clone(),
         group_by: query.group_by.clone(),
@@ -780,129 +878,72 @@ pub fn compute_breakdown(
     }
 }
 
-#[derive(Default, Debug, Clone)]
-struct ExerciseBucketStats {
-    count: i32,
-    sum_weight: f32,
-    sum_reps: i32,
-    sum_volume: f32,
-    sum_distance: f32,
-    sum_active_duration: f32,
-    sum_load_distance: f32,
-    max_weight: f32,
-    max_reps: i32,
-    max_volume: f32,
-    max_distance: f32,
-    max_active_duration: f32,
-    max_load_distance: f32,
-    max_1rm: f32,
-    max_weight_for_rm: f32,
-}
-
 pub fn compute_exercise_series(
     events: &[AnalyticsInputEvent],
     offset_minutes: i32,
     catalog_map: &HashMap<String, CatalogEntryLite>,
     query: &ExerciseSeriesQuery,
 ) -> ExerciseSeries {
-    let mut buckets: HashMap<i64, ExerciseBucketStats> = HashMap::new();
-    let target_rm = query.rm_reps.unwrap_or(1).max(1);
+    let def = crate::compiled_workout_definition();
+    let engine_events = events_for_engine(events, offset_minutes, catalog_map);
+    let Some(metric_name) = metric_name_for("exercise_series", query.metric.as_key()) else {
+        return ExerciseSeries {
+            exercise: query.exercise.clone(),
+            metric: query.metric.clone(),
+            group_by: query.group_by.clone(),
+            points: Vec::new(),
+        };
+    };
+    let group_field = exercise_group_field(&query.group_by).to_string();
+    let metric_filters = exercise_filters(query);
+    let count_filters = vec![MetricFilter {
+        field: "exercise".to_string(),
+        op: MetricFilterOp::Eq,
+        value: serde_json::json!(query.exercise),
+    }];
 
-    for event in events {
-        let exercise_name = event
-            .payload
-            .get("exercise")
-            .and_then(|v| v.as_str())
-            .unwrap_or("Unknown");
+    let values = compute_metric_by_name(
+        &def,
+        &engine_events,
+        &metric_name,
+        MetricComputeOptions {
+            group_by: Some(vec![GroupByDimension::Field(group_field.clone())]),
+            time_window: None,
+            filters: metric_filters,
+        },
+    )
+    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-        if exercise_name != query.exercise {
-            continue;
-        }
+    let counts = compute_metric_by_name(
+        &def,
+        &engine_events,
+        "total_sets",
+        MetricComputeOptions {
+            group_by: Some(vec![GroupByDimension::Field(group_field)]),
+            time_window: None,
+            filters: count_filters,
+        },
+    )
+    .unwrap_or(serde_json::Value::Object(serde_json::Map::new()));
 
-        let metrics = extract_event_metrics(event, exercise_name, catalog_map);
-        let bucket = exercise_group_bucket(event.ts, query.group_by.clone(), offset_minutes);
-        let stats = buckets.entry(bucket).or_default();
-
-        stats.count += 1;
-        if metrics.reps > 0 {
-            stats.sum_reps += metrics.reps;
-            if metrics.reps > stats.max_reps {
-                stats.max_reps = metrics.reps;
-            }
-        }
-        if metrics.weight > 0.0 {
-            stats.sum_weight += metrics.weight;
-            if metrics.weight > stats.max_weight {
-                stats.max_weight = metrics.weight;
-            }
-        }
-        if metrics.volume > 0.0 {
-            stats.sum_volume += metrics.volume;
-            if metrics.volume > stats.max_volume {
-                stats.max_volume = metrics.volume;
-            }
-        }
-        if metrics.distance > 0.0 {
-            stats.sum_distance += metrics.distance;
-            if metrics.distance > stats.max_distance {
-                stats.max_distance = metrics.distance;
-            }
-        }
-        if metrics.active_duration > 0.0 {
-            stats.sum_active_duration += metrics.active_duration;
-            if metrics.active_duration > stats.max_active_duration {
-                stats.max_active_duration = metrics.active_duration;
-            }
-        }
-        if metrics.load_distance > 0.0 {
-            stats.sum_load_distance += metrics.load_distance;
-            if metrics.load_distance > stats.max_load_distance {
-                stats.max_load_distance = metrics.load_distance;
-            }
-        }
-        if metrics.weight > 0.0 && metrics.reps > 0 {
-            let est = estimate_one_rm(metrics.weight as f64, metrics.reps) as f32;
-            if est > stats.max_1rm {
-                stats.max_1rm = est;
-            }
-        }
-        if metrics.weight > 0.0 && metrics.reps == target_rm {
-            if metrics.weight > stats.max_weight_for_rm {
-                stats.max_weight_for_rm = metrics.weight;
-            }
-        }
-    }
-
-    let mut points: Vec<ExerciseSeriesPoint> = buckets
+    let value_map = grouped_metric_values(values);
+    let count_map = grouped_metric_counts(counts);
+    let mut points = value_map
         .into_iter()
-        .filter_map(|(bucket, stats)| {
-            let value = match query.metric {
-                ExerciseMetric::EstimatedOneRm => stats.max_1rm,
-                ExerciseMetric::MaxWeight => stats.max_weight,
-                ExerciseMetric::WorkoutWeight => stats.sum_weight,
-                ExerciseMetric::PrByRm => stats.max_weight_for_rm,
-                ExerciseMetric::MaxReps => stats.max_reps as f32,
-                ExerciseMetric::MaxVolume => stats.max_volume,
-                ExerciseMetric::WorkoutVolume => stats.sum_volume,
-                ExerciseMetric::WorkoutReps => stats.sum_reps as f32,
-                ExerciseMetric::MaxDistance => stats.max_distance,
-                ExerciseMetric::WorkoutDistance => stats.sum_distance,
-                ExerciseMetric::MaxActiveDuration => stats.max_active_duration,
-                ExerciseMetric::WorkoutActiveDuration => stats.sum_active_duration,
-                ExerciseMetric::MaxLoadDistance => stats.max_load_distance,
-                ExerciseMetric::WorkoutLoadDistance => stats.sum_load_distance,
-            };
+        .filter_map(|(key, value)| {
             if value <= 0.0 {
                 return None;
             }
+            let bucket = parse_bucket_key(&key)?;
+            let count = *count_map.get(&key).unwrap_or(&0);
             Some(ExerciseSeriesPoint {
                 label: String::new(),
                 value,
-                count: stats.count,
+                count,
                 bucket,
             })
         })
-        .collect();
+        .collect::<Vec<_>>();
     points.sort_by_key(|point| point.bucket);
 
     ExerciseSeries {
@@ -968,7 +1009,7 @@ mod tests {
         catalog.insert("barbell_row".into(), strength_entry("back"));
 
         let all_query = WorkoutAnalyticsQuery {
-            metric: WorkoutMetric::Volume,
+            metric: WorkoutMetric::TotalVolume,
             group_by: WorkoutGroupBy::Week,
             filter: WorkoutAnalyticsFilter {
                 kind: WorkoutFilterKind::None,
@@ -981,7 +1022,7 @@ mod tests {
         assert!((all_series.points[1].value - 360.0).abs() < 0.001);
 
         let legs_query = WorkoutAnalyticsQuery {
-            metric: WorkoutMetric::Volume,
+            metric: WorkoutMetric::TotalVolume,
             group_by: WorkoutGroupBy::Week,
             filter: WorkoutAnalyticsFilter {
                 kind: WorkoutFilterKind::Muscle,
@@ -1011,7 +1052,7 @@ mod tests {
             0,
             &catalog,
             &BreakdownQuery {
-                metric: BreakdownMetric::Volume,
+                metric: BreakdownMetric::TotalVolume,
                 group_by: BreakdownGroupBy::Muscle,
             },
         );
@@ -1049,7 +1090,7 @@ mod tests {
             0,
             &catalog,
             &BreakdownQuery {
-                metric: BreakdownMetric::Volume,
+                metric: BreakdownMetric::TotalVolume,
                 group_by: BreakdownGroupBy::Muscle,
             },
         );
@@ -1067,7 +1108,7 @@ mod tests {
             0,
             &catalog,
             &BreakdownQuery {
-                metric: BreakdownMetric::Distance,
+                metric: BreakdownMetric::TotalDistance,
                 group_by: BreakdownGroupBy::Muscle,
             },
         );
@@ -1104,7 +1145,7 @@ mod tests {
             0,
             &catalog,
             &WorkoutAnalyticsQuery {
-                metric: WorkoutMetric::LoadDistance,
+                metric: WorkoutMetric::TotalLoadDistance,
                 group_by: WorkoutGroupBy::Workout,
                 filter: WorkoutAnalyticsFilter {
                     kind: WorkoutFilterKind::None,
@@ -1134,7 +1175,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Bench Press".to_string(),
-                metric: ExerciseMetric::MaxVolume,
+                metric: ExerciseMetric::MaxSetVolume,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1148,7 +1189,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Bench Press".to_string(),
-                metric: ExerciseMetric::WorkoutVolume,
+                metric: ExerciseMetric::TotalVolume,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1176,7 +1217,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Bench Press".to_string(),
-                metric: ExerciseMetric::EstimatedOneRm,
+                metric: ExerciseMetric::MaxEst1rm,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1204,7 +1245,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Bench Press".to_string(),
-                metric: ExerciseMetric::PrByRm,
+                metric: ExerciseMetric::MaxWeightAtReps,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: Some(5),
             },
@@ -1218,7 +1259,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Bench Press".to_string(),
-                metric: ExerciseMetric::PrByRm,
+                metric: ExerciseMetric::MaxWeightAtReps,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: Some(6),
             },
@@ -1294,7 +1335,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Rowing Ergometer".to_string(),
-                metric: ExerciseMetric::WorkoutDistance,
+                metric: ExerciseMetric::TotalDistance,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1322,7 +1363,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Rowing Ergometer".to_string(),
-                metric: ExerciseMetric::WorkoutActiveDuration,
+                metric: ExerciseMetric::TotalActiveDuration,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1350,7 +1391,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Farmer Carry".to_string(),
-                metric: ExerciseMetric::WorkoutLoadDistance,
+                metric: ExerciseMetric::TotalLoadDistance,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1378,7 +1419,7 @@ mod tests {
             &catalog,
             &ExerciseSeriesQuery {
                 exercise: "Farmer Carry".to_string(),
-                metric: ExerciseMetric::WorkoutWeight,
+                metric: ExerciseMetric::TotalWeight,
                 group_by: ExerciseGroupBy::Workout,
                 rm_reps: None,
             },
@@ -1398,7 +1439,7 @@ mod tests {
             0,
             &catalog,
             &WorkoutAnalyticsQuery {
-                metric: WorkoutMetric::Volume,
+                metric: WorkoutMetric::TotalVolume,
                 group_by: WorkoutGroupBy::Workout,
                 filter: WorkoutAnalyticsFilter {
                     kind: WorkoutFilterKind::None,
@@ -1531,7 +1572,7 @@ mod tests {
         catalog.insert("barbell_squat".into(), strength_entry("legs"));
 
         let query = WorkoutAnalyticsQuery {
-            metric: WorkoutMetric::Volume,
+            metric: WorkoutMetric::TotalVolume,
             group_by: WorkoutGroupBy::Week,
             filter: WorkoutAnalyticsFilter {
                 kind: WorkoutFilterKind::None,

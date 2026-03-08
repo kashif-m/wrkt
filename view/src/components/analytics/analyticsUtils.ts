@@ -1,9 +1,5 @@
 import { WorkoutEvent } from '../../workoutFlows';
-import {
-  BreakdownMetricKey,
-  WorkoutGroupByKey,
-  WorkoutMetricKey,
-} from '../../domain/analytics';
+import { WorkoutGroupByKey } from '../../domain/analytics';
 import { AnalyticsRangeKey, getRangeOption } from './analyticsRanges';
 
 export const filterEventsByRange = (
@@ -73,52 +69,6 @@ export const metricSignalsFromEvents = (
       hasDuration: false,
     },
   );
-
-export const isWorkoutMetricRelevant = (
-  metric: WorkoutMetricKey,
-  signals: MetricSignals,
-): boolean => {
-  switch (metric) {
-    case 'volume':
-      return signals.hasWeight && signals.hasReps;
-    case 'sets':
-      return signals.hasAny;
-    case 'reps':
-      return signals.hasReps;
-    case 'distance':
-      return signals.hasDistance;
-    case 'active_duration':
-      return signals.hasDuration;
-    case 'load_distance':
-      return signals.hasDistance && signals.hasWeight;
-    case 'duration':
-      return false;
-    default:
-      return true;
-  }
-};
-
-export const isBreakdownMetricRelevant = (
-  metric: BreakdownMetricKey,
-  signals: MetricSignals,
-): boolean => {
-  switch (metric) {
-    case 'volume':
-      return signals.hasWeight && signals.hasReps;
-    case 'sets':
-      return signals.hasAny;
-    case 'reps':
-      return signals.hasReps;
-    case 'distance':
-      return signals.hasDistance;
-    case 'active_duration':
-      return signals.hasDuration;
-    case 'load_distance':
-      return signals.hasDistance && signals.hasWeight;
-    default:
-      return true;
-  }
-};
 
 const formatShortDate = (date: Date): string =>
   date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });

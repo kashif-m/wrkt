@@ -23,6 +23,13 @@ const ANALYTICS_TABS: AnalyticsTabKey[] = [
   'exercises',
 ];
 
+const ALL_TABS_MOUNTED: Record<AnalyticsTabKey, boolean> = {
+  summary: true,
+  workouts: true,
+  breakdown: true,
+  exercises: true,
+};
+
 const createStyles = () => ({
   root: {
     flex: 1,
@@ -58,6 +65,23 @@ const AnalyticsHub = () => {
       current[tab] ? current : { ...current, [tab]: true },
     );
   }, [tab]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMountedTabs(current => {
+        if (
+          current.summary &&
+          current.workouts &&
+          current.breakdown &&
+          current.exercises
+        ) {
+          return current;
+        }
+        return ALL_TABS_MOUNTED;
+      });
+    }, 120);
+    return () => clearTimeout(timer);
+  }, []);
 
   const themeKey = `${preferences.themeMode}:${preferences.themeAccent}:${
     preferences.customAccentHex ?? ''

@@ -1,16 +1,19 @@
 [package]
 name = "tracker_ir"
-version = "0.1.0"
-edition = "2021"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme.workspace = true
+description.workspace = true
 
 [[bin]]
 name = "generate_ts"
 path = "src/bin/generate_ts.rs"
 
 [dependencies]
-blake3 = "1"
-chrono = "0.4"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-serde_repr = "0.1"
+blake3.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_repr.workspace = true

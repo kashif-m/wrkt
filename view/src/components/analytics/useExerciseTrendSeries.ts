@@ -62,7 +62,7 @@ export const useExerciseTrendSeries = ({
       metric,
       group_by: groupBy,
       rm_reps:
-        metric === 'pr_by_rm' &&
+        metric === 'max_weight_at_reps' &&
         typeof rmReps === 'number' &&
         Number.isFinite(rmReps)
           ? rmReps

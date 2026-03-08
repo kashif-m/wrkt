@@ -1,5 +1,9 @@
 import { ExerciseCatalogEntry } from '../exercise/catalogStorage';
-import { ExerciseMetricKey } from '../domain/analytics';
+import {
+  DEFAULT_EXERCISE_METRIC_KEY,
+  ExerciseMetricKey,
+  normalizeExerciseMetricKey,
+} from '../domain/analytics';
 import {
   ErrorMessage,
   EventId,
@@ -18,12 +22,10 @@ import {
   asModality,
   asMuscleGroup,
   asNumericInput,
-  asPlannerKind,
   asScreenKey,
   asSearchQuery,
 } from '../domain/types';
-import { PlanSuggestion, WorkoutEvent } from '../workoutFlows';
-import { PlannerKind } from '../domain/types';
+import { WorkoutEvent } from '../workoutFlows';
 
 import { ToastText, ToastTone } from '../domain/types';
 import { FitNotesImportSummary } from '../import/fitnotes';
@@ -200,11 +202,6 @@ export type RootState = {
     homeSplitMode: HomeSplitMode;
     summaryConsistencyWindow: SummaryConsistencyWindow;
   };
-  suggestions: {
-    planner: PlannerKind;
-    loading: boolean;
-    items: PlanSuggestion[];
-  };
   importSummary: {
     source: 'fitnotes';
     summary: FitNotesImportSummary;
@@ -255,9 +252,6 @@ export type Action =
       type: 'preferences/summaryConsistencyWindow';
       mode: SummaryConsistencyWindow;
     }
-  | { type: 'suggestions/planner'; planner: PlannerKind }
-  | { type: 'suggestions/loading'; loading: boolean }
-  | { type: 'suggestions/items'; items: PlanSuggestion[] }
   | {
       type: 'import/summary';
       summary: RootState['importSummary'];
@@ -318,7 +312,7 @@ export const createInitialState = (): RootState => {
       fields: { ...initialFields },
       tab: 'Track',
       selectedTrendRange: '3m',
-      selectedTrendMetric: 'estimated_one_rm',
+      selectedTrendMetric: DEFAULT_EXERCISE_METRIC_KEY,
       selectedTrendRmReps: null,
       editingEventId: null,
       status: null,
@@ -329,11 +323,6 @@ export const createInitialState = (): RootState => {
       customAccentHex: null,
       homeSplitMode: 'muscle',
       summaryConsistencyWindow: 'this_month',
-    },
-    suggestions: {
-      planner: asPlannerKind('strength'),
-      loading: false,
-      items: [],
     },
     importSummary: null,
   };
@@ -510,7 +499,12 @@ export const reducer = (state: RootState, action: Action): RootState => {
     case 'log/trendMetric':
       return {
         ...state,
-        logging: { ...state.logging, selectedTrendMetric: action.metric },
+        logging: {
+          ...state.logging,
+          selectedTrendMetric: normalizeExerciseMetricKey(
+            action.metric as string,
+          ),
+        },
       };
     case 'log/trendRm':
       return {
@@ -563,21 +557,6 @@ export const reducer = (state: RootState, action: Action): RootState => {
           ...state.preferences,
           summaryConsistencyWindow: action.mode,
         },
-      };
-    case 'suggestions/planner':
-      return {
-        ...state,
-        suggestions: { ...state.suggestions, planner: action.planner },
-      };
-    case 'suggestions/loading':
-      return {
-        ...state,
-        suggestions: { ...state.suggestions, loading: action.loading },
-      };
-    case 'suggestions/items':
-      return {
-        ...state,
-        suggestions: { ...state.suggestions, items: action.items },
       };
     case 'import/summary':
       return { ...state, importSummary: action.summary };

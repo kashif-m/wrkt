@@ -461,16 +461,16 @@ mod tests {
     #[test]
     fn tracker_error_with_context() {
         let err = TrackerError::new_simple(ErrorCode::EventValidationFailed, "validation failed")
-            .with_context(serde_json::json!({"field": "weight", "value": -5}));
+            .with_context(serde_json::json!({"field": "value_a", "value": -5}));
 
-        assert_eq!(err.context["field"], "weight");
+        assert_eq!(err.context["field"], "value_a");
         assert_eq!(err.context["value"], -5);
     }
 
     #[test]
     fn tracker_error_json_roundtrip() {
         let original = TrackerError::new_simple(ErrorCode::TrackerMismatch, "tracker mismatch")
-            .with_context(serde_json::json!({"expected": "workout", "actual": "finance"}))
+            .with_context(serde_json::json!({"expected": "domain_a", "actual": "domain_b"}))
             .at_location("test.rs", 42);
 
         let json = original.to_json();

@@ -8,6 +8,7 @@ import {
 
 type UseMeasuredCardHeightArgs = {
   estimatedContentHeight: number;
+  viewportBottomInset?: number;
   collapsed?: boolean;
   animated?: boolean;
   animationDurationMs?: number;
@@ -25,6 +26,7 @@ type UseMeasuredCardHeightResult = {
 
 export const useMeasuredCardHeight = ({
   estimatedContentHeight,
+  viewportBottomInset = 0,
   collapsed = false,
   animated = false,
   animationDurationMs = 200,
@@ -35,15 +37,21 @@ export const useMeasuredCardHeight = ({
 
   const measuredContentHeight =
     contentHeight > 0 ? contentHeight : Math.max(estimatedContentHeight, 0);
+  const effectiveViewportHeight =
+    viewportHeight > 0
+      ? Math.max(0, viewportHeight - Math.max(0, viewportBottomInset))
+      : 0;
 
   const resolvedHeight = useMemo(() => {
     if (collapsed) return 0;
-    if (viewportHeight <= 0) return measuredContentHeight;
-    return Math.min(measuredContentHeight, viewportHeight);
-  }, [collapsed, measuredContentHeight, viewportHeight]);
+    if (effectiveViewportHeight <= 0) return measuredContentHeight;
+    return Math.min(measuredContentHeight, effectiveViewportHeight);
+  }, [collapsed, effectiveViewportHeight, measuredContentHeight]);
 
   const scrollEnabled =
-    !collapsed && viewportHeight > 0 && measuredContentHeight > viewportHeight;
+    !collapsed &&
+    effectiveViewportHeight > 0 &&
+    measuredContentHeight > effectiveViewportHeight;
 
   useEffect(() => {
     if (!animated) {

@@ -388,6 +388,12 @@ I won’t ask questions unless necessary, but here are “default decisions” I
 * Stateless compute initially (recompute from events for selected window)
 * Tracker configs embedded as DSL files in the app bundle
 
+## Pack Creation
+
+For creating new domain packs (for example `expense-pack`) using the same Strata core, follow:
+
+- `llm/PACK_CREATION_GUIDE.md`
+
 ---
 
 # 13) Runtime performance contract (Rust bridge calls)

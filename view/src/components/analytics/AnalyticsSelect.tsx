@@ -1,15 +1,22 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  FlatList,
+  BottomSheetBackdrop,
+  BottomSheetFlatList,
+  BottomSheetModal,
+  BottomSheetTextInput,
+} from '@gorhom/bottom-sheet';
+import {
+  Keyboard,
   ListRenderItemInfo,
+  Platform,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
-import { BottomSheet, ListRow } from '../../ui/components';
+import { ListRow } from '../../ui/components';
 import {
   analyticsUi,
+  getActiveThemeMode,
   palette,
   radius,
   spacing,
@@ -18,6 +25,7 @@ import {
 import { LabelText, asLabelText, unwrapLabelText } from '../../domain/types';
 import { useNavigation } from '@react-navigation/native';
 import { exerciseSearchScore } from '../../exercise/search';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export type AnalyticsSelectOption<T extends string> = {
   key: T;
@@ -41,10 +49,13 @@ export const AnalyticsSelect = <T extends string>({
   searchPlaceholder?: LabelText;
 }) => {
   const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const modalRef = useRef<BottomSheetModal>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [sheetHeight, setSheetHeight] = useState(0);
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const [keyboardInset, setKeyboardInset] = useState(0);
+  const snapPoints = useMemo(() => ['64%', '90%'], []);
   const selectedOption = useMemo(
     () => options.find(option => option.key === selected),
     [options, selected],
@@ -75,6 +86,40 @@ export const AnalyticsSelect = <T extends string>({
   }, [open]);
 
   useEffect(() => {
+    if (open) {
+      modalRef.current?.present();
+      return;
+    }
+    modalRef.current?.dismiss();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) {
+      setKeyboardVisible(false);
+      setKeyboardInset(0);
+      return;
+    }
+    const showEvent =
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent =
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const showSub = Keyboard.addListener(showEvent, event => {
+      setKeyboardVisible(true);
+      if (Platform.OS === 'android') {
+        setKeyboardInset(Math.max(0, event.endCoordinates?.height ?? 0));
+      }
+    });
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setKeyboardVisible(false);
+      setKeyboardInset(0);
+    });
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return;
     const unsubscribe = navigation.addListener('beforeRemove', event => {
       event.preventDefault();
@@ -83,10 +128,18 @@ export const AnalyticsSelect = <T extends string>({
     return unsubscribe;
   }, [navigation, open]);
 
-  const listMaxHeight = useMemo(() => {
-    if (sheetHeight <= 0 || headerHeight <= 0) return null;
-    return Math.max(180, sheetHeight - headerHeight - spacing(0.5));
-  }, [headerHeight, sheetHeight]);
+  const renderBackdrop = useCallback(
+    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+        opacity={getActiveThemeMode() === 'light' ? 0.2 : 0.6}
+      />
+    ),
+    [],
+  );
 
   const renderRow = ({
     item,
@@ -106,6 +159,7 @@ export const AnalyticsSelect = <T extends string>({
         accessibilityLabel={unwrapLabelText(item.label)}
         accessibilityState={{ selected: item.key === selected }}
         onPress={() => {
+          Keyboard.dismiss();
           onSelect(item.key);
           setOpen(false);
         }}
@@ -156,67 +210,97 @@ export const AnalyticsSelect = <T extends string>({
           </View>
         </TouchableOpacity>
       </View>
-      <BottomSheet
-        visible={open}
-        onClose={() => setOpen(false)}
-        onCardLayout={setSheetHeight}
+      <BottomSheetModal
+        ref={modalRef}
+        index={1}
+        snapPoints={snapPoints}
+        enableDynamicSizing={false}
+        onDismiss={() => setOpen(false)}
+        enablePanDownToClose
+        enableHandlePanningGesture
+        enableContentPanningGesture={false}
+        keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'extend'}
+        keyboardBlurBehavior="none"
+        android_keyboardInputMode="adjustResize"
+        topInset={insets.top + spacing(1)}
+        bottomInset={0}
+        backdropComponent={renderBackdrop}
+        handleIndicatorStyle={{
+          backgroundColor: palette.primary,
+          width: 40,
+          height: 4,
+        }}
+        backgroundStyle={{
+          backgroundColor: palette.surface,
+          borderTopLeftRadius: radius.card,
+          borderTopRightRadius: radius.card,
+        }}
       >
-        <View style={{ gap: spacing(1), minHeight: 0 }}>
-          <View
-            onLayout={event => setHeaderHeight(event.nativeEvent.layout.height)}
-            style={{ gap: spacing(0.75) }}
-          >
-            <Text style={typography.section}>{unwrapLabelText(title)}</Text>
-            {searchable ? (
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder={
-                  searchPlaceholder
-                    ? unwrapLabelText(searchPlaceholder)
-                    : 'Search'
-                }
-                placeholderTextColor={palette.mutedText}
-                style={{
-                  borderWidth: 0,
-                  borderRadius: radius.pill,
-                  minHeight: analyticsUi.controlHeight,
-                  paddingVertical: analyticsUi.controlPaddingY,
-                  paddingHorizontal: analyticsUi.controlPaddingX,
-                  color: palette.text,
-                  backgroundColor: palette.mutedSurface,
-                }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="search"
-              />
-            ) : null}
-          </View>
-          <FlatList
-            data={filteredOptions}
-            keyExtractor={item => item.key}
-            style={{
-              maxHeight: listMaxHeight ?? 320,
-              minHeight: filteredOptions.length > 6 ? 160 : undefined,
-              marginTop: spacing(0.25),
-            }}
-            contentContainerStyle={{
-              paddingBottom: spacing(3),
-              paddingHorizontal: 0,
-            }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="interactive"
-            showsVerticalScrollIndicator
-            ListFooterComponent={<View style={{ height: spacing(3) }} />}
-            ListEmptyComponent={
-              <Text style={[typography.label, { padding: spacing(1) }]}>
-                No matches
-              </Text>
-            }
-            renderItem={renderRow}
-          />
-        </View>
-      </BottomSheet>
+        <BottomSheetFlatList<AnalyticsSelectOption<T>>
+          data={filteredOptions}
+          keyExtractor={(item: AnalyticsSelectOption<T>) => item.key}
+          style={{ flex: 1 }}
+          contentContainerStyle={{
+            paddingBottom:
+              insets.bottom +
+              (Platform.OS === 'android'
+                ? keyboardInset + spacing(2)
+                : keyboardVisible
+                ? spacing(1.5)
+                : spacing(3)),
+            paddingHorizontal: spacing(2),
+          }}
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode="none"
+          bounces
+          alwaysBounceVertical
+          overScrollMode="always"
+          showsVerticalScrollIndicator
+          stickyHeaderIndices={[0]}
+          ListHeaderComponent={
+            <View
+              style={{
+                gap: spacing(0.75),
+                paddingTop: spacing(1),
+                paddingBottom: spacing(0.75),
+                backgroundColor: palette.surface,
+              }}
+            >
+              <Text style={typography.section}>{unwrapLabelText(title)}</Text>
+              {searchable ? (
+                <BottomSheetTextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  placeholder={
+                    searchPlaceholder
+                      ? unwrapLabelText(searchPlaceholder)
+                      : 'Search'
+                  }
+                  placeholderTextColor={palette.mutedText}
+                  style={{
+                    borderWidth: 0,
+                    borderRadius: radius.pill,
+                    minHeight: analyticsUi.controlHeight,
+                    paddingVertical: analyticsUi.controlPaddingY,
+                    paddingHorizontal: analyticsUi.controlPaddingX,
+                    color: palette.text,
+                    backgroundColor: palette.mutedSurface,
+                  }}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+              ) : null}
+            </View>
+          }
+          ListEmptyComponent={
+            <Text style={[typography.label, { padding: spacing(1) }]}>
+              No matches
+            </Text>
+          }
+          renderItem={renderRow}
+        />
+      </BottomSheetModal>
     </>
   );
 };

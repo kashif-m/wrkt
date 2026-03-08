@@ -7,6 +7,10 @@ import {
   saveCustomExercise,
   setExerciseFavorite,
 } from '../exercise/catalogStorage';
+import type {
+  FitNotesImportBundle,
+  FitNotesImportSummary,
+} from '../domain/generated/workoutDomainContract';
 import { insertEvents } from '../storage';
 import {
   asEventId,
@@ -26,39 +30,7 @@ import {
 } from '../timePolicy';
 import { getTrackerIdentifier, WorkoutEvent } from '../workoutFlows';
 
-export type FitNotesImportBundle = {
-  source: string;
-  exercises: Array<{
-    slug: string;
-    display_name: string;
-    primary_muscle_group: string;
-    secondary_groups: string[];
-    modality: string;
-    logging_mode: string;
-    suggested_load_range: { min: number; max: number };
-    tags?: string[];
-  }>;
-  events: Array<{
-    ts: number;
-    exercise: string;
-    reps?: number;
-    weight?: number;
-    distance?: number;
-    duration?: number;
-    pr?: boolean;
-    meta?: Record<string, unknown>;
-  }>;
-  favorites: string[];
-  warnings?: Array<{ kind: string; message: string }>;
-};
-
-export type FitNotesImportSummary = {
-  eventsImported: number;
-  exercisesAdded: number;
-  exercisesSkipped: number;
-  favoritesAdded: number;
-  warningsCount: number;
-};
+export type { FitNotesImportSummary };
 
 export const pickFitnotesFile = async (): Promise<string | null> => {
   try {

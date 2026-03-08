@@ -1,5 +1,6 @@
 import { WorkoutFilterKind, WorkoutMetricKey } from '../../domain/analytics';
 import { LabelText, asLabelText } from '../../domain/types';
+import { WORKOUT_VIEW_METRIC_CONFIG } from '../../domain/generated/workoutDslContract';
 
 export type WorkoutMetricOption = {
   key: WorkoutMetricKey;
@@ -12,22 +13,61 @@ export type WorkoutFilterOption = {
   label: LabelText;
 };
 
-export const workoutMetricOptions: ReadonlyArray<WorkoutMetricOption> = [
-  { key: 'volume', label: asLabelText('Volume'), unit: 'vol' },
-  { key: 'sets', label: asLabelText('Sets'), unit: 'sets' },
-  { key: 'reps', label: asLabelText('Reps'), unit: 'reps' },
-  { key: 'distance', label: asLabelText('Distance'), unit: 'm' },
-  {
-    key: 'active_duration',
-    label: asLabelText('Active duration'),
-    unit: 'min',
-  },
-  {
-    key: 'load_distance',
-    label: asLabelText('Load distance'),
-    unit: 'kg*m',
-  },
-];
+type WorkoutMetricSignals = {
+  hasAny: boolean;
+  hasWeight: boolean;
+  hasReps: boolean;
+  hasDistance: boolean;
+  hasDuration: boolean;
+};
+
+const viewConfig = WORKOUT_VIEW_METRIC_CONFIG.workouts;
+
+const signalForRequirement = (
+  requirement: string,
+  signals: WorkoutMetricSignals,
+): boolean => {
+  switch (requirement) {
+    case 'any':
+      return signals.hasAny;
+    case 'weight':
+      return signals.hasWeight;
+    case 'reps':
+      return signals.hasReps;
+    case 'distance':
+      return signals.hasDistance;
+    case 'duration':
+      return signals.hasDuration;
+    default:
+      return false;
+  }
+};
+
+const workoutMetricMeta: Record<
+  WorkoutMetricKey,
+  { label: LabelText; unit: string }
+> = (
+  Object.entries(viewConfig) as Array<
+    [
+      WorkoutMetricKey,
+      { label?: string; unit?: string; requires?: readonly string[] },
+    ]
+  >
+).reduce((acc, [key, config]) => {
+  acc[key] = {
+    label: asLabelText(config.label ?? key),
+    unit: config.unit ?? '',
+  };
+  return acc;
+}, {} as Record<WorkoutMetricKey, { label: LabelText; unit: string }>);
+
+export const workoutMetricOptions: ReadonlyArray<WorkoutMetricOption> = (
+  Object.keys(viewConfig) as WorkoutMetricKey[]
+).map(key => ({
+  key,
+  label: workoutMetricMeta[key].label,
+  unit: workoutMetricMeta[key].unit,
+}));
 
 export const workoutFilterOptions: ReadonlyArray<WorkoutFilterOption> = [
   { key: 'exercise', label: asLabelText('Exercise') },
@@ -35,8 +75,17 @@ export const workoutFilterOptions: ReadonlyArray<WorkoutFilterOption> = [
 ];
 
 export const metricLabelForSelection = (metric: WorkoutMetricKey): LabelText =>
-  workoutMetricOptions.find(option => option.key === metric)?.label ??
-  asLabelText('Metric');
+  workoutMetricMeta[metric]?.label ?? asLabelText('Metric');
 
 export const unitForMetric = (metric: WorkoutMetricKey): string =>
-  workoutMetricOptions.find(option => option.key === metric)?.unit ?? '';
+  workoutMetricMeta[metric]?.unit ?? '';
+
+export const workoutMetricEnabledForSignals = (
+  metric: WorkoutMetricKey,
+  signals: WorkoutMetricSignals,
+): boolean => {
+  const requires = viewConfig[metric]?.requires ?? [];
+  return requires.every(requirement =>
+    signalForRequirement(requirement, signals),
+  );
+};

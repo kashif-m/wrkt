@@ -16,6 +16,24 @@ core-build:
 core-test:
 	cd {{strata_dir}} && cargo test
 
+coverage-core:
+	@if ! command -v cargo-llvm-cov >/dev/null 2>&1; then \
+		echo "cargo-llvm-cov is required. Install via: cargo install cargo-llvm-cov"; \
+		exit 1; \
+	fi
+	cd {{strata_dir}} && cargo llvm-cov --workspace --fail-under-lines 70 --summary-only
+
+strata-publish-check:
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_ir
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_dsl
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_eval
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_engine
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_catalog
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_analytics
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_export
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_ffi_core
+	cd {{strata_dir}} && cargo package --allow-dirty --offline -p tracker_ffi
+
 ffi-device:
 	cd workout-pack && CARGO_TARGET_DIR=../{{strata_dir}}/target cargo build --manifest-path crates/workout_ffi/Cargo.toml --release --target aarch64-apple-ios
 
@@ -34,11 +52,15 @@ ffi-xcframework: ffi-device ffi-sim
 android-ffi:
 	cd workout-pack && CARGO_TARGET_DIR=../{{strata_dir}}/target RUSTFLAGS="-C link-arg=-Wl,-soname,libtracker_ffi.so" \
 		cargo ndk -t arm64-v8a -t armeabi-v7a -o ../view/android/app/src/main/jniLibs build --manifest-path crates/workout_ffi/Cargo.toml --release
+	@tput sgr0 2>/dev/null || true # Rest terminal colors
 
 # --- Workout pack helpers ----------------------------------------------------
 
 pack-build:
 	cd workout-pack && cargo build --release
+
+pack-sync-dsl-contract:
+	cd workout-pack && cargo build -p workout_pack
 
 pack-test:
 	cd workout-pack && cargo test
@@ -51,6 +73,37 @@ pack-rebuild:
 
 ts-check:
 	cd {{view_dir}} && npx tsc --noEmit
+
+strata-purity:
+	@if rg -n "workout|exercise|reps|weight|distance|bench|squat|muscle|hypertrophy|strength|conditioning|fitnotes" {{strata_dir}}/crates {{strata_dir}}/Cargo.toml --glob '!**/target/**'; then \
+		echo "Strata purity check failed: domain-specific keywords found"; \
+		exit 1; \
+	fi
+	@if rg -n "\\.\\./\\.\\./\\.\\./\\.\\./workout-pack|workout-pack|view/|include_str!\\(" {{strata_dir}}/crates {{strata_dir}}/Cargo.toml --glob '!**/target/**'; then \
+		echo "Strata purity check failed: external module coupling found"; \
+		exit 1; \
+	fi
+
+sot-check:
+	just strata-purity
+	just sot-strict
+	cd {{strata_dir}} && cargo test -p tracker_dsl -p tracker_engine
+	cd workout-pack && cargo test -p workout_pack -p workout_ffi
+	cd {{view_dir}} && npx tsc --noEmit
+
+sot-strict:
+	@if rg -n "serde\\(alias\\s*=" workout-pack/src/analytics/types.rs; then \
+		echo "SoT strict check failed: serde aliases are not allowed in workout analytics metric enums"; \
+		exit 1; \
+	fi
+	@if rg -n "compileWorkoutTracker\\?|validateWorkoutEvent\\?|computeWorkoutTracker\\?|simulateWorkoutTracker\\?" view/src/TrackerEngine.ts; then \
+		echo "SoT strict check failed: optional transitional workout bridge methods are not allowed"; \
+		exit 1; \
+	fi
+	@if rg -n "interface (WorkoutAnalyticsQuery|BreakdownQuery|BreakdownResponse|ExerciseSeriesQuery|ExerciseSeriesResponse|HomeDayQuery|HomeDaysQuery|HomeDayResponse|HomeDaysResponse|CalendarMonthQuery|CalendarMonthResponse|AnalyticsSummary)" view/src --glob '!view/src/domain/generated/**'; then \
+		echo "SoT strict check failed: workout API transport types must live in generated contracts only"; \
+		exit 1; \
+	fi
 
 ios:
 	cd {{view_dir}} && npm run ios

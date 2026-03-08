@@ -187,7 +187,7 @@ impl CatalogEntry {
 /// Complete catalog with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Catalog {
-    /// Catalog type identifier (e.g., "workout", "finance")
+    /// Catalog type identifier (e.g., "domain_a", "domain_b")
     pub catalog_type: String,
 
     /// Catalog version
@@ -299,29 +299,29 @@ mod tests {
 
     #[test]
     fn catalog_entry_builder() {
-        let entry = CatalogEntry::new(CatalogId::new("bench_press"), "Bench Press", "bench_press")
-            .with_attribute("muscle_group", "chest")
-            .with_tags(vec!["strength".to_string(), "push".to_string()]);
+        let entry = CatalogEntry::new(CatalogId::new("item_alpha"), "Item Alpha", "item_alpha")
+            .with_attribute("group_key", "segment_a")
+            .with_tags(vec!["tag_a".to_string(), "tag_b".to_string()]);
 
-        assert_eq!(entry.display_name, "Bench Press");
-        assert_eq!(entry.get_attribute("muscle_group").unwrap(), "chest");
-        assert!(entry.has_tag("strength"));
+        assert_eq!(entry.display_name, "Item Alpha");
+        assert_eq!(entry.get_attribute("group_key").unwrap(), "segment_a");
+        assert!(entry.has_tag("tag_a"));
     }
 
     #[test]
     fn catalog_operations() {
-        let mut catalog = Catalog::new("workout");
+        let mut catalog = Catalog::new("domain_a");
 
-        let entry1 = CatalogEntry::new(CatalogId::new("ex1"), "Exercise 1", "ex1");
+        let entry1 = CatalogEntry::new(CatalogId::new("item1"), "Item 1", "item1");
 
-        let entry2 = CatalogEntry::new(CatalogId::new("ex2"), "Exercise 2", "ex2")
+        let entry2 = CatalogEntry::new(CatalogId::new("item2"), "Item 2", "item2")
             .with_tags(vec!["tag1".to_string()]);
 
         catalog.add_entry(entry1);
         catalog.add_entry(entry2);
 
         assert_eq!(catalog.len(), 2);
-        assert!(catalog.get(&CatalogId::new("ex1")).is_some());
+        assert!(catalog.get(&CatalogId::new("item1")).is_some());
 
         let tagged = catalog.find_by_tag("tag1");
         assert_eq!(tagged.len(), 1);

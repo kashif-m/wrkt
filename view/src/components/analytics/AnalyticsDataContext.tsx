@@ -2,11 +2,13 @@ import React, {
   useCallback,
   createContext,
   useContext,
-  useEffect,
   useMemo,
-  useRef,
 } from 'react';
-import { JsonObject } from '../../TrackerEngine';
+import {
+  JsonObject,
+  getWorkoutAnalyticsCapabilities,
+} from '../../TrackerEngine';
+import type { WorkoutAnalyticsCapabilities } from '../../domain/generated/workoutDomainContract';
 import { WorkoutEvent } from '../../workoutFlows';
 import { AnalyticsSummary } from '../../domain/analytics';
 import { useAppState } from '../../state/appContext';
@@ -24,6 +26,7 @@ type AnalyticsDataContextValue = {
   error: string | null;
   catalog: JsonObject[] | null;
   catalogLookup: Map<string, string>;
+  analyticsCapabilities: WorkoutAnalyticsCapabilities | null;
   getEventsForRange: (range: AnalyticsRangeKey) => WorkoutEvent[];
   getPayloadForRange: (range: AnalyticsRangeKey) => JsonObject[];
 };
@@ -31,6 +34,20 @@ type AnalyticsDataContextValue = {
 const AnalyticsDataContext = createContext<AnalyticsDataContextValue | null>(
   null,
 );
+
+const MAX_RANGE_CACHE_ENTRIES = 64;
+const globalEventsByRangeCache = new Map<string, WorkoutEvent[]>();
+const globalPayloadByRangeCache = new Map<string, JsonObject[]>();
+
+const writeBoundedCache = <T,>(cache: Map<string, T>, key: string, value: T) => {
+  cache.set(key, value);
+  if (cache.size > MAX_RANGE_CACHE_ENTRIES) {
+    const firstKey = cache.keys().next().value as string | undefined;
+    if (firstKey) {
+      cache.delete(firstKey);
+    }
+  }
+};
 
 export const AnalyticsDataProvider = ({
   children,
@@ -47,6 +64,10 @@ export const AnalyticsDataProvider = ({
     providedCatalog,
     { eventsRevision, catalogRevision },
   );
+  const analyticsCapabilities = useMemo(
+    () => getWorkoutAnalyticsCapabilities(),
+    [],
+  );
 
   const catalogLookup = useMemo(() => {
     const map = new Map<string, string>();
@@ -61,24 +82,16 @@ export const AnalyticsDataProvider = ({
     return map;
   }, [catalog]);
 
-  const eventsByRangeCacheRef = useRef(new Map<string, WorkoutEvent[]>());
-  const payloadByRangeCacheRef = useRef(new Map<string, JsonObject[]>());
-
-  useEffect(() => {
-    eventsByRangeCacheRef.current.clear();
-    payloadByRangeCacheRef.current.clear();
-  }, [eventsRevision]);
-
   const getEventsForRange = useCallback(
     (range: AnalyticsRangeKey): WorkoutEvent[] => {
       const cacheKey = `${eventsRevision}:${range}`;
-      const cached = eventsByRangeCacheRef.current.get(cacheKey);
+      const cached = globalEventsByRangeCache.get(cacheKey);
       if (cached) {
         return cached;
       }
       const filtered =
         range === 'all' ? events : filterEventsByRange(events, range);
-      eventsByRangeCacheRef.current.set(cacheKey, filtered);
+      writeBoundedCache(globalEventsByRangeCache, cacheKey, filtered);
       return filtered;
     },
     [events, eventsRevision],
@@ -87,12 +100,12 @@ export const AnalyticsDataProvider = ({
   const getPayloadForRange = useCallback(
     (range: AnalyticsRangeKey): JsonObject[] => {
       const cacheKey = `${eventsRevision}:${range}`;
-      const cached = payloadByRangeCacheRef.current.get(cacheKey);
+      const cached = globalPayloadByRangeCache.get(cacheKey);
       if (cached) {
         return cached;
       }
       const payload = toAnalyticsInputEvents(getEventsForRange(range));
-      payloadByRangeCacheRef.current.set(cacheKey, payload);
+      writeBoundedCache(globalPayloadByRangeCache, cacheKey, payload);
       return payload;
     },
     [eventsRevision, getEventsForRange],
@@ -108,6 +121,7 @@ export const AnalyticsDataProvider = ({
       error,
       catalog,
       catalogLookup,
+      analyticsCapabilities,
       getEventsForRange,
       getPayloadForRange,
     }),
@@ -118,6 +132,7 @@ export const AnalyticsDataProvider = ({
       error,
       events,
       eventsRevision,
+      analyticsCapabilities,
       getEventsForRange,
       getPayloadForRange,
       loading,

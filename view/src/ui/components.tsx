@@ -3,27 +3,22 @@ import React, {
   useEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
 import {
-  Modal,
-  Keyboard,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  StyleSheet,
   View,
   Text,
   TextInput,
   TouchableOpacity,
-  useWindowDimensions,
   ViewStyle,
   TextStyle,
-  Animated,
-  PanResponder,
 } from 'react-native';
 import {
-  analyticsUi,
+  BottomSheetBackdrop,
+  BottomSheetModal,
+  BottomSheetView,
+} from '@gorhom/bottom-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
   cardShadowStyle,
   getActiveThemeMode,
   getContrastTextColor,
@@ -32,7 +27,6 @@ import {
   spacing,
   typography,
 } from './theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ColorHex,
   LabelText,
@@ -63,7 +57,7 @@ export const ScreenContainer = ({
 export const Card = ({
   children,
   style = {},
-  variant = 'default',
+  variant: _variant = 'default',
 }: {
   children: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
@@ -235,215 +229,92 @@ export const BottomSheet = ({
   onClose,
   children,
   maxHeightRatio = 0.72,
-  onCardLayout,
+  expandedHeightRatio,
 }: {
   visible: boolean;
   onClose: () => void;
   children: React.ReactNode;
   maxHeightRatio?: number;
-  onCardLayout?: (height: number) => void;
+  expandedHeightRatio?: number;
 }) => {
   const insets = useSafeAreaInsets();
-  const { height } = useWindowDimensions();
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [sheetCardHeight, setSheetCardHeight] = useState(0);
-  const translateY = useRef(new Animated.Value(0)).current;
-  const closingRef = useRef(false);
-  const dismissDistance = useMemo(
+  const modalRef = useRef<BottomSheetModal>(null);
+  const openedRef = useRef(false);
+  const snapPoint = `${Math.round(Math.min(Math.max(maxHeightRatio, 0.35), 0.95) * 100)}%`;
+  const expandedSnapPoint =
+    typeof expandedHeightRatio === 'number'
+      ? `${Math.round(Math.min(Math.max(expandedHeightRatio, 0.35), 0.98) * 100)}%`
+      : null;
+  const snapPoints = useMemo(
     () =>
-      Math.max(
-        260,
-        Math.min(height * 0.95, sheetCardHeight + insets.bottom + spacing(4)),
-      ),
-    [height, insets.bottom, sheetCardHeight],
+      expandedSnapPoint ? [snapPoint, expandedSnapPoint] : [snapPoint],
+    [expandedSnapPoint, snapPoint],
   );
-  const closeThreshold = useMemo(
-    () => Math.max(84, dismissDistance * 0.2),
-    [dismissDistance],
-  );
-  const backdropOpacity = translateY.interpolate({
-    inputRange: [0, dismissDistance],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
-
-  const closeWithSlide = useCallback(() => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    Keyboard.dismiss();
-    Animated.timing(translateY, {
-      toValue: dismissDistance,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(() => {
-      closingRef.current = false;
-      onClose();
-    });
-  }, [dismissDistance, onClose, translateY]);
-
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: event =>
-          event.nativeEvent.locationY <= 44,
-        onMoveShouldSetPanResponder: (_event, gestureState) =>
-          gestureState.dy > 6 &&
-          Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-        onPanResponderMove: (_event, gestureState) => {
-          if (gestureState.dy <= 0) return;
-          translateY.setValue(Math.min(dismissDistance, gestureState.dy));
-        },
-        onPanResponderRelease: (_event, gestureState) => {
-          if (gestureState.dy > closeThreshold || gestureState.vy > 1.2) {
-            closeWithSlide();
-            return;
-          }
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 0,
-            speed: 20,
-          }).start();
-        },
-        onPanResponderTerminate: () => {
-          Animated.spring(translateY, {
-            toValue: 0,
-            useNativeDriver: true,
-            bounciness: 0,
-            speed: 20,
-          }).start();
-        },
-      }),
-    [closeThreshold, closeWithSlide, dismissDistance, translateY],
+  const renderBackdrop = useCallback(
+    (props: React.ComponentProps<typeof BottomSheetBackdrop>) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior="close"
+        opacity={getActiveThemeMode() === 'light' ? 0.2 : 0.6}
+      />
+    ),
+    [],
   );
 
   useEffect(() => {
     if (!visible) {
-      setKeyboardHeight(0);
+      if (openedRef.current) {
+        modalRef.current?.dismiss();
+      }
       return;
     }
-
-    const resolveHeight = (
-      endCoordinates: { height?: number; screenY?: number } | undefined,
-    ) => {
-      if (!endCoordinates) return 0;
-      if (typeof endCoordinates.screenY === 'number') {
-        return Math.max(0, height - endCoordinates.screenY);
-      }
-      return Math.max(0, endCoordinates.height ?? 0);
-    };
-
-    const onShowOrFrame = (event: {
-      endCoordinates?: { height?: number; screenY?: number };
-    }) => {
-      setKeyboardHeight(resolveHeight(event.endCoordinates));
-    };
-    const onHide = () => setKeyboardHeight(0);
-
-    const showEvent =
-      Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
-    const hideEvent =
-      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-
-    const showSub = Keyboard.addListener(showEvent, onShowOrFrame);
-    const hideSub = Keyboard.addListener(hideEvent, onHide);
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [height, visible]);
-
-  useEffect(() => {
-    if (!visible) return;
-    translateY.setValue(dismissDistance);
-    Animated.spring(translateY, {
-      toValue: 0,
-      useNativeDriver: true,
-      bounciness: 0,
-      speed: 22,
-    }).start();
-  }, [dismissDistance, translateY, visible]);
-
-  if (!visible) return null;
-  const defaultMaxHeight = Math.max(
-    240,
-    (height - insets.top) * maxHeightRatio,
-  );
-  const keyboardSafeHeight = Math.max(
-    220,
-    height - insets.top - keyboardHeight - spacing(2),
-  );
-  const maxHeight =
-    keyboardHeight > 0
-      ? Math.min(defaultMaxHeight, keyboardSafeHeight)
-      : defaultMaxHeight;
+    if (!openedRef.current) {
+      openedRef.current = true;
+      modalRef.current?.present();
+    }
+  }, [visible]);
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      onRequestClose={closeWithSlide}
-      statusBarTranslucent
+    <BottomSheetModal
+      ref={modalRef}
+      index={0}
+      snapPoints={snapPoints}
+      enableDynamicSizing
+      onDismiss={() => {
+        openedRef.current = false;
+        onClose();
+      }}
+      enablePanDownToClose
+      enableHandlePanningGesture
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="none"
+      android_keyboardInputMode="adjustResize"
+      topInset={insets.top + spacing(1)}
+      bottomInset={0}
+      backdropComponent={renderBackdrop}
+      handleIndicatorStyle={{
+        backgroundColor: palette.primary,
+        width: 40,
+        height: 4,
+      }}
+      backgroundStyle={{
+        backgroundColor: palette.surface,
+        borderTopLeftRadius: radius.card,
+        borderTopRightRadius: radius.card,
+      }}
     >
-      <View style={sheetOverlay}>
-        <Animated.View
-          pointerEvents="none"
-          style={[
-            sheetBackdrop,
-            {
-              opacity: backdropOpacity,
-              backgroundColor:
-                getActiveThemeMode() === 'light'
-                  ? 'rgba(31, 41, 55, 0.2)'
-                  : 'rgba(10, 12, 18, 0.6)',
-            },
-          ]}
-        />
-        <Pressable style={StyleSheet.absoluteFill} onPress={closeWithSlide} />
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={insets.bottom}
-          style={sheetKeyboardWrap}
-        >
-          <Animated.View
-            style={{
-              transform: [{ translateY }],
-            }}
-            {...panResponder.panHandlers}
-          >
-            <Pressable
-              onPress={() => undefined}
-              onLayout={event => {
-                const measuredHeight = event.nativeEvent.layout.height;
-                setSheetCardHeight(measuredHeight);
-                onCardLayout?.(measuredHeight);
-              }}
-              style={[
-                {
-                  backgroundColor: palette.surface,
-                  borderTopLeftRadius: radius.card,
-                  borderTopRightRadius: radius.card,
-                  padding: spacing(2),
-                },
-                {
-                  maxHeight,
-                  paddingBottom: spacing(1.5) + insets.bottom,
-                },
-              ]}
-            >
-              <View style={sheetHandleWrap}>
-                <View
-                  style={[sheetHandle, { backgroundColor: palette.primary }]}
-                />
-              </View>
-              {children}
-            </Pressable>
-          </Animated.View>
-        </KeyboardAvoidingView>
-      </View>
-    </Modal>
+      <BottomSheetView
+        style={{
+          paddingHorizontal: spacing(2),
+          paddingTop: spacing(1),
+          paddingBottom: spacing(2) + insets.bottom,
+        }}
+      >
+        {children}
+      </BottomSheetView>
+    </BottomSheetModal>
   );
 };
 
@@ -555,33 +426,3 @@ export const Divider = () => (
     }}
   />
 );
-
-const sheetOverlay = {
-  position: 'absolute' as const,
-  top: 0,
-  right: 0,
-  left: 0,
-  bottom: 0,
-  justifyContent: 'flex-end' as const,
-};
-
-const sheetBackdrop = {
-  ...StyleSheet.absoluteFillObject,
-};
-
-const sheetKeyboardWrap = {
-  flex: 1,
-  justifyContent: 'flex-end' as const,
-};
-
-const sheetHandleWrap = {
-  alignItems: 'center' as const,
-  marginTop: -spacing(0.5),
-  marginBottom: spacing(1),
-};
-
-const sheetHandle = {
-  width: 40,
-  height: 4,
-  borderRadius: 999,
-};

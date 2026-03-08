@@ -10,8 +10,6 @@ import {
   ExerciseName,
   ExerciseSlug,
   ExerciseSource,
-  LoggingMode,
-  Modality,
   MuscleGroup,
   Tag,
   JsonText,
@@ -24,27 +22,19 @@ import {
   toLoggingMode,
   toModality,
 } from '../domain/types';
+import type {
+  BaseExerciseCatalogEntry,
+  ExerciseCatalogEntry,
+} from '../domain/generated/workoutDomainContract';
+export type {
+  BaseExerciseCatalogEntry,
+  ExerciseCatalogEntry,
+} from '../domain/generated/workoutDomainContract';
 
 const CUSTOM_EXERCISES_KEY = 'strata.workout.customExercises';
 const DEFAULT_OVERRIDES_KEY = 'strata.workout.defaultOverrides';
 const FAVORITES_KEY = 'strata.workout.favoriteExercises';
 const HIDDEN_EXERCISES_KEY = 'strata.workout.hiddenExercises';
-
-export interface BaseExerciseCatalogEntry {
-  slug: ExerciseSlug;
-  display_name: ExerciseName;
-  primary_muscle_group: MuscleGroup;
-  secondary_groups: MuscleGroup[];
-  modality: Modality;
-  logging_mode: LoggingMode;
-  suggested_load_range: { min: number; max: number };
-  tags?: Tag[];
-}
-
-export type ExerciseCatalogEntry = BaseExerciseCatalogEntry & {
-  source: ExerciseSource;
-  archived?: boolean;
-};
 
 export type ManageArchiveSource = 'hidden_default' | 'archived_custom';
 

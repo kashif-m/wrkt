@@ -93,5 +93,4 @@ view/coverage
 !.yarn/sdks
 !.yarn/versions
 
-/llm
 /scripts

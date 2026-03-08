@@ -508,6 +508,15 @@ enum BucketState {
 }
 
 impl BucketState {
+    fn round_metric_value(value: f64) -> f64 {
+        let rounded = (value * 100.0).round() / 100.0;
+        if rounded == -0.0 {
+            0.0
+        } else {
+            rounded
+        }
+    }
+
     fn new(func: AggregationFunc) -> Self {
         match func {
             AggregationFunc::Count => BucketState::Count(0),
@@ -550,19 +559,21 @@ impl BucketState {
     fn finalize(self, func: AggregationFunc) -> Value {
         match (self, func) {
             (BucketState::Count(count), AggregationFunc::Count) => json!(count),
-            (BucketState::Number { sum, .. }, AggregationFunc::Sum) => json!(sum),
+            (BucketState::Number { sum, .. }, AggregationFunc::Sum) => {
+                json!(Self::round_metric_value(sum))
+            }
             (BucketState::Number { count, sum, .. }, AggregationFunc::Avg) => {
                 if count == 0 {
                     Value::Null
                 } else {
-                    json!(sum / count as f64)
+                    json!(Self::round_metric_value(sum / count as f64))
                 }
             }
             (BucketState::Number { max, .. }, AggregationFunc::Max) => {
-                max.map_or(Value::Null, |v| json!(v))
+                max.map_or(Value::Null, |v| json!(Self::round_metric_value(v)))
             }
             (BucketState::Number { min, .. }, AggregationFunc::Min) => {
-                min.map_or(Value::Null, |v| json!(v))
+                min.map_or(Value::Null, |v| json!(Self::round_metric_value(v)))
             }
             (BucketState::Number { .. }, AggregationFunc::Count) | (BucketState::Count(_), _) => {
                 Value::Null
@@ -580,7 +591,7 @@ mod tests {
     fn sample_event(payload: Value, ts: i64) -> NormalizedEvent {
         NormalizedEvent::new(
             EventId::new(format!("event-{ts}")),
-            TrackerId::new("workout"),
+            TrackerId::new("sample"),
             Timestamp::new(ts),
             payload,
             json!({}),
@@ -589,11 +600,11 @@ mod tests {
 
     #[test]
     fn evaluates_binary_expression() {
-        let event = sample_event(json!({"weight": 80, "reps": 5}), 0);
+        let event = sample_event(json!({"value_a": 80, "value_b": 5}), 0);
         let expr = ScalarExpr::Binary {
             op: BinaryOp::Mul,
-            left: Box::new(ScalarExpr::Field(FieldPath::from("payload.weight"))),
-            right: Box::new(ScalarExpr::Field(FieldPath::from("payload.reps"))),
+            left: Box::new(ScalarExpr::Field(FieldPath::from("payload.value_a"))),
+            right: Box::new(ScalarExpr::Field(FieldPath::from("payload.value_b"))),
         };
 
         let result = expr
@@ -605,16 +616,16 @@ mod tests {
     #[test]
     fn aggregates_sum_with_group_by() {
         let events = vec![
-            sample_event(json!({"exercise": "bench", "weight": 80}), 1_000),
-            sample_event(json!({"exercise": "bench", "weight": 85}), 2_000),
-            sample_event(json!({"exercise": "squat", "weight": 120}), 3_000),
+            sample_event(json!({"group_key": "segment_a", "value_a": 80}), 1_000),
+            sample_event(json!({"group_key": "segment_a", "value_a": 85}), 2_000),
+            sample_event(json!({"group_key": "segment_b", "value_a": 120}), 3_000),
         ];
 
         let spec = AggregationSpec {
             func: AggregationFunc::Sum,
-            target: Some(ScalarExpr::Field(FieldPath::from("payload.weight"))),
+            target: Some(ScalarExpr::Field(FieldPath::from("payload.value_a"))),
             filter: None,
-            group_by: vec![GroupExpr::Field(FieldPath::from("payload.exercise"))],
+            group_by: vec![GroupExpr::Field(FieldPath::from("payload.group_key"))],
         };
 
         let results = evaluate_aggregation(&spec, &events.iter().collect::<Vec<_>>())
@@ -622,8 +633,44 @@ mod tests {
         let map = results
             .as_object()
             .expect("expect object when grouping by field");
-        assert_eq!(map.get("bench").expect("bench group"), &json!(165.0));
-        assert_eq!(map.get("squat").expect("squat group"), &json!(120.0));
+        assert_eq!(
+            map.get("segment_a").expect("segment_a group"),
+            &json!(165.0)
+        );
+        assert_eq!(
+            map.get("segment_b").expect("segment_b group"),
+            &json!(120.0)
+        );
+    }
+
+    #[test]
+    fn rounds_aggregations_to_two_decimals() {
+        let events = vec![
+            sample_event(json!({"group_key": "segment_a", "value_a": 1.0}), 1_000),
+            sample_event(json!({"group_key": "segment_a", "value_a": 2.0}), 2_000),
+            sample_event(json!({"group_key": "segment_a", "value_a": 2.0}), 3_000),
+        ];
+
+        let avg_spec = AggregationSpec {
+            func: AggregationFunc::Avg,
+            target: Some(ScalarExpr::Field(FieldPath::from("payload.value_a"))),
+            filter: None,
+            group_by: vec![GroupExpr::Field(FieldPath::from("payload.group_key"))],
+        };
+        let avg = evaluate_aggregation(&avg_spec, &events.iter().collect::<Vec<_>>())
+            .expect("avg aggregation should succeed");
+        let avg_map = avg.as_object().expect("grouped avg result");
+        assert_eq!(avg_map.get("segment_a"), Some(&json!(1.67)));
+
+        let sum_spec = AggregationSpec {
+            func: AggregationFunc::Sum,
+            target: Some(ScalarExpr::Field(FieldPath::from("payload.value_a"))),
+            filter: None,
+            group_by: vec![],
+        };
+        let sum = evaluate_aggregation(&sum_spec, &events.iter().collect::<Vec<_>>())
+            .expect("sum aggregation should succeed");
+        assert_eq!(sum, json!(5.0));
     }
 
     #[test]

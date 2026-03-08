@@ -16,6 +16,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
@@ -216,7 +217,13 @@ const LoggingScreen = () => {
   const deleteCtaProgress = useSharedValue(0);
   const [interactionLocked, setInteractionLocked] = useState(false);
   const [keyboardInset, setKeyboardInset] = useState(0);
+  const [pendingFocusField, setPendingFocusField] = useState<FieldKey | null>(
+    null,
+  );
   const unlockTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fieldInputRefs = useRef<Partial<Record<FieldKey, TextInput | null>>>(
+    {},
+  );
   const styles = useMemo(createStyles, []);
 
   const handleInteractionLockChange = useCallback((locked: boolean) => {
@@ -415,7 +422,7 @@ const LoggingScreen = () => {
       exercise: selectedExercise?.display_name ?? null,
       metric: selectedTrendMetric,
       range: selectedTrendRange,
-      rmReps: selectedTrendMetric === 'pr_by_rm' ? selectedTrendRmReps : null,
+      rmReps: selectedTrendMetric === 'max_weight_at_reps' ? selectedTrendRmReps : null,
       traceSource: 'logging/trends',
       revisions: {
         eventsRevision: state.eventsRevision,
@@ -426,7 +433,7 @@ const LoggingScreen = () => {
   const displayTrendData = useMemo(() => {
     const usesDurationMetric =
       selectedTrendMetric === 'max_active_duration' ||
-      selectedTrendMetric === 'workout_active_duration';
+      selectedTrendMetric === 'total_active_duration';
     if (!usesDurationMetric) return trendData;
     return trendData.map(point => ({
       ...point,
@@ -506,7 +513,7 @@ const LoggingScreen = () => {
   }, [trendEventsInRange]);
 
   useEffect(() => {
-    if (selectedTrendMetric !== 'pr_by_rm') {
+    if (selectedTrendMetric !== 'max_weight_at_reps') {
       if (selectedTrendRmReps !== null) {
         dispatch({ type: 'log/trendRm', rmReps: null });
       }
@@ -563,11 +570,24 @@ const LoggingScreen = () => {
   };
 
   const handleSelectSet = (event: WorkoutEvent) => {
+    const firstField = fieldDefinitions[0]?.key ?? 'reps';
     dispatch({ type: 'log/date', date: new Date(roundToLocalDay(event.ts)) });
     dispatch({ type: 'log/editing', eventId: event.event_id });
     dispatch({ type: 'log/fields', fields: fieldsFromEvent(event) });
     dispatch({ type: 'log/tab', tab: 'Track' });
+    setPendingFocusField(firstField);
   };
+
+  useEffect(() => {
+    if (!pendingFocusField) return;
+    if (sessionTab !== 'Track') return;
+    if (!editingEventId) return;
+    const timer = setTimeout(() => {
+      fieldInputRefs.current[pendingFocusField]?.focus();
+      setPendingFocusField(null);
+    }, 60);
+    return () => clearTimeout(timer);
+  }, [editingEventId, pendingFocusField, sessionTab]);
 
   const handleUpdateSet = async () => {
     if (!selectedExercise || !editingEventId) return;
@@ -579,11 +599,43 @@ const LoggingScreen = () => {
     dispatch({ type: 'log/editing', eventId: null });
   };
 
+  const resolveFieldsAfterDelete = useCallback(
+    (deletedEventId: string): LoggingFields => {
+      if (!selectedExercise) {
+        return { ...INITIAL_FIELDS };
+      }
+
+      const selectedDay = roundToLocalDay(loggingDate.getTime());
+      const remaining = state.events.filter(
+        event =>
+          event.event_id !== deletedEventId &&
+          readExerciseName(event) === selectedExercise.display_name,
+      );
+      if (remaining.length === 0) {
+        return { ...INITIAL_FIELDS };
+      }
+
+      const sameDayLatest = remaining
+        .filter(event => roundToLocalDay(event.ts) === selectedDay)
+        .sort((a, b) => b.ts - a.ts)[0];
+      if (sameDayLatest) {
+        return fieldsFromEvent(sameDayLatest);
+      }
+
+      const latestRemaining = remaining.sort((a, b) => b.ts - a.ts)[0];
+      return latestRemaining
+        ? fieldsFromEvent(latestRemaining)
+        : { ...INITIAL_FIELDS };
+    },
+    [loggingDate, selectedExercise, state.events],
+  );
+
   const handleDeleteSet = async () => {
     if (!editingEventId) return;
+    const nextFields = resolveFieldsAfterDelete(editingEventId);
     await actions.deleteSet(editingEventId);
     dispatch({ type: 'log/editing', eventId: null });
-    dispatch({ type: 'log/fields', fields: { ...INITIAL_FIELDS } });
+    dispatch({ type: 'log/fields', fields: nextFields });
   };
 
   const clearEditingSelection = useCallback(() => {
@@ -636,24 +688,28 @@ const LoggingScreen = () => {
   const ctaKeyboardLift = Math.max(0, keyboardInset - insets.bottom);
 
   return (
-    <View style={{ flex: 1 }}>
-      {!selectedExercise ? (
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{
-            padding: spacing(2),
-            gap: spacing(2),
-            paddingBottom: spacing(2),
-          }}
-        >
-          <Card>
-            <Text style={{ color: palette.mutedText }}>
-              Select an exercise to log sets.
-            </Text>
-          </Card>
-        </ScrollView>
-      ) : (
-        <View style={{ flex: 1 }}>
+    <TouchableWithoutFeedback
+      onPress={Keyboard.dismiss}
+      accessible={false}
+    >
+      <View style={{ flex: 1 }}>
+        {!selectedExercise ? (
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{
+              padding: spacing(2),
+              gap: spacing(2),
+              paddingBottom: spacing(2),
+            }}
+          >
+            <Card>
+              <Text style={{ color: palette.mutedText }}>
+                Select an exercise to log sets.
+              </Text>
+            </Card>
+          </ScrollView>
+        ) : (
+          <View style={{ flex: 1 }}>
           <PagerTabsRail
             tabs={sessionTabDefinitions}
             activeKey={sessionTab}
@@ -733,6 +789,9 @@ const LoggingScreen = () => {
                           label={definition.label}
                           unit={definition.unit}
                           value={fields[definition.key]}
+                          onInputRef={ref => {
+                            fieldInputRefs.current[definition.key] = ref;
+                          }}
                           onIncrement={() => {
                             setFieldValue(definition.key, definition.step);
                           }}
@@ -958,7 +1017,7 @@ const LoggingScreen = () => {
                         onInteractionLockChange={handleInteractionLockChange}
                       />
                     </View>
-                    {selectedTrendMetric === 'pr_by_rm' &&
+                    {selectedTrendMetric === 'max_weight_at_reps' &&
                     trendRmOptions.length > 0 ? (
                       <AnalyticsInlineSelect
                         title={asLabelText('RM')}
@@ -977,7 +1036,7 @@ const LoggingScreen = () => {
                         onInteractionLockChange={handleInteractionLockChange}
                       />
                     ) : null}
-                    {selectedTrendMetric === 'pr_by_rm' &&
+                    {selectedTrendMetric === 'max_weight_at_reps' &&
                     trendRmOptions.length === 0 ? (
                       <BodyText style={{ color: palette.mutedText }}>
                         No RM-specific records in this range.
@@ -1009,9 +1068,10 @@ const LoggingScreen = () => {
               </ScrollView>
             </View>
           </PagerView>
-        </View>
-      )}
-    </View>
+          </View>
+        )}
+      </View>
+    </TouchableWithoutFeedback>
   );
 };
 
@@ -1090,6 +1150,7 @@ const Stepper = ({
   label,
   unit,
   value,
+  onInputRef,
   onIncrement,
   onDecrement,
   onChange,
@@ -1097,6 +1158,7 @@ const Stepper = ({
   label: DisplayLabel;
   unit?: DisplayLabel;
   value: NumericInput;
+  onInputRef?: (ref: TextInput | null) => void;
   onIncrement: () => void;
   onDecrement: () => void;
   onChange: (value: NumericInput) => void;
@@ -1136,7 +1198,12 @@ const Stepper = ({
       >
         <Text style={{ color: palette.text, fontSize: 20 }}>-</Text>
       </TouchableOpacity>
-      <InputPill value={value} unit={unit} onChange={onChange} />
+      <InputPill
+        value={value}
+        unit={unit}
+        onChange={onChange}
+        onInputRef={onInputRef}
+      />
       <TouchableOpacity
         onPress={onIncrement}
         style={{
@@ -1160,10 +1227,12 @@ const InputPill = ({
   value,
   unit,
   onChange,
+  onInputRef,
 }: {
   value: NumericInput;
   unit?: DisplayLabel;
   onChange: (value: NumericInput) => void;
+  onInputRef?: (ref: TextInput | null) => void;
 }) => {
   const inputRef = useRef<TextInput>(null);
   const focusInput = () => {
@@ -1188,7 +1257,10 @@ const InputPill = ({
       }}
     >
       <TextInput
-        ref={inputRef}
+        ref={ref => {
+          inputRef.current = ref;
+          onInputRef?.(ref);
+        }}
         value={value}
         onChangeText={next => onChange(asNumericInput(next))}
         keyboardType="numeric"

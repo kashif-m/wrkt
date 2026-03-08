@@ -6,6 +6,7 @@ import {
   ExerciseSlug,
   ScreenKeyValue,
 } from '../domain/types';
+import type { SetPayload } from '../domain/generated/workoutDomainContract';
 import { RootState, Action } from './appState';
 
 export type AppDispatch = React.Dispatch<Action>;
@@ -29,22 +30,10 @@ export type RootStateActions = {
     date: Date,
     tab: RootState['logging']['tab'],
   ) => void;
-  logSet: (payload: {
-    exercise: ExerciseName;
-    reps?: number;
-    weight?: number;
-    duration?: number;
-    distance?: number;
-  }) => Promise<void>;
+  logSet: (payload: SetPayload) => Promise<void>;
   updateSet: (
     eventId: EventId,
-    payload: {
-      exercise: ExerciseName;
-      reps?: number;
-      weight?: number;
-      duration?: number;
-      distance?: number;
-    },
+    payload: SetPayload,
   ) => Promise<void>;
   deleteSet: (eventId: EventId) => Promise<void>;
   saveCustomExercise: (

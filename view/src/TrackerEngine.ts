@@ -1,6 +1,10 @@
 import { TurboModuleRegistry } from 'react-native';
-import { BrandedString, DslText, JsonText, PlannerKind } from './domain/types';
+import { BrandedString, DslText, JsonText } from './domain/types';
 import { beginBridgePerfTrace } from './perf/bridgePerf';
+import type {
+  PrResult,
+  WorkoutAnalyticsCapabilities,
+} from './domain/generated/workoutDomainContract';
 
 export type JsonValue =
   | null
@@ -31,15 +35,22 @@ const bridgeCache = new Map<string, BridgeCacheEntry>();
 
 interface TrackerEngineBinding {
   compileTracker: (dsl: DslText) => JsonText;
+  compileWorkoutTracker: () => JsonText;
   validateEvent: (dsl: DslText, event: JsonText) => JsonText;
+  validateWorkoutEvent: (event: JsonText) => JsonText;
   compute: (dsl: DslText, events: JsonText, query: JsonText) => JsonText;
+  computeWorkoutTracker: (events: JsonText, query: JsonText) => JsonText;
   simulate: (
     dsl: DslText,
     base: JsonText,
     hypotheticals: JsonText,
     query: JsonText,
   ) => JsonText;
-  suggest: (dsl: DslText, events: JsonText, planner: PlannerKind) => JsonText;
+  simulateWorkoutTracker: (
+    base: JsonText,
+    hypotheticals: JsonText,
+    query: JsonText,
+  ) => JsonText;
   getExerciseCatalog: () => JsonText;
   validateExercise: (entry: JsonText) => JsonText;
   importFitnotes: (path: string) => JsonText;
@@ -109,6 +120,7 @@ interface TrackerEngineBinding {
     catalog: JsonText,
     query: JsonText,
   ) => JsonText;
+  getWorkoutAnalyticsCapabilities?: () => JsonText;
   exportGenericSqlite: (payload: JsonText, outputPath: string) => JsonText;
   importGenericSqlite: (inputPath: string) => JsonText;
 }
@@ -257,11 +269,11 @@ const writeBridgeCache = (cacheKey: string | null, value: JsonValue) => {
 
 const call = <T extends JsonValue>(
   fn: keyof TrackerEngineBinding,
-  ...args: Array<DslText | JsonText | PlannerKind>
+  ...args: Array<DslText | JsonText>
 ): T => {
   const engine = ensureBinding();
   const method = engine[fn] as (
-    ...inner: Array<DslText | JsonText | PlannerKind>
+    ...inner: Array<DslText | JsonText>
   ) => JsonText;
   const raw = method(...args);
   return parse<T>(raw);
@@ -300,19 +312,6 @@ export const compute = async (
   );
 };
 
-export const suggest = async (
-  dsl: DslText,
-  events: JsonObject[],
-  planner: PlannerKind,
-) => {
-  return call<JsonArray>(
-    'suggest',
-    dsl,
-    JSON.stringify(events) as JsonText,
-    planner,
-  );
-};
-
 export const simulate = async (
   dsl: DslText,
   baseEvents: JsonObject[],
@@ -342,6 +341,59 @@ export const simulate = async (
 
 export const compileTracker = async (dsl: DslText) =>
   call<JsonObject>('compileTracker', dsl);
+
+export const compileWorkoutTracker = async () => {
+  const engine = ensureBinding();
+  return parse<JsonObject>(engine.compileWorkoutTracker());
+};
+
+export const validateWorkoutEvent = async (event: JsonObject) => {
+  const engine = ensureBinding();
+  const eventJson = stringify(event);
+  return parse<JsonObject>(engine.validateWorkoutEvent(eventJson));
+};
+
+export const computeWorkoutTracker = async (
+  events: JsonObject[],
+  query: JsonObject,
+  options?: BridgeTraceOptions,
+) => {
+  const engine = ensureBinding();
+  const eventsJson = JSON.stringify(events) as JsonText;
+  const queryJson = stringify(query);
+  const traceKey = `workout_builtin|${queryJson}|events:${events.length}`;
+  return traceBridgeCall(
+    'computeWorkoutTracker',
+    options,
+    traceKey,
+    payloadBytes(eventsJson as unknown as string, queryJson),
+    () => parse<JsonObject>(engine.computeWorkoutTracker(eventsJson, queryJson)),
+  );
+};
+
+export const simulateWorkoutTracker = async (
+  baseEvents: JsonObject[],
+  hypotheticals: JsonObject[],
+  query: JsonObject,
+  options?: BridgeTraceOptions,
+) => {
+  const engine = ensureBinding();
+  const baseJson = JSON.stringify(baseEvents) as JsonText;
+  const hypotheticalJson = JSON.stringify(hypotheticals) as JsonText;
+  const queryJson = stringify(query);
+  const traceKey = `workout_builtin|${queryJson}|base:${baseEvents.length}|hyp:${hypotheticals.length}`;
+  return traceBridgeCall(
+    'simulateWorkoutTracker',
+    options,
+    traceKey,
+    payloadBytes(
+      baseJson as unknown as string,
+      hypotheticalJson as unknown as string,
+      queryJson,
+    ),
+    () => parse<JsonObject>(engine.simulateWorkoutTracker(baseJson, hypotheticalJson, queryJson)),
+  );
+};
 
 export const getExerciseCatalog = async () =>
   call<JsonArray>('getExerciseCatalog');
@@ -376,20 +428,6 @@ export const roundToLocalWeek = (
 export const estimateOneRm = (weight: number, reps: number): number => {
   const engine = ensureBinding();
   return engine.estimateOneRm(weight, reps);
-};
-
-export type PrResult = {
-  is_pr: boolean;
-  pr_type?:
-    | 'weight'
-    | 'reps'
-    | 'estimated_one_rm'
-    | 'volume'
-    | 'duration'
-    | 'distance';
-  previous_best?: number;
-  new_value: number;
-  improvement?: number;
 };
 
 export const detectPr = (
@@ -764,6 +802,16 @@ export const computeCalendarMonthAnalytics = (
   writeBridgeCache(cacheKey, parsed as unknown as JsonObject);
   return parsed;
 };
+
+export const getWorkoutAnalyticsCapabilities =
+  (): WorkoutAnalyticsCapabilities | null => {
+    const engine = ensureBinding();
+    if (!engine.getWorkoutAnalyticsCapabilities) {
+      return null;
+    }
+    const result = engine.getWorkoutAnalyticsCapabilities();
+    return JSON.parse(result) as WorkoutAnalyticsCapabilities;
+  };
 
 export const exportGenericSqlite = (
   payload: JsonObject,

@@ -140,6 +140,44 @@ pub(crate) fn extract_event_metrics(
         }
     }
 
+    // Prefer canonical DSL-derived values when present.
+    if let Some(value) = event
+        .payload
+        .get("set_volume")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .filter(|v| *v > 0.0)
+    {
+        metrics.volume = value;
+    }
+    if let Some(value) = event
+        .payload
+        .get("active_duration")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .filter(|v| *v > 0.0)
+    {
+        metrics.active_duration = value;
+    }
+    if let Some(value) = event
+        .payload
+        .get("distance_value")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .filter(|v| *v > 0.0)
+    {
+        metrics.distance = value;
+    }
+    if let Some(value) = event
+        .payload
+        .get("load_distance")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as f32)
+        .filter(|v| *v > 0.0)
+    {
+        metrics.load_distance = value;
+    }
+
     metrics
 }
 

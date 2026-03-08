@@ -1,11 +1,10 @@
 // Auto-generated from Rust error definitions
-// Do not edit manually - run `cargo generate-ts` to regenerate
+// Do not edit manually
+// Regenerate with: cargo run -p tracker_ir --bin generate_ts
 
 /**
  * Stable error codes for FFI boundaries.
- *
  * These codes are guaranteed to never change between releases.
- * New codes are added with higher numbers.
  */
 export enum ErrorCode {
   /** Operation completed successfully */
@@ -129,15 +128,7 @@ export interface TrackerError {
 /**
  * Error categories
  */
-export type ErrorCategory =
-  | 'success'
-  | 'parsing'
-  | 'validation'
-  | 'evaluation'
-  | 'catalog'
-  | 'planning'
-  | 'storage'
-  | 'unknown';
+export type ErrorCategory = 'success' | 'parsing' | 'validation' | 'evaluation' | 'catalog' | 'planning' | 'storage' | 'unknown';
 
 /**
  * Get category for an error code
@@ -158,18 +149,10 @@ export function getErrorCategory(code: ErrorCode): ErrorCategory {
  */
 export function getErrorSeverity(code: ErrorCode): ErrorSeverity {
   if (code === ErrorCode.Success) return ErrorSeverity.Success;
-  if (
-    code === ErrorCode.FieldNotFound ||
-    code === ErrorCode.CatalogEntryNotFound
-  ) {
+  if (code === ErrorCode.FieldNotFound || code === ErrorCode.CatalogEntryNotFound) {
     return ErrorSeverity.Warning;
   }
-  if (
-    code === ErrorCode.DivisionByZero ||
-    code === ErrorCode.CircularDependency ||
-    code === ErrorCode.SqliteError ||
-    code === ErrorCode.FileIoError
-  ) {
+  if (code === ErrorCode.DivisionByZero || code === ErrorCode.CircularDependency || code === ErrorCode.SqliteError || code === ErrorCode.FileIoError) {
     return ErrorSeverity.Fatal;
   }
   return ErrorSeverity.Error;
@@ -209,82 +192,14 @@ export function parseError(json: string): TrackerError {
     code: parsed.code as ErrorCode,
     message: parsed.message,
     context: parsed.context || {},
-    severity:
-      (parsed.severity as ErrorSeverity) || getErrorSeverity(parsed.code),
+    severity: (parsed.severity as ErrorSeverity) || getErrorSeverity(parsed.code),
     sourceLocation: parsed.source_location,
     timestampMs: parsed.timestamp_ms,
   };
 }
 
 /**
- * Adapter for legacy string errors during transition
- */
-export function adaptLegacyError(errorString: string): TrackerError {
-  // Pattern matching for common error messages
-  const lower = errorString.toLowerCase();
-
-  if (lower.includes('dsl parse')) {
-    return {
-      code: ErrorCode.DslParseError,
-      message: errorString,
-      context: { legacy: true, patternMatched: 'dsl_parse' },
-      severity: ErrorSeverity.Error,
-    };
-  }
-
-  if (lower.includes('event validation')) {
-    return {
-      code: ErrorCode.EventValidationFailed,
-      message: errorString,
-      context: { legacy: true, patternMatched: 'validation' },
-      severity: ErrorSeverity.Error,
-    };
-  }
-
-  if (lower.includes('tracker mismatch')) {
-    return {
-      code: ErrorCode.TrackerMismatch,
-      message: errorString,
-      context: { legacy: true, patternMatched: 'tracker_mismatch' },
-      severity: ErrorSeverity.Error,
-    };
-  }
-
-  if (lower.includes('division by zero')) {
-    return {
-      code: ErrorCode.DivisionByZero,
-      message: errorString,
-      context: { legacy: true, patternMatched: 'division_by_zero' },
-      severity: ErrorSeverity.Fatal,
-    };
-  }
-
-  // Unknown error
-  return {
-    code: ErrorCode.Unknown,
-    message: errorString,
-    context: { legacy: true, unmapped: true },
-    severity: ErrorSeverity.Error,
-  };
-}
-
-/**
- * Convert structured error to legacy string format
- */
-export function toLegacyString(error: TrackerError): string {
-  return `[${error.code}] ${error.message}`;
-}
-
-/**
- * Check if string looks like legacy error (not JSON)
- */
-export function isLegacyError(s: string): boolean {
-  const trimmed = s.trimStart();
-  return !trimmed.startsWith('{');
-}
-
-/**
- * Check if string looks like structured error (JSON)
+ * Check if string looks like a structured error response (JSON)
  */
 export function isStructuredError(s: string): boolean {
   const trimmed = s.trimStart();
@@ -292,11 +207,11 @@ export function isStructuredError(s: string): boolean {
 }
 
 /**
- * Parse either legacy or structured error
+ * Parse structured error response
  */
-export function parseAnyError(s: string): TrackerError {
-  if (isStructuredError(s)) {
-    return parseError(s);
+export function parseErrorResponse(s: string): TrackerError {
+  if (!isStructuredError(s)) {
+    throw new Error('Expected structured error JSON response');
   }
-  return adaptLegacyError(s);
+  return parseError(s);
 }

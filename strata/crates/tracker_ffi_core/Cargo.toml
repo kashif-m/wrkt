@@ -1,12 +1,15 @@
 [package]
 name = "tracker_ffi_core"
-version = "0.1.0"
-edition = "2021"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme.workspace = true
+description.workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tracker_engine = { path = "../tracker_engine" }
-tracker_ir = { path = "../tracker_ir" }
-tracker_export = { path = "../tracker_export" }
+serde.workspace = true
+serde_json.workspace = true
+tracker_engine.workspace = true
+tracker_ir.workspace = true
+tracker_export.workspace = true

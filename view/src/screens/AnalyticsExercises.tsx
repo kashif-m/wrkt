@@ -15,7 +15,10 @@ import {
 import { BodyText, Card, SectionHeading } from '../ui/components';
 import { palette, spacing, typography } from '../ui/theme';
 import { useAppState } from '../state/appContext';
-import { ExerciseMetricKey } from '../domain/analytics';
+import {
+  DEFAULT_EXERCISE_METRIC_KEY,
+  ExerciseMetricKey,
+} from '../domain/analytics';
 import {
   asLabelText,
   asMuscleGroup,
@@ -61,13 +64,16 @@ const AnalyticsExercises = ({
     loading,
     error,
     catalog,
+    analyticsCapabilities,
     eventsRevision,
     catalogRevision,
     getEventsForRange,
     getPayloadForRange,
   } = useAnalyticsData();
   const [range, setRange] = useState<AnalyticsRangeKey>('1m');
-  const [metric, setMetric] = useState<ExerciseMetricKey>('estimated_one_rm');
+  const [metric, setMetric] = useState<ExerciseMetricKey>(
+    DEFAULT_EXERCISE_METRIC_KEY,
+  );
   const [selectedRm, setSelectedRm] = useState('1');
   const [selectedExercise, setSelectedExercise] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -164,14 +170,15 @@ const AnalyticsExercises = ({
     range,
     rangeEvents,
     rangePayload,
-    rmReps: metric === 'pr_by_rm' && selectedRm ? Number(selectedRm) : null,
+    rmReps:
+      metric === 'max_weight_at_reps' && selectedRm ? Number(selectedRm) : null,
     traceSource: 'trends/exercises',
     revisions: { eventsRevision, catalogRevision },
   });
 
   const displayChartData = useMemo(() => {
     const isDurationMetric =
-      metric === 'max_active_duration' || metric === 'workout_active_duration';
+      metric === 'max_active_duration' || metric === 'total_active_duration';
     if (!isDurationMetric) return chartData;
     return chartData.map(point => ({
       ...point,
@@ -241,16 +248,19 @@ const AnalyticsExercises = ({
     );
   }, [exerciseEventsInRange, selectedExercise]);
 
-  const metricOptions = useMemo(
-    () =>
-      exerciseMetricOptionsForMode(
-        selectedCatalogEntry
-          ? unwrapLoggingMode(selectedCatalogEntry.logging_mode)
-          : null,
-        metricSignals,
-      ),
-    [metricSignals, selectedCatalogEntry],
-  );
+  const metricOptions = useMemo(() => {
+    const allowedMetrics = new Set(
+      analyticsCapabilities?.views?.exercise_series?.metrics ?? [],
+    );
+    return exerciseMetricOptionsForMode(
+      selectedCatalogEntry
+        ? unwrapLoggingMode(selectedCatalogEntry.logging_mode)
+        : null,
+      metricSignals,
+    ).filter(option =>
+      allowedMetrics.size > 0 ? allowedMetrics.has(option.key) : true,
+    );
+  }, [analyticsCapabilities, metricSignals, selectedCatalogEntry]);
 
   useEffect(() => {
     if (metricOptions.length === 0) return;
@@ -515,7 +525,7 @@ const AnalyticsExercises = ({
             No metrics available for this exercise in this range
           </Text>
         )}
-        {metric === 'pr_by_rm' && rmOptions.length > 0 ? (
+        {metric === 'max_weight_at_reps' && rmOptions.length > 0 ? (
           <AnalyticsInlineSelect
             title={asLabelText('RM')}
             options={rmOptions}
@@ -524,7 +534,7 @@ const AnalyticsExercises = ({
             onInteractionLockChange={handleInteractionLockChange}
           />
         ) : null}
-        {metric === 'pr_by_rm' && rmOptions.length === 0 ? (
+        {metric === 'max_weight_at_reps' && rmOptions.length === 0 ? (
           <Text style={typography.label}>
             No RM-specific records in this range
           </Text>

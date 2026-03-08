@@ -17,6 +17,8 @@ export const toAnalyticsInputEvents = (events: WorkoutEvent[]): JsonObject[] =>
     const weight = pickNumber(payload.weight);
     const duration = pickNumber(payload.duration);
     const distance = pickNumber(payload.distance);
+    const dayBucket = pickNumber(payload.day_bucket);
+    const weekBucket = pickNumber(payload.week_bucket);
 
     if (exercise) compactPayload.exercise = exercise;
     if (exerciseSlug) compactPayload.exercise_slug = exerciseSlug;
@@ -24,6 +26,8 @@ export const toAnalyticsInputEvents = (events: WorkoutEvent[]): JsonObject[] =>
     if (typeof weight === 'number') compactPayload.weight = weight;
     if (typeof duration === 'number') compactPayload.duration = duration;
     if (typeof distance === 'number') compactPayload.distance = distance;
+    if (typeof dayBucket === 'number') compactPayload.day_bucket = dayBucket;
+    if (typeof weekBucket === 'number') compactPayload.week_bucket = weekBucket;
 
     return {
       ts: event.ts,

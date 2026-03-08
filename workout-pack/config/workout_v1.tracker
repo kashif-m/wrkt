@@ -1,12 +1,16 @@
 tracker "workout" v1 {
   fields {
     exercise: text
-    modality: enum("strength", "hypertrophy", "conditioning", "bodyweight")
+    exercise_slug: text optional
+    modality: enum("strength", "hypertrophy", "conditioning", "bodyweight", "mobility")
     reps: int optional
     weight: float optional
-    duration_sec: int optional
-    distance_m: float optional
+    duration: float optional
+    distance: float optional
     rpe: int optional
+    day_bucket: int optional
+    week_bucket: int optional
+    month_bucket: int optional
     pr: bool optional
     pr_ts: int optional
   }
@@ -14,13 +18,42 @@ tracker "workout" v1 {
   derive {
     set_volume = if (weight > 0 && reps > 0) then weight * reps else 0
     est_1rm = if (weight > 0 && reps > 0) then weight * (1 + reps / 30) else 0
+    active_duration = if (duration > 0) then duration else 0
+    distance_value = if (distance > 0) then distance else 0
+    load_distance = if (distance > 0 && weight > 0) then distance * weight else 0
   }
 
   metrics {
-    total_sets = sum(set_volume) over week
-    avg_rpe = avg(rpe) over week
-    max_weight = max(weight) by exercise over all_time
-    prs = max(est_1rm) by exercise over all_time
+    total_sets = count() over all_time
+    total_reps = sum(reps) over all_time
+    total_volume = sum(set_volume) over all_time
+    total_distance = sum(distance_value) over all_time
+    total_active_duration = sum(active_duration) over all_time
+    total_load_distance = sum(load_distance) over all_time
+    avg_rpe = avg(rpe) over all_time
+    max_weight = max(weight) over all_time
+    max_est_1rm = max(est_1rm) over all_time
+    total_weight = sum(weight) over all_time
+    max_reps = max(reps) over all_time
+    max_set_volume = max(set_volume) over all_time
+    max_distance = max(distance_value) over all_time
+    max_active_duration = max(active_duration) over all_time
+    max_load_distance = max(load_distance) over all_time
+    max_weight_at_reps = max(weight) over all_time
+  }
+
+  views {
+    view "workouts" {
+      config = {"default_metric":"total_volume","metrics":{"total_volume":{"metric":"total_volume","label":"Volume","unit":"vol","requires":["weight","reps"]},"total_sets":{"metric":"total_sets","label":"Sets","unit":"sets"},"total_reps":{"metric":"total_reps","label":"Reps","unit":"reps","requires":["reps"]},"total_distance":{"metric":"total_distance","label":"Distance","unit":"m","requires":["distance"]},"total_active_duration":{"metric":"total_active_duration","label":"Active duration","unit":"min","requires":["duration"]},"total_load_distance":{"metric":"total_load_distance","label":"Load distance","unit":"kg*m","requires":["weight","distance"]}}}
+    }
+
+    view "breakdown" {
+      config = {"default_metric":"total_volume","metrics":{"total_volume":{"metric":"total_volume","label":"Volume","unit":"vol","requires":["weight","reps"]},"total_sets":{"metric":"total_sets","label":"Sets","unit":"sets"},"total_reps":{"metric":"total_reps","label":"Reps","unit":"reps","requires":["reps"]},"total_distance":{"metric":"total_distance","label":"Distance","unit":"m","requires":["distance"]},"total_active_duration":{"metric":"total_active_duration","label":"Active duration","unit":"min","requires":["duration"]},"total_load_distance":{"metric":"total_load_distance","label":"Load distance","unit":"kg*m","requires":["weight","distance"]}}}
+    }
+
+    view "exercise_series" {
+      config = {"default_metric":"max_est_1rm","metrics":{"max_est_1rm":{"metric":"max_est_1rm","label":"Estimated 1RM","unit":"kg","modes":["reps_weight"],"requires":["weight","reps"]},"max_weight":{"metric":"max_weight","label":"Max weight","unit":"kg","modes":["reps_weight","distance_weight"],"requires":["weight"]},"total_weight":{"metric":"total_weight","label":"Total weight","unit":"kg","modes":["distance_weight"],"requires":["weight"]},"max_weight_at_reps":{"metric":"max_weight_at_reps","label":"PR by RM","unit":"kg","modes":["reps_weight"],"requires":["weight","reps"]},"max_reps":{"metric":"max_reps","label":"Max reps","unit":"reps","modes":["reps_weight","reps"],"requires":["reps"]},"max_set_volume":{"metric":"max_set_volume","label":"Max volume","unit":"vol","modes":["reps_weight"],"requires":["weight","reps"]},"total_volume":{"metric":"total_volume","label":"Workout volume","unit":"vol","modes":["reps_weight"],"requires":["weight","reps"]},"total_reps":{"metric":"total_reps","label":"Workout reps","unit":"reps","modes":["reps_weight","reps"],"requires":["reps"]},"max_distance":{"metric":"max_distance","label":"Max distance","unit":"m","modes":["distance","time_distance","distance_weight"],"requires":["distance"]},"total_distance":{"metric":"total_distance","label":"Workout distance","unit":"m","modes":["distance","time_distance","distance_weight"],"requires":["distance"]},"max_active_duration":{"metric":"max_active_duration","label":"Max active duration","unit":"min","modes":["time","time_distance"],"requires":["duration"]},"total_active_duration":{"metric":"total_active_duration","label":"Workout active duration","unit":"min","modes":["time","time_distance"],"requires":["duration"]},"max_load_distance":{"metric":"max_load_distance","label":"Max load distance","unit":"kg*m","modes":["distance_weight"],"requires":["weight","distance"]},"total_load_distance":{"metric":"total_load_distance","label":"Workout load distance","unit":"kg*m","modes":["distance_weight"],"requires":["weight","distance"]}}}
+    }
   }
 
   alerts {
@@ -29,7 +62,32 @@ tracker "workout" v1 {
 
   planning {
     strategy "strength" {
-      objective = max(est_1rm) over week
+      objective = "max(est_1rm) over week"
+      weight_delta_kg = 2.5
+      reps_delta = 1
+      weight_title = "Add 2.5 kg"
+      weight_explanation = "Small load jump keeps reps steady while nudging est. 1RM upward."
+      reps_title = "Add 1 rep"
+      reps_explanation = "More reps at the same load improves volume while keeping RPE manageable."
+    }
+
+    strategy "hypertrophy" {
+      objective = "sum(set_volume) over week"
+      reps_delta = 2
+      set_title = "Add a set"
+      set_explanation = "Increasing set count boosts weekly volume for hypertrophy."
+      reps_title = "Stay at weight, +2 reps"
+      reps_explanation = "Slight rep bump raises total tonnage without increasing load."
+    }
+
+    strategy "conditioning" {
+      objective = "sum(active_duration) over week"
+      duration_delta_sec = 15
+      distance_delta_m = 100
+      duration_title = "+15 sec duration"
+      duration_explanation = "Longer work intervals improve conditioning density."
+      distance_title = "+100 m distance"
+      distance_explanation = "Expanding total distance builds endurance capacity."
     }
   }
 }

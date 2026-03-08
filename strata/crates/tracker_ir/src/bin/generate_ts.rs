@@ -5,7 +5,6 @@
 
 use std::fmt::Write;
 use std::path::PathBuf;
-use tracker_ir::error::ErrorCode;
 
 fn main() {
     let ts_code = generate_typescript_types();
@@ -20,15 +19,21 @@ fn main() {
 }
 
 fn find_output_path() -> PathBuf {
-    // Try to find the view directory relative to workspace
+    // Prefer repository-level app view directory when present.
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let workspace_root = manifest_dir
+    let strata_root = manifest_dir
         .parent()
         .expect("No parent")
         .parent()
-        .expect("No workspace root");
+        .expect("No strata root");
 
-    let view_domain = workspace_root.join("view").join("src").join("domain");
+    let repo_root = strata_root.parent().unwrap_or(strata_root);
+    let app_view_domain = repo_root.join("view").join("src").join("domain");
+    let view_domain = if app_view_domain.parent().is_some() {
+        app_view_domain
+    } else {
+        strata_root.join("view").join("src").join("domain")
+    };
 
     // Ensure directory exists
     std::fs::create_dir_all(&view_domain).expect("Failed to create domain directory");
@@ -342,115 +347,7 @@ fn generate_utility_functions(output: &mut String) {
     writeln!(output, "/**").unwrap();
     writeln!(
         output,
-        " * Adapter for legacy string errors during transition"
-    )
-    .unwrap();
-    writeln!(output, " */").unwrap();
-    writeln!(
-        output,
-        "export function adaptLegacyError(errorString: string): TrackerError {{"
-    )
-    .unwrap();
-    writeln!(output, "  const lower = errorString.toLowerCase();").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "  if (lower.includes('dsl parse')) {{").unwrap();
-    writeln!(output, "    return {{").unwrap();
-    writeln!(output, "      code: ErrorCode.DslParseError,").unwrap();
-    writeln!(output, "      message: errorString,").unwrap();
-    writeln!(
-        output,
-        "      context: {{ legacy: true, patternMatched: 'dsl_parse' }},"
-    )
-    .unwrap();
-    writeln!(output, "      severity: ErrorSeverity.Error,").unwrap();
-    writeln!(output, "    }};").unwrap();
-    writeln!(output, "  }}").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "  if (lower.includes('event validation')) {{").unwrap();
-    writeln!(output, "    return {{").unwrap();
-    writeln!(output, "      code: ErrorCode.EventValidationFailed,").unwrap();
-    writeln!(output, "      message: errorString,").unwrap();
-    writeln!(
-        output,
-        "      context: {{ legacy: true, patternMatched: 'validation' }},"
-    )
-    .unwrap();
-    writeln!(output, "      severity: ErrorSeverity.Error,").unwrap();
-    writeln!(output, "    }};").unwrap();
-    writeln!(output, "  }}").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "  if (lower.includes('tracker mismatch')) {{").unwrap();
-    writeln!(output, "    return {{").unwrap();
-    writeln!(output, "      code: ErrorCode.TrackerMismatch,").unwrap();
-    writeln!(output, "      message: errorString,").unwrap();
-    writeln!(
-        output,
-        "      context: {{ legacy: true, patternMatched: 'tracker_mismatch' }},"
-    )
-    .unwrap();
-    writeln!(output, "      severity: ErrorSeverity.Error,").unwrap();
-    writeln!(output, "    }};").unwrap();
-    writeln!(output, "  }}").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "  if (lower.includes('division by zero')) {{").unwrap();
-    writeln!(output, "    return {{").unwrap();
-    writeln!(output, "      code: ErrorCode.DivisionByZero,").unwrap();
-    writeln!(output, "      message: errorString,").unwrap();
-    writeln!(
-        output,
-        "      context: {{ legacy: true, patternMatched: 'division_by_zero' }},"
-    )
-    .unwrap();
-    writeln!(output, "      severity: ErrorSeverity.Fatal,").unwrap();
-    writeln!(output, "    }};").unwrap();
-    writeln!(output, "  }}").unwrap();
-    writeln!(output).unwrap();
-    writeln!(output, "  return {{").unwrap();
-    writeln!(output, "    code: ErrorCode.Unknown,").unwrap();
-    writeln!(output, "    message: errorString,").unwrap();
-    writeln!(output, "    context: {{ legacy: true, unmapped: true }},").unwrap();
-    writeln!(output, "    severity: ErrorSeverity.Error,").unwrap();
-    writeln!(output, "  }};").unwrap();
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
-
-    writeln!(output, "/**").unwrap();
-    writeln!(
-        output,
-        " * Convert structured error to legacy string format"
-    )
-    .unwrap();
-    writeln!(output, " */").unwrap();
-    writeln!(
-        output,
-        "export function toLegacyString(error: TrackerError): string {{"
-    )
-    .unwrap();
-    writeln!(output, "  return `[${{error.code}}] ${{error.message}}`;").unwrap();
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
-
-    writeln!(output, "/**").unwrap();
-    writeln!(
-        output,
-        " * Check if string looks like legacy error (not JSON)"
-    )
-    .unwrap();
-    writeln!(output, " */").unwrap();
-    writeln!(
-        output,
-        "export function isLegacyError(s: string): boolean {{"
-    )
-    .unwrap();
-    writeln!(output, "  const trimmed = s.trimStart();").unwrap();
-    writeln!(output, "  return !trimmed.startsWith('{{');").unwrap();
-    writeln!(output, "}}").unwrap();
-    writeln!(output).unwrap();
-
-    writeln!(output, "/**").unwrap();
-    writeln!(
-        output,
-        " * Check if string looks like structured error (JSON)"
+        " * Check if string looks like a structured error response (JSON)"
     )
     .unwrap();
     writeln!(output, " */").unwrap();
@@ -469,16 +366,20 @@ fn generate_utility_functions(output: &mut String) {
     writeln!(output).unwrap();
 
     writeln!(output, "/**").unwrap();
-    writeln!(output, " * Parse either legacy or structured error").unwrap();
+    writeln!(output, " * Parse structured error response").unwrap();
     writeln!(output, " */").unwrap();
     writeln!(
         output,
-        "export function parseAnyError(s: string): TrackerError {{"
+        "export function parseErrorResponse(s: string): TrackerError {{"
     )
     .unwrap();
-    writeln!(output, "  if (isStructuredError(s)) {{").unwrap();
-    writeln!(output, "    return parseError(s);").unwrap();
+    writeln!(output, "  if (!isStructuredError(s)) {{").unwrap();
+    writeln!(
+        output,
+        "    throw new Error('Expected structured error JSON response');"
+    )
+    .unwrap();
     writeln!(output, "  }}").unwrap();
-    writeln!(output, "  return adaptLegacyError(s);").unwrap();
+    writeln!(output, "  return parseError(s);").unwrap();
     writeln!(output, "}}").unwrap();
 }

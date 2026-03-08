@@ -38,3 +38,28 @@ impl Distribution {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn calculates_percentages_and_sorts_descending() {
+        let result = Distribution::calculate(vec![
+            ("arms".to_string(), 20.0),
+            ("legs".to_string(), 50.0),
+            ("chest".to_string(), 30.0),
+        ]);
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].label, "legs");
+        assert!((result[0].percentage - 50.0).abs() < f32::EPSILON);
+        let total_percentage: f32 = result.iter().map(|item| item.percentage).sum();
+        assert!((total_percentage - 100.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn handles_zero_total_without_nan() {
+        let result = Distribution::calculate(vec![("a".to_string(), 0.0), ("b".to_string(), 0.0)]);
+        assert!(result.iter().all(|item| item.percentage == 0.0));
+    }
+}

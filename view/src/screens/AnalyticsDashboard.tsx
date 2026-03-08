@@ -20,6 +20,7 @@ import {
 import ScreenHeader from '../ui/ScreenHeader';
 import { SkiaHeatmap } from '../components/analytics/SkiaHeatmap';
 import { computeBreakdownAnalytics } from '../TrackerEngine';
+import { DEFAULT_BREAKDOWN_METRIC_KEY } from '../domain/analytics';
 import {
   asLabelText,
   asMuscleGroup,
@@ -228,7 +229,7 @@ export const AnalyticsDashboard = ({
     const years = new Set<number>([new Date().getFullYear()]);
     if (summary) {
       summary.heatmap.forEach(point => {
-        const year = Number(point.date.slice(0, 4));
+        const year = new Date(point.timestamp).getFullYear();
         if (Number.isFinite(year)) {
           years.add(year);
         }
@@ -261,7 +262,7 @@ export const AnalyticsDashboard = ({
       focusEventPayload,
       -offset,
       catalog,
-      { metric: 'volume', group_by: 'muscle' },
+      { metric: DEFAULT_BREAKDOWN_METRIC_KEY, group_by: 'muscle' },
       {
         trace: 'trends/summary-focus',
         cache: {

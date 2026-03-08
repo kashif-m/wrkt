@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import {
   NavigationContainer,
   StackActions,
@@ -38,12 +39,9 @@ import ImportSummaryScreen from './screens/ImportSummaryScreen';
 import HomeScreen from './screens/HomeScreen';
 import CalendarScreen from './screens/CalendarScreen';
 import {
-  PlanSuggestion,
   WorkoutEvent,
-  WorkoutState,
   deleteLoggedSet,
   logSet,
-  suggestNext,
   updateLoggedSet,
 } from './workoutFlows';
 import { init } from './storage';
@@ -122,6 +120,7 @@ import {
   scoreFromPayload,
   buildPrPayload,
 } from './hooks/useMetrics';
+import type { SetPayload } from './domain/generated/workoutDomainContract';
 
 type RootStackParamList = {
   home: undefined;
@@ -502,33 +501,6 @@ const AppInner = () => {
   ]);
 
   useEffect(() => {
-    let cancelled = false;
-    dispatch({ type: 'suggestions/loading', loading: true });
-    suggestNext(
-      { events: state.events } as WorkoutState,
-      state.suggestions.planner,
-    )
-      .then((items: PlanSuggestion[]) => {
-        if (!cancelled) {
-          dispatch({ type: 'suggestions/items', items });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          dispatch({ type: 'suggestions/items', items: [] });
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          dispatch({ type: 'suggestions/loading', loading: false });
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [state.events, state.suggestions.planner]);
-
-  useEffect(() => {
     if (!state.logging.status) return;
     const timer = setTimeout(() => {
       dispatch({ type: 'log/status', status: null });
@@ -726,71 +698,40 @@ const AppInner = () => {
         dispatch({ type: 'log/exercise', exerciseName });
         dispatch({ type: 'log/tab', tab });
         dispatch({ type: 'log/editing', eventId: null });
-        const matching = exerciseName
-          ? state.events
-              .filter(
-                event =>
-                  asExerciseName(String(event.payload?.exercise ?? '')) ===
-                  exerciseName,
-              )
-              .sort((a, b) => b.ts - a.ts)[0]
-          : undefined;
+        const matching =
+          exerciseName === undefined
+            ? undefined
+            : pickPrefillEventForExerciseDate(state.events, exerciseName, date);
         if (matching) {
           dispatch({
             type: 'log/fields',
-            fields: {
-              reps:
-                typeof matching.payload?.reps === 'number'
-                  ? asNumericInput(matching.payload.reps.toString())
-                  : asNumericInput(''),
-              weight:
-                typeof matching.payload?.weight === 'number'
-                  ? asNumericInput(matching.payload.weight.toString())
-                  : asNumericInput(''),
-              duration:
-                typeof matching.payload?.duration === 'number'
-                  ? asNumericInput(
-                      formatTrimmedNumber(
-                        secondsToMinutes(matching.payload.duration),
-                        2,
-                      ),
-                    )
-                  : asNumericInput(''),
-              distance:
-                typeof matching.payload?.distance === 'number'
-                  ? asNumericInput(matching.payload.distance.toString())
-                  : asNumericInput(''),
-            },
+            fields: loggingFieldsFromEvent(matching),
           });
         } else {
           dispatch({ type: 'log/fields', fields: { ...initialFields } });
         }
         pushScreen(asScreenKey('log'));
       },
-      logSet: async (payload: {
-        exercise: ExerciseName;
-        reps?: number;
-        weight?: number;
-        duration?: number;
-        distance?: number;
-        pr?: boolean;
-        pr_ts?: number;
-      }) => {
+      logSet: async (payload: SetPayload) => {
         const eventTs = buildLogTimestamp(state.logging.logDate);
         const eventId = asEventId(
           `evt-${Date.now()}-${Math.round(Math.random() * 1e6)}`,
         );
+        const normalizedPayload = enrichSetPayloadWithCatalog(
+          payload,
+          state.catalog.entries,
+        );
         if (__DEV__) {
-          console.log('Logging set', payload, eventTs);
+          console.log('Logging set', normalizedPayload, eventTs);
         }
         const baseEvent: WorkoutEvent = {
           tracker_id: asTrackerId('workout_v1'),
           event_id: eventId,
           ts: eventTs,
-          payload,
+          payload: normalizedPayload,
           meta: {
             source: asJsonString('manual'),
-            ...(typeof payload.duration === 'number'
+            ...(typeof normalizedPayload.duration === 'number'
               ? { duration_unit: asJsonString('s') }
               : {}),
           },
@@ -804,19 +745,22 @@ const AppInner = () => {
         const relevantEvents = state.events.filter(
           e =>
             asExerciseName(String(e.payload?.exercise ?? '')) ===
-            payload.exercise,
+            normalizedPayload.exercise,
         );
 
         const eventWithPr = createdEvent
           ? {
               ...createdEvent,
-              payload: buildPrPayload(
-                payload,
-                createdEvent.ts,
-                relevantEvents,
-                state.catalog.entries,
-                undefined, // existingEvent is undefined for new logs
-              ),
+              payload: {
+                ...normalizedPayload,
+                ...buildPrPayload(
+                  normalizedPayload,
+                  createdEvent.ts,
+                  relevantEvents,
+                  state.catalog.entries,
+                  undefined, // existingEvent is undefined for new logs
+                ),
+              },
             }
           : null;
 
@@ -841,33 +785,35 @@ const AppInner = () => {
       },
       updateSet: async (
         eventId: EventId,
-        payload: {
-          exercise: ExerciseName;
-          reps?: number;
-          weight?: number;
-          duration?: number;
-          distance?: number;
-        },
+        payload: SetPayload,
       ) => {
         const existing = state.events.find(event => event.event_id === eventId);
         if (!existing) return;
+        const normalizedPayload = enrichSetPayloadWithCatalog(
+          payload,
+          state.catalog.entries,
+        );
         // OPTIMIZATION: Filter events to only relevant exercise
         const relevantEvents = state.events.filter(
           e =>
             asExerciseName(String(e.payload?.exercise ?? '')) ===
-            payload.exercise,
+            normalizedPayload.exercise,
         );
 
-        const nextState = await updateLoggedSet(
-          { events: state.events },
-          eventId,
-          buildPrPayload(
-            payload,
+        const payloadWithPr = {
+          ...normalizedPayload,
+          ...buildPrPayload(
+            normalizedPayload,
             existing.ts,
             relevantEvents,
             state.catalog.entries,
             existing,
           ),
+        };
+        const nextState = await updateLoggedSet(
+          { events: state.events },
+          eventId,
+          payloadWithPr,
         );
         const updated =
           nextState.events.find(event => event.event_id === eventId) ?? null;
@@ -1047,7 +993,6 @@ const AppInner = () => {
       state.events,
       state.logging.logDate,
       state.logging.tab,
-      state.suggestions.planner,
       navigationRef,
     ],
   );
@@ -1130,9 +1075,11 @@ const AppInner = () => {
 
 const App = () => (
   <GestureHandlerRootView style={{ flex: 1 }}>
-    <SafeAreaProvider>
-      <AppInner />
-    </SafeAreaProvider>
+    <BottomSheetModalProvider>
+      <SafeAreaProvider>
+        <AppInner />
+      </SafeAreaProvider>
+    </BottomSheetModalProvider>
   </GestureHandlerRootView>
 );
 
@@ -1167,6 +1114,21 @@ const toRgba = (hex: string, alpha: number) => {
   return `rgba(${r}, ${g}, ${b}, ${normalized})`;
 };
 
+const enrichSetPayloadWithCatalog = (
+  payload: SetPayload,
+  catalog: ExerciseCatalogEntry[],
+): SetPayload => {
+  const entry = catalog.find(item => item.display_name === payload.exercise);
+  if (!entry) {
+    return payload;
+  }
+  return {
+    ...payload,
+    exercise_slug: payload.exercise_slug ?? entry.slug,
+    modality: payload.modality ?? entry.modality,
+  };
+};
+
 const buildLogTimestamp = (date: Date, now = new Date()) => {
   const combined = new Date(date);
   combined.setHours(
@@ -1176,6 +1138,66 @@ const buildLogTimestamp = (date: Date, now = new Date()) => {
     now.getMilliseconds(),
   );
   return combined.getTime();
+};
+
+const loggingFieldsFromEvent = (event: WorkoutEvent) => ({
+  reps:
+    typeof event.payload?.reps === 'number'
+      ? asNumericInput(event.payload.reps.toString())
+      : asNumericInput(''),
+  weight:
+    typeof event.payload?.weight === 'number'
+      ? asNumericInput(event.payload.weight.toString())
+      : asNumericInput(''),
+  duration:
+    typeof event.payload?.duration === 'number'
+      ? asNumericInput(
+          formatTrimmedNumber(secondsToMinutes(event.payload.duration), 2),
+        )
+      : asNumericInput(''),
+  distance:
+    typeof event.payload?.distance === 'number'
+      ? asNumericInput(event.payload.distance.toString())
+      : asNumericInput(''),
+});
+
+const pickPrefillEventForExerciseDate = (
+  events: WorkoutEvent[],
+  exerciseName: ExerciseName,
+  date: Date,
+): WorkoutEvent | undefined => {
+  const targetDay = roundToLocalDay(date.getTime());
+  const exerciseEvents = events.filter(
+    event =>
+      asExerciseName(String(event.payload?.exercise ?? '')) === exerciseName,
+  );
+  if (exerciseEvents.length === 0) {
+    return undefined;
+  }
+
+  const sameDayEvents = exerciseEvents
+    .filter(event => roundToLocalDay(event.ts) === targetDay)
+    .sort((a, b) => b.ts - a.ts);
+  if (sameDayEvents.length > 0) {
+    return sameDayEvents[0];
+  }
+
+  const dayBuckets = Array.from(
+    new Set(
+      exerciseEvents
+        .map(event => roundToLocalDay(event.ts))
+        .filter(bucket => bucket < targetDay),
+    ),
+  ).sort((a, b) => b - a);
+  if (dayBuckets.length === 0) {
+    return exerciseEvents.sort((a, b) => b.ts - a.ts)[0];
+  }
+
+  const previousDay = dayBuckets[0];
+  const previousDayEvents = exerciseEvents
+    .filter(event => roundToLocalDay(event.ts) === previousDay)
+    .sort((a, b) => a.ts - b.ts);
+  return previousDayEvents[0];
 };
 
 export default App;

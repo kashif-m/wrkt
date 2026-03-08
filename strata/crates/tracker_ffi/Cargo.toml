@@ -1,11 +1,17 @@
 [package]
 name = "tracker_ffi"
-version = "0.1.0"
-edition = "2021"
-publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+readme.workspace = true
+description.workspace = true
 
 [dependencies]
-tracker_ffi_core = { path = "../tracker_ffi_core" }
+tracker_ffi_core.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true
 
 [lib]
 crate-type = ["rlib", "staticlib", "cdylib"]

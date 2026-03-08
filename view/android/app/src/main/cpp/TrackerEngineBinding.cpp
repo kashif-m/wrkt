@@ -18,12 +18,16 @@ struct FfiResult {
 };
 
 FfiResult strata_compile_tracker(const char* dsl);
+FfiResult strata_compile_workout_tracker(void);
 FfiResult strata_validate_event(const char* dsl, const char* event_json);
+FfiResult strata_validate_workout_event(const char* event_json);
 FfiResult strata_compute(const char* dsl, const char* events_json, const char* query_json);
+FfiResult strata_compute_workout_tracker(const char* events_json, const char* query_json);
 FfiResult strata_simulate(const char* dsl, const char* base_events_json,
                           const char* hypotheticals_json, const char* query_json);
-FfiResult strata_generate_suggestions(const char* dsl, const char* events_json,
-                                      const char* planner_kind);
+FfiResult strata_simulate_workout_tracker(const char* base_events_json,
+                                          const char* hypotheticals_json,
+                                          const char* query_json);
 FfiResult strata_exercise_catalog(void);
 FfiResult strata_validate_exercise(const char* entry_json);
 FfiResult strata_import_fitnotes(const char* path);
@@ -56,6 +60,7 @@ FfiResult strata_compute_home_days_analytics(const char* events_json, int32_t of
                                              const char* catalog_json, const char* query_json);
 FfiResult strata_compute_calendar_month_analytics(const char* events_json, int32_t offset_minutes,
                                                   const char* catalog_json, const char* query_json);
+FfiResult strata_workout_analytics_capabilities(void);
 FfiResult strata_export_generic_sqlite(const char* payload_json, const char* output_path);
 FfiResult strata_import_generic_sqlite(const char* input_path);
 }
@@ -105,6 +110,11 @@ void installTrackerEngineBinding(Runtime& rt) {
     return makeStringResult(runtime, callStrata(ffi));
   });
 
+  makeFunction("compileWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+    auto ffi = strata_compile_workout_tracker();
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
   makeFunction("validateEvent", [](Runtime& runtime, const Value* args, size_t count) -> Value {
     if (count < 2 || !args[0].isString() || !args[1].isString()) {
       throw std::invalid_argument("validateEvent requires dsl + event JSON");
@@ -112,6 +122,15 @@ void installTrackerEngineBinding(Runtime& rt) {
     auto dsl = args[0].asString(runtime).utf8(runtime);
     auto event_json = args[1].asString(runtime).utf8(runtime);
     auto ffi = strata_validate_event(dsl.c_str(), event_json.c_str());
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
+  makeFunction("validateWorkoutEvent", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+    if (count < 1 || !args[0].isString()) {
+      throw std::invalid_argument("validateWorkoutEvent requires event JSON");
+    }
+    auto event_json = args[0].asString(runtime).utf8(runtime);
+    auto ffi = strata_validate_workout_event(event_json.c_str());
     return makeStringResult(runtime, callStrata(ffi));
   });
 
@@ -124,6 +143,17 @@ void installTrackerEngineBinding(Runtime& rt) {
     std::string query_json =
         count >= 3 && args[2].isString() ? args[2].asString(runtime).utf8(runtime) : "{}";
     auto ffi = strata_compute(dsl.c_str(), events_json.c_str(), query_json.c_str());
+    return makeStringResult(runtime, callStrata(ffi));
+  });
+
+  makeFunction("computeWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+    if (count < 1) {
+      throw std::invalid_argument("computeWorkoutTracker requires events JSON");
+    }
+    auto events_json = args[0].asString(runtime).utf8(runtime);
+    std::string query_json =
+        count >= 2 && args[1].isString() ? args[1].asString(runtime).utf8(runtime) : "{}";
+    auto ffi = strata_compute_workout_tracker(events_json.c_str(), query_json.c_str());
     return makeStringResult(runtime, callStrata(ffi));
   });
 
@@ -141,14 +171,16 @@ void installTrackerEngineBinding(Runtime& rt) {
     return makeStringResult(runtime, callStrata(ffi));
   });
 
-  makeFunction("suggest", [](Runtime& runtime, const Value* args, size_t count) -> Value {
-    if (count < 3) {
-      throw std::invalid_argument("suggest requires dsl + events JSON + planner kind");
+  makeFunction("simulateWorkoutTracker", [](Runtime& runtime, const Value* args, size_t count) -> Value {
+    if (count < 2) {
+      throw std::invalid_argument("simulateWorkoutTracker requires base events + hypotheticals JSON");
     }
-    auto dsl = args[0].asString(runtime).utf8(runtime);
-    auto events_json = args[1].asString(runtime).utf8(runtime);
-    auto planner = args[2].asString(runtime).utf8(runtime);
-    auto ffi = strata_generate_suggestions(dsl.c_str(), events_json.c_str(), planner.c_str());
+    auto base_json = args[0].asString(runtime).utf8(runtime);
+    auto hypo_json = args[1].asString(runtime).utf8(runtime);
+    std::string query_json =
+        count >= 3 && args[2].isString() ? args[2].asString(runtime).utf8(runtime) : "{}";
+    auto ffi =
+        strata_simulate_workout_tracker(base_json.c_str(), hypo_json.c_str(), query_json.c_str());
     return makeStringResult(runtime, callStrata(ffi));
   });
 
@@ -348,6 +380,12 @@ void installTrackerEngineBinding(Runtime& rt) {
                  auto query_json = args[3].asString(runtime).utf8(runtime);
                  auto ffi = strata_compute_calendar_month_analytics(
                      events_json.c_str(), offset, catalog_json.c_str(), query_json.c_str());
+                 return makeStringResult(runtime, callStrata(ffi));
+               });
+
+  makeFunction("getWorkoutAnalyticsCapabilities",
+               [](Runtime& runtime, const Value* args, size_t count) -> Value {
+                 auto ffi = strata_workout_analytics_capabilities();
                  return makeStringResult(runtime, callStrata(ffi));
                });
 

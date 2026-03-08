@@ -9,8 +9,7 @@ import {
   listCustomExercises,
   loadFavoriteExercises,
 } from '../exercise/catalogStorage';
-import { suggestNext, WorkoutState, PlanSuggestion } from '../workoutFlows';
-import { PlannerKind } from '../domain/types';
+import { WorkoutState } from '../workoutFlows';
 
 export type DataDispatch = {
   setEvents: (events: WorkoutState['events']) => void;
@@ -21,14 +20,10 @@ export type DataDispatch = {
   setFavorites: (
     favorites: Awaited<ReturnType<typeof loadFavoriteExercises>>,
   ) => void;
-  setSuggestions: (items: PlanSuggestion[]) => void;
-  setSuggestionsLoading: (loading: boolean) => void;
 };
 
 export const useWorkoutData = (
   dispatch: DataDispatch,
-  events: WorkoutState['events'],
-  planner: PlannerKind,
 ) => {
   const refreshFromStorage = useCallback(async () => {
     const loadedEvents = await fetchEvents();
@@ -60,31 +55,6 @@ export const useWorkoutData = (
       })
       .catch(console.warn);
   }, [refreshCatalog, refreshFromStorage]);
-
-  // Refresh suggestions when events or planner changes
-  useEffect(() => {
-    let cancelled = false;
-    dispatch.setSuggestionsLoading(true);
-    suggestNext({ events } as WorkoutState, planner)
-      .then((items: PlanSuggestion[]) => {
-        if (!cancelled) {
-          dispatch.setSuggestions(items);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          dispatch.setSuggestions([]);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          dispatch.setSuggestionsLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [events, planner, dispatch]);
 
   return { refreshAll, refreshFromStorage, refreshCatalog };
 };

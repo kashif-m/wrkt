@@ -7,12 +7,15 @@ import {
   TouchableOpacity,
   ListRenderItemInfo,
   ScrollView,
-  KeyboardAvoidingView,
-  Platform,
+  Keyboard,
 } from 'react-native';
 import PagerView from 'react-native-pager-view';
 import Animated from 'react-native-reanimated';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import {
+  useFocusEffect,
+  useIsFocused,
+  useNavigation,
+} from '@react-navigation/native';
 import {
   createNativeStackNavigator,
   NativeStackNavigationProp,
@@ -64,12 +67,18 @@ import PagerTabsRail from '../ui/pager/PagerTabsRail';
 import { usePagerTabsController } from '../ui/pager/usePagerTabsController';
 import { useMeasuredCardHeight } from '../ui/lists/useMeasuredCardHeight';
 import {
+  KEYBOARD_GAP,
+  resolveFooterLayout,
+  useKeyboardViewportInset,
+} from '../ui/useKeyboardViewportInset';
+import {
   AppDispatch,
   useAppActions,
   useAppDispatch,
   useAppState,
 } from '../state/appContext';
 import { RootState } from '../state/appState';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type BrowserStackParamList = {
   list: undefined;
@@ -155,6 +164,7 @@ const openExerciseContext = (
 };
 
 const ExerciseBrowserListScreen = () => {
+  const insets = useSafeAreaInsets();
   const state = useAppState();
   const dispatch = useAppDispatch();
   const actions = useAppActions();
@@ -288,6 +298,22 @@ const ExerciseBrowserListScreen = () => {
     if (!selectedGroup) return asLabelText(tabLabel);
     return asLabelText(`${tabLabel} • ${formatLabel(selectedGroup)}`);
   }, [activeTab, selectedGroup]);
+  const keyboardGap = KEYBOARD_GAP;
+  const { keyboardOverlap } = useKeyboardViewportInset({
+    safeAreaBottom: insets.bottom,
+    keyboardGap,
+  });
+  const listFooterVisible = !searchExpanded;
+  const listFooterLayout = resolveFooterLayout({
+    insetsBottom: insets.bottom,
+    keyboardOverlap,
+    footerHeight: 52,
+    keyboardGap,
+    visible: listFooterVisible,
+  });
+  const listFooterBottomPadding = listFooterLayout.footerBottomPadding;
+  const listFooterLift = listFooterLayout.footerLift;
+  const listViewportBottomInset = listFooterLayout.viewportBottomInset;
   const searchEstimatedHeight = useMemo(
     () =>
       estimateExerciseListHeight({
@@ -298,6 +324,7 @@ const ExerciseBrowserListScreen = () => {
   );
   const searchCardMeasure = useMeasuredCardHeight({
     estimatedContentHeight: searchEstimatedHeight,
+    viewportBottomInset: listViewportBottomInset,
     collapsed: !searchExpanded || query.trim().length === 0,
     animated: true,
     animationDurationMs: 200,
@@ -307,12 +334,14 @@ const ExerciseBrowserListScreen = () => {
       rowCount: allVisibleExercises.length,
       groupCount: allFilteredGroups.length,
     }),
+    viewportBottomInset: listViewportBottomInset,
   });
   const favoritesCardMeasure = useMeasuredCardHeight({
     estimatedContentHeight: estimateExerciseListHeight({
       rowCount: favoriteVisibleExercises.length,
       groupCount: favoriteFilteredGroups.length,
     }),
+    viewportBottomInset: listViewportBottomInset,
   });
 
   useEffect(() => {
@@ -476,10 +505,7 @@ const ExerciseBrowserListScreen = () => {
         onFormNavigate={() => navigation.navigate('form')}
       />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={{ flex: 1 }}>
         {searchExpanded && (
           <View style={searchContainer()}>
             <View
@@ -519,7 +545,7 @@ const ExerciseBrowserListScreen = () => {
                 style={{
                   paddingHorizontal: spacing(2),
                   paddingTop: spacing(1.5),
-                  paddingBottom: spacing(8),
+                  paddingBottom: spacing(2),
                 }}
               >
                 <Text style={{ color: palette.mutedText, fontSize: 12 }}>
@@ -543,8 +569,7 @@ const ExerciseBrowserListScreen = () => {
                     keyExtractor={item => item.slug}
                     renderItem={renderExerciseRow}
                     keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="interactive"
-                    automaticallyAdjustKeyboardInsets
+                    keyboardDismissMode="none"
                     style={{ flex: 1 }}
                     scrollEnabled={searchCardMeasure.scrollEnabled}
                     contentContainerStyle={[
@@ -637,8 +662,7 @@ const ExerciseBrowserListScreen = () => {
                     ]}
                     onContentSizeChange={allCardMeasure.onContentSizeChange}
                     keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="interactive"
-                    automaticallyAdjustKeyboardInsets
+                    keyboardDismissMode="none"
                     ListHeaderComponent={
                       <ExerciseListHeader
                         filteredGroups={allFilteredGroups}
@@ -687,8 +711,7 @@ const ExerciseBrowserListScreen = () => {
                       favoritesCardMeasure.onContentSizeChange
                     }
                     keyboardShouldPersistTaps="handled"
-                    keyboardDismissMode="interactive"
-                    automaticallyAdjustKeyboardInsets
+                    keyboardDismissMode="none"
                     ListHeaderComponent={
                       <ExerciseListHeader
                         filteredGroups={favoriteFilteredGroups}
@@ -715,7 +738,19 @@ const ExerciseBrowserListScreen = () => {
           </>
         )}
         {!searchExpanded && (
-          <View style={{ padding: spacing(2) }}>
+          <View
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              paddingHorizontal: spacing(2),
+              paddingBottom: listFooterBottomPadding,
+              paddingTop: 0,
+              backgroundColor: palette.background,
+              transform: [{ translateY: -listFooterLift }],
+            }}
+          >
             <TouchableOpacity
               onPress={() => {
                 dispatch({ type: 'browser/form', entry: null });
@@ -746,7 +781,7 @@ const ExerciseBrowserListScreen = () => {
             </TouchableOpacity>
           </View>
         )}
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 };
@@ -756,17 +791,21 @@ const ExerciseContextSheet = ({
 }: {
   onFormNavigate: () => void;
 }) => {
+  const isFocused = useIsFocused();
   const state = useAppState();
   const dispatch = useAppDispatch();
   const actions = useAppActions();
   const favoriteSlugs = state.catalog.favorites;
   const contextEntry = state.browser.contextEntry;
+  if (!isFocused) return null;
   if (!contextEntry) return null;
   const isArchived = contextEntry.archived;
   const isFavorite = favoriteSlugs.includes(contextEntry.entry.slug);
 
-  const closeContext = () =>
+  const closeContext = () => {
+    Keyboard.dismiss();
     dispatch({ type: 'browser/context', context: null });
+  };
 
   const handleFavoriteToggle = async () => {
     await actions.toggleFavorite(contextEntry.entry.slug, !isFavorite);
@@ -902,7 +941,7 @@ const ExerciseContextSheet = ({
                   action.tone === 'danger' ? { color: palette.danger } : null,
                   action.tone === 'muted'
                     ? {
-                        color: palette.mutedText,
+                        color: palette.primary,
                         textAlign: 'center',
                       }
                     : null,
@@ -920,6 +959,7 @@ const ExerciseContextSheet = ({
 const ExerciseBrowserManageScreen = () => {
   const state = useAppState();
   const dispatch = useAppDispatch();
+  const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<BrowserStackParamList>>();
   const [manageEntries, setManageEntries] = useState<{
@@ -959,6 +999,22 @@ const ExerciseBrowserManageScreen = () => {
     refreshManageEntriesSafe();
   }, [refreshManageEntriesSafe, state.catalogRevision]);
 
+  const keyboardGap = KEYBOARD_GAP;
+  const { keyboardOverlap } = useKeyboardViewportInset({
+    safeAreaBottom: insets.bottom,
+    keyboardGap,
+  });
+  const footerLayout = resolveFooterLayout({
+    insetsBottom: insets.bottom,
+    keyboardOverlap,
+    footerHeight: 52,
+    keyboardGap,
+  });
+  const footerBottomPadding = footerLayout.footerBottomPadding;
+  const footerLift = footerLayout.footerLift;
+  const keyboardBackdropHeight = footerLayout.keyboardBackdropHeight;
+  const viewportBottomInset = footerLayout.viewportBottomInset;
+
   const handleAdd = () => {
     dispatch({ type: 'browser/form', entry: null });
     dispatch({ type: 'browser/search', expanded: false });
@@ -979,14 +1035,12 @@ const ExerciseBrowserManageScreen = () => {
       <ExerciseContextSheet
         onFormNavigate={() => navigation.navigate('form')}
       />
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={{ flex: 1 }}>
         <ManageCustomExercises
           entries={manageEntries.active}
           archivedEntries={manageEntries.archived}
           searchQuery={state.browser.query}
+          viewportBottomInset={viewportBottomInset}
           onSearch={value =>
             dispatch({ type: 'browser/query', query: asSearchQuery(value) })
           }
@@ -997,7 +1051,31 @@ const ExerciseBrowserManageScreen = () => {
             });
           }}
         />
-        <View style={{ padding: spacing(2) }}>
+        {keyboardBackdropHeight > 0 ? (
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: keyboardBackdropHeight,
+              backgroundColor: palette.background,
+            }}
+          />
+        ) : null}
+        <View
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: palette.background,
+            paddingHorizontal: spacing(2),
+            paddingBottom: footerBottomPadding,
+            transform: [{ translateY: -footerLift }],
+          }}
+        >
           <TouchableOpacity
             onPress={handleAdd}
             style={[
@@ -1018,7 +1096,7 @@ const ExerciseBrowserManageScreen = () => {
             </Text>
           </TouchableOpacity>
         </View>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 };
@@ -1270,8 +1348,13 @@ const manageListSurface = () => ({
   borderRadius: radius.card,
   backgroundColor: palette.surface,
   ...cardShadowStyle,
+  borderWidth: 1,
+  borderColor: addAlpha(palette.border, 0.28),
+  shadowOpacity: 0.16,
+  shadowRadius: 14,
+  shadowOffset: { width: 0, height: 6 },
+  elevation: 6,
   paddingHorizontal: spacing(0.75),
-  paddingBottom: spacing(0.5),
 });
 
 const listDivider = () => ({
@@ -1617,12 +1700,14 @@ const ManageCustomExercises = ({
   entries,
   archivedEntries,
   searchQuery,
+  viewportBottomInset,
   onSearch,
   onSelectEntry,
 }: {
   entries: ManageCatalogEntry[];
   archivedEntries: ManageCatalogEntry[];
   searchQuery: SearchQuery;
+  viewportBottomInset: number;
   onSearch: (value: string) => void;
   onSelectEntry: (
     entry: ManageCatalogEntry,
@@ -1685,16 +1770,26 @@ const ManageCustomExercises = ({
     [archivedEntries, query],
   );
 
-  const activeListMeasure = useMeasuredCardHeight({
-    estimatedContentHeight: estimateManageListHeight(activeFiltered.length),
-  });
-  const archivedListMeasure = useMeasuredCardHeight({
-    estimatedContentHeight: estimateManageListHeight(archivedFiltered.length),
-  });
+  const [listViewportHeight, setListViewportHeight] = useState(0);
+  const handleListViewportLayout = useCallback(
+    (event: { nativeEvent: { layout: { height: number } } }) => {
+      const nextHeight = event.nativeEvent.layout.height;
+      if (nextHeight > 0) {
+        setListViewportHeight(prev =>
+          Math.abs(prev - nextHeight) > 1 ? nextHeight : prev,
+        );
+      }
+    },
+    [],
+  );
   const listDividerComponent = useCallback(
     () => <View style={listDivider()} />,
     [],
   );
+  const availableListHeight =
+    listViewportHeight > 0
+      ? Math.max(0, listViewportHeight - viewportBottomInset)
+      : 0;
 
   const renderManageRow = useCallback(
     ({ item, archived }: { item: ManageCatalogEntry; archived: boolean }) => {
@@ -1711,13 +1806,14 @@ const ManageCustomExercises = ({
 
       return (
         <TouchableOpacity
-          onPress={() =>
+          onPress={() => {
+            Keyboard.dismiss();
             onSelectEntry(
               item,
               archived,
               archived ? item.archiveSource : undefined,
-            )
-          }
+            );
+          }}
           style={rowStyle()}
         >
           <View style={{ flex: 1, gap: spacing(0.25) }}>
@@ -1749,108 +1845,106 @@ const ManageCustomExercises = ({
         progress={tabController.progress}
         onSelect={key => tabController.onTabPress(key as ManageTab)}
       />
-      <PagerView
-        ref={tabController.pagerRef}
+      <View
         style={{ flex: 1 }}
-        initialPage={tabController.selectedIndex}
-        overdrag={false}
-        onPageSelected={tabController.onPageSelected}
-        onPageScroll={tabController.onPageScroll}
-        onPageScrollStateChanged={tabController.onPageScrollStateChanged}
+        onLayout={handleListViewportLayout}
       >
-        <View
-          key="active"
+        <PagerView
+          ref={tabController.pagerRef}
           style={{ flex: 1 }}
-          onLayout={activeListMeasure.onViewportLayout}
+          initialPage={tabController.selectedIndex}
+          overdrag={false}
+          onPageSelected={tabController.onPageSelected}
+          onPageScroll={tabController.onPageScroll}
+          onPageScrollStateChanged={tabController.onPageScrollStateChanged}
         >
-          <View style={[manageListSurface(), activeListMeasure.heightStyle]}>
-            <FlatList
-              data={activeFiltered}
-              keyExtractor={item => `active-${item.slug}`}
-              renderItem={(info: ListRenderItemInfo<ManageCatalogEntry>) =>
-                renderManageRow({ item: info.item, archived: false })
-              }
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              automaticallyAdjustKeyboardInsets
-              scrollEnabled={activeListMeasure.scrollEnabled}
-              contentContainerStyle={[
-                {
-                  paddingHorizontal: spacing(1.25),
-                  paddingTop: spacing(0.75),
-                  paddingBottom: spacing(2),
-                },
-                !activeListMeasure.scrollEnabled ? { flexGrow: 0 } : null,
-              ]}
-              onContentSizeChange={activeListMeasure.onContentSizeChange}
-              ItemSeparatorComponent={listDividerComponent}
-              ListEmptyComponent={
-                <Text
-                  style={{
-                    color: palette.mutedText,
-                    fontSize: 12,
-                    paddingHorizontal: spacing(0.5),
-                  }}
-                >
-                  {query
-                    ? 'No active exercises match your search.'
-                    : 'No active exercises right now.'}
-                </Text>
-              }
-              initialNumToRender={20}
-              maxToRenderPerBatch={24}
-              windowSize={8}
-              removeClippedSubviews
-            />
+          <View key="active" style={{ flex: 1 }}>
+            <View style={manageListSurface()}>
+              <FlatList
+                data={activeFiltered}
+                keyExtractor={item => `active-${item.slug}`}
+                renderItem={(info: ListRenderItemInfo<ManageCatalogEntry>) =>
+                  renderManageRow({ item: info.item, archived: false })
+                }
+                style={{
+                  maxHeight: availableListHeight,
+                  flexGrow: 0,
+                }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="none"
+                scrollEnabled
+                contentContainerStyle={[
+                  {
+                    paddingHorizontal: spacing(1.25),
+                    paddingTop: spacing(0.75),
+                    paddingBottom: spacing(2),
+                  },
+                ]}
+                ItemSeparatorComponent={listDividerComponent}
+                ListEmptyComponent={
+                  <Text
+                    style={{
+                      color: palette.mutedText,
+                      fontSize: 12,
+                      paddingHorizontal: spacing(0.5),
+                    }}
+                  >
+                    {query
+                      ? 'No active exercises match your search.'
+                      : 'No active exercises right now.'}
+                  </Text>
+                }
+                initialNumToRender={20}
+                maxToRenderPerBatch={24}
+                windowSize={8}
+                removeClippedSubviews
+              />
+            </View>
           </View>
-        </View>
-        <View
-          key="archived"
-          style={{ flex: 1 }}
-          onLayout={archivedListMeasure.onViewportLayout}
-        >
-          <View style={[manageListSurface(), archivedListMeasure.heightStyle]}>
-            <FlatList
-              data={archivedFiltered}
-              keyExtractor={item => `archived-${item.slug}`}
-              renderItem={(info: ListRenderItemInfo<ManageCatalogEntry>) =>
-                renderManageRow({ item: info.item, archived: true })
-              }
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="interactive"
-              automaticallyAdjustKeyboardInsets
-              scrollEnabled={archivedListMeasure.scrollEnabled}
-              contentContainerStyle={[
-                {
-                  paddingHorizontal: spacing(1.25),
-                  paddingTop: spacing(0.75),
-                  paddingBottom: spacing(2),
-                },
-                !archivedListMeasure.scrollEnabled ? { flexGrow: 0 } : null,
-              ]}
-              onContentSizeChange={archivedListMeasure.onContentSizeChange}
-              ItemSeparatorComponent={listDividerComponent}
-              ListEmptyComponent={
-                <Text
-                  style={{
-                    color: palette.mutedText,
-                    fontSize: 12,
-                    paddingHorizontal: spacing(0.5),
-                  }}
-                >
-                  {query
-                    ? 'No archived exercises match your search.'
-                    : 'Archive exercises to manage them here.'}
-                </Text>
-              }
-              initialNumToRender={20}
-              maxToRenderPerBatch={24}
-              windowSize={8}
-              removeClippedSubviews
-            />
+          <View key="archived" style={{ flex: 1 }}>
+            <View style={manageListSurface()}>
+              <FlatList
+                data={archivedFiltered}
+                keyExtractor={item => `archived-${item.slug}`}
+                renderItem={(info: ListRenderItemInfo<ManageCatalogEntry>) =>
+                  renderManageRow({ item: info.item, archived: true })
+                }
+                style={{
+                  maxHeight: availableListHeight,
+                  flexGrow: 0,
+                }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="none"
+                scrollEnabled
+                contentContainerStyle={[
+                  {
+                    paddingHorizontal: spacing(1.25),
+                    paddingVertical: spacing(0.75),
+                  },
+                ]}
+                ItemSeparatorComponent={listDividerComponent}
+                ListEmptyComponent={
+                  <Text
+                    style={{
+                      color: palette.mutedText,
+                      fontSize: 12,
+                      paddingHorizontal: spacing(0.5),
+                    }}
+                  >
+                    {query
+                      ? 'No archived exercises match your search.'
+                      : 'Archive exercises to manage them here.'}
+                  </Text>
+                }
+                initialNumToRender={20}
+                maxToRenderPerBatch={24}
+                windowSize={8}
+                removeClippedSubviews
+              />
+            </View>
           </View>
-        </View>
-      </PagerView>
+        </PagerView>
+      </View>
     </View>
   );
 };
