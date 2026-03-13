@@ -28,7 +28,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { WorkoutEvent } from '../workoutFlows';
-import { Card, PrimaryButton, BodyText } from '../ui/components';
+import { Card, PrimaryButton, BodyText, EmptyState } from '../ui/components';
 import { cardShadowStyle, palette, radius, spacing } from '../ui/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { addAlpha } from '../ui/color';
@@ -37,6 +37,7 @@ import { roundToLocalDay } from '../timePolicy';
 import { getMuscleColor } from '../ui/muscleColors';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
+import DumbbellIcon from '../assets/dumbbell.svg';
 import {
   useAppActions,
   useAppDispatch,
@@ -55,6 +56,7 @@ import {
   asNumericInput,
   unwrapLoggingMode,
 } from '../domain/types';
+import { strings } from '../i18n/strings';
 import { AnalyticsRangeSelector } from '../components/analytics/AnalyticsRangeSelector';
 import { AnalyticsInlineSelect } from '../components/analytics/AnalyticsInlineSelect';
 import { analyticsRangeOptions } from '../components/analytics/analyticsRanges';
@@ -1511,10 +1513,10 @@ const buildPayloadFromFields = (
   fieldsState: typeof INITIAL_FIELDS,
   exerciseName: ExerciseName,
 ) => {
-  const reps = parseNumericField(fieldsState.reps);
-  const weight = parseNumericField(fieldsState.weight);
-  const duration = parseNumericField(fieldsState.duration);
-  const distance = parseNumericField(fieldsState.distance);
+  const reps = parseRepsField(fieldsState.reps);
+  const weight = parseWeightField(fieldsState.weight);
+  const duration = parseDurationField(fieldsState.duration);
+  const distance = parseDistanceField(fieldsState.distance);
   const payload: LoggedSetPayload = { exercise: exerciseName };
   if (typeof reps === 'number') payload.reps = reps;
   if (typeof weight === 'number') payload.weight = weight;
@@ -1528,7 +1530,38 @@ const parseNumericField = (value: NumericInput): number | undefined => {
   const trimmed = value.trim();
   if (!trimmed) return undefined;
   const parsed = Number(trimmed);
-  return Number.isNaN(parsed) ? undefined : parsed;
+  if (Number.isNaN(parsed)) return undefined;
+  if (parsed < 0) return undefined;
+  return parsed;
+};
+
+const parseWeightField = (value: NumericInput): number | undefined => {
+  const parsed = parseNumericField(value);
+  if (parsed === undefined) return undefined;
+  if (parsed > 10000) return undefined;
+  return parsed;
+};
+
+const parseRepsField = (value: NumericInput): number | undefined => {
+  const parsed = parseNumericField(value);
+  if (parsed === undefined) return undefined;
+  if (!Number.isInteger(parsed)) return undefined;
+  if (parsed < 1 || parsed > 5000) return undefined;
+  return parsed;
+};
+
+const parseDurationField = (value: NumericInput): number | undefined => {
+  const parsed = parseNumericField(value);
+  if (parsed === undefined) return undefined;
+  if (parsed > 180) return undefined;
+  return parsed;
+};
+
+const parseDistanceField = (value: NumericInput): number | undefined => {
+  const parsed = parseNumericField(value);
+  if (parsed === undefined) return undefined;
+  if (parsed > 100000) return undefined;
+  return parsed;
 };
 
 export default LoggingScreen;

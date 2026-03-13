@@ -12,21 +12,9 @@ export type ThemeMode =
   | 'sepia_dark';
 export type AccentKey =
   | 'blue'
-  | 'sky'
-  | 'cyan'
-  | 'teal'
   | 'emerald'
-  | 'green'
-  | 'lime'
-  | 'yellow'
   | 'amber'
-  | 'orange'
-  | 'red'
   | 'rose'
-  | 'pink'
-  | 'purple'
-  | 'violet'
-  | 'indigo'
   | 'custom';
 
 type Palette = {
@@ -59,15 +47,15 @@ const modePaletteMap: Record<
     danger: asColorHex('#F87171'),
   },
   light: {
-    background: asColorHex('#F5F8FF'),
+    background: asColorHex('#F8FAFF'),
     surface: asColorHex('#FFFFFF'),
-    mutedSurface: asColorHex('#EAF1FF'),
+    mutedSurface: asColorHex('#EDF2FF'),
     text: asColorHex('#0E1A2B'),
     mutedText: asColorHex('#4A5B78'),
-    border: asColorHex('#D3DDF2'),
-    success: asColorHex('#1F9D68'),
-    warning: asColorHex('#C28100'),
-    danger: asColorHex('#D24949'),
+    border: asColorHex('#D8E0F2'),
+    success: asColorHex('#10B981'),
+    warning: asColorHex('#F59E0B'),
+    danger: asColorHex('#EF4444'),
   },
   midnight_black: {
     background: asColorHex('#05070D'),
@@ -145,65 +133,17 @@ const accentThemeMap: Record<
     primary: asColorHex('#5FA8FF'),
     primaryMuted: asColorHex('#2B66F0'),
   },
-  sky: {
-    primary: asColorHex('#63C5FF'),
-    primaryMuted: asColorHex('#2D8EC7'),
-  },
-  cyan: {
-    primary: asColorHex('#54D2D2'),
-    primaryMuted: asColorHex('#2D8F8F'),
-  },
-  teal: {
-    primary: asColorHex('#5BD6C8'),
-    primaryMuted: asColorHex('#2F9186'),
-  },
   emerald: {
     primary: asColorHex('#46D98A'),
     primaryMuted: asColorHex('#2B8D5D'),
-  },
-  green: {
-    primary: asColorHex('#6FD46A'),
-    primaryMuted: asColorHex('#3F9140'),
-  },
-  lime: {
-    primary: asColorHex('#B2D95B'),
-    primaryMuted: asColorHex('#748C34'),
-  },
-  yellow: {
-    primary: asColorHex('#F4D95B'),
-    primaryMuted: asColorHex('#B79F34'),
   },
   amber: {
     primary: asColorHex('#F4C04A'),
     primaryMuted: asColorHex('#B78329'),
   },
-  orange: {
-    primary: asColorHex('#FFB45F'),
-    primaryMuted: asColorHex('#C8792F'),
-  },
-  red: {
-    primary: asColorHex('#F77A7A'),
-    primaryMuted: asColorHex('#B14A4A'),
-  },
   rose: {
     primary: asColorHex('#FF7FA4'),
     primaryMuted: asColorHex('#B5476D'),
-  },
-  pink: {
-    primary: asColorHex('#F995D0'),
-    primaryMuted: asColorHex('#B35C93'),
-  },
-  purple: {
-    primary: asColorHex('#C78AFF'),
-    primaryMuted: asColorHex('#8051B8'),
-  },
-  violet: {
-    primary: asColorHex('#A68DFF'),
-    primaryMuted: asColorHex('#6A56B8'),
-  },
-  indigo: {
-    primary: asColorHex('#7E9BFF'),
-    primaryMuted: asColorHex('#4A63B8'),
   },
 };
 
@@ -215,22 +155,10 @@ export const accentOptions: ReadonlyArray<{
   key: AccentKey;
   label: string;
 }> = [
-  { key: 'blue', label: 'Blue' },
-  { key: 'sky', label: 'Sky' },
-  { key: 'cyan', label: 'Cyan' },
-  { key: 'teal', label: 'Teal' },
-  { key: 'emerald', label: 'Emerald' },
-  { key: 'green', label: 'Green' },
-  { key: 'lime', label: 'Lime' },
-  { key: 'yellow', label: 'Yellow' },
-  { key: 'amber', label: 'Amber' },
-  { key: 'orange', label: 'Orange' },
-  { key: 'red', label: 'Red' },
-  { key: 'rose', label: 'Rose' },
-  { key: 'pink', label: 'Pink' },
-  { key: 'purple', label: 'Purple' },
-  { key: 'violet', label: 'Violet' },
-  { key: 'indigo', label: 'Indigo' },
+  { key: 'blue', label: 'Ocean' },
+  { key: 'emerald', label: 'Forest' },
+  { key: 'amber', label: 'Gold' },
+  { key: 'rose', label: 'Berry' },
   { key: 'custom', label: 'Custom' },
 ];
 

@@ -13,6 +13,7 @@ import {
   Text,
   TouchableOpacity,
   View,
+  ActivityIndicator,
 } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
@@ -38,6 +39,7 @@ import MoreScreen from './screens/MoreScreen';
 import ImportSummaryScreen from './screens/ImportSummaryScreen';
 import HomeScreen from './screens/HomeScreen';
 import CalendarScreen from './screens/CalendarScreen';
+import ErrorBoundary from './components/ErrorBoundary';
 import {
   WorkoutEvent,
   deleteLoggedSet,
@@ -50,6 +52,7 @@ import {
   loadSettings,
   saveSettings,
   scheduleSave,
+  setStorageErrorCallback,
 } from './state/persistence';
 import {
   estimateOneRm as rustEstimateOneRm,
@@ -448,6 +451,17 @@ const AppInner = () => {
   }, []);
 
   useEffect(() => {
+    // Set up storage error handler
+    setStorageErrorCallback((error) => {
+      dispatch({
+        type: 'log/status',
+        status: {
+          text: asToastText('Failed to save data. Please try again.'),
+          tone: asToastTone('danger'),
+        },
+      });
+    });
+
     init()
       .then(async () => {
         const settings = await loadSettings();
@@ -1015,6 +1029,17 @@ const AppInner = () => {
   const primaryScreenAnimation =
     Platform.OS === 'ios' ? 'slide_from_right' : 'default';
 
+  if (!settingsHydrated) {
+    return (
+      <View style={{ flex: 1, backgroundColor: palette.background, justifyContent: 'center', alignItems: 'center' }}>
+        <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={{ marginTop: spacing(2), color: palette.mutedText, fontSize: 14 }}>
+          Loading your workouts...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <AppProvider state={state} dispatch={dispatch} actions={actions}>
       <SafeAreaView
@@ -1084,7 +1109,9 @@ const App = () => (
   <GestureHandlerRootView style={{ flex: 1 }}>
     <BottomSheetModalProvider>
       <SafeAreaProvider>
-        <AppInner />
+        <ErrorBoundary>
+          <AppInner />
+        </ErrorBoundary>
       </SafeAreaProvider>
     </BottomSheetModalProvider>
   </GestureHandlerRootView>

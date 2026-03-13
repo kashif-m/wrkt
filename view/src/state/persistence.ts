@@ -29,6 +29,13 @@ let needsResave = false;
 // Configurable debounce time (500ms)
 const DEBOUNCE_MS = 500;
 
+// Error callback for storage failures
+let onStorageError: ((error: Error) => void) | null = null;
+
+export const setStorageErrorCallback = (callback: (error: Error) => void) => {
+  onStorageError = callback;
+};
+
 type PersistedSettings = {
   themeAccent: AccentKey;
   themeMode: ThemeMode;
@@ -147,24 +154,42 @@ const persistNow = async () => {
   if (!events) return;
 
   isSaving = true;
-  try {
-    const json = JSON.stringify(events);
-    await AsyncStorage.setItem(STORAGE_KEY, json);
-    if (__DEV__) {
-      console.log('[persistence] Saved events snapshot', events.length);
+  let attempts = 0;
+  const maxAttempts = 3;
+  
+  while (attempts < maxAttempts) {
+    try {
+      const json = JSON.stringify(events);
+      await AsyncStorage.setItem(STORAGE_KEY, json);
+      if (__DEV__) {
+        console.log('[persistence] Saved events snapshot', events.length);
+      }
+      break; // Success, exit retry loop
+    } catch (error) {
+      attempts++;
+      console.error(`[persistence] Write failed (attempt ${attempts}/${maxAttempts})`, error);
+      
+      if (attempts >= maxAttempts) {
+        // All retries failed, notify the app
+        if (onStorageError && error instanceof Error) {
+          onStorageError(error);
+        }
+        break;
+      }
+      
+      // Exponential backoff: 100ms, 200ms, 400ms
+      await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempts - 1)));
     }
-  } catch (error) {
-    console.error('[persistence] Write failed', error);
-  } finally {
-    isSaving = false;
-    const hasQueuedChanges = needsResave;
-    needsResave = false;
-    if (!hasQueuedChanges && pendingState === events) {
-      pendingState = null;
-    }
-    if (pendingState) {
-      void persistNow();
-    }
+  }
+  
+  isSaving = false;
+  const hasQueuedChanges = needsResave;
+  needsResave = false;
+  if (!hasQueuedChanges && pendingState === events) {
+    pendingState = null;
+  }
+  if (pendingState) {
+    void persistNow();
   }
 };
 

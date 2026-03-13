@@ -139,18 +139,30 @@ export const ListRow = ({
       borderColor: palette.border,
     }}
   >
-    <View style={{ flex: 1, marginRight: spacing(1) }}>
-      <Text style={{ color: palette.text, fontWeight: '600' }}>
+    <View style={{ flex: 1, marginRight: spacing(1), minWidth: 0 }}>
+      <Text 
+        style={{ color: palette.text, fontWeight: '600' }} 
+        numberOfLines={2}
+        ellipsizeMode="tail"
+      >
         {unwrapLabelText(title)}
       </Text>
       {subtitle ? (
-        <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+        <Text 
+          style={{ color: palette.mutedText, fontSize: 12 }}
+          numberOfLines={1}
+          ellipsizeMode="tail"
+        >
           {unwrapLabelText(subtitle)}
         </Text>
       ) : null}
     </View>
     {value ? (
-      <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+      <Text 
+        style={{ color: palette.mutedText, fontSize: 12 }}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
         {unwrapLabelText(value)}
       </Text>
     ) : null}
@@ -162,24 +174,39 @@ export const EmptyState = ({
   subtitle,
   actionLabel,
   onPress,
+  icon,
 }: {
   title: LabelText;
   subtitle?: LabelText;
   actionLabel?: LabelText;
   onPress?: () => void;
+  icon?: React.ReactNode;
 }) => (
-  <View style={{ alignItems: 'center', gap: spacing(0.5) }}>
-    <Text style={{ color: palette.text, fontWeight: '700', fontSize: 16 }}>
+  <View style={{ alignItems: 'center', gap: spacing(1), padding: spacing(3) }}>
+    {icon}
+    <Text style={[typography.section, { fontSize: 18 }]}>
       {unwrapLabelText(title)}
     </Text>
     {subtitle ? (
-      <Text style={{ color: palette.mutedText, fontSize: 13 }}>
+      <Text 
+        style={[typography.body, { color: palette.mutedText, textAlign: 'center' }]}
+        numberOfLines={2}
+      >
         {unwrapLabelText(subtitle)}
       </Text>
     ) : null}
     {actionLabel && onPress ? (
-      <TouchableOpacity onPress={onPress} style={{ marginTop: spacing(0.5) }}>
-        <Text style={{ color: palette.primary, fontWeight: '600' }}>
+      <TouchableOpacity 
+        onPress={onPress} 
+        style={{ 
+          marginTop: spacing(1),
+          backgroundColor: palette.primary,
+          paddingVertical: spacing(1),
+          paddingHorizontal: spacing(2),
+          borderRadius: radius.card,
+        }}
+      >
+        <Text style={{ color: getContrastTextColor(palette.primary), fontWeight: '600' }}>
           {unwrapLabelText(actionLabel)}
         </Text>
       </TouchableOpacity>

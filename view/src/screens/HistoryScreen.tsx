@@ -2,7 +2,7 @@ import React, { useMemo } from 'react';
 import { ScrollView, View, Text } from 'react-native';
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, SectionHeading, EmptyState, ListRow } from '../ui/components';
-import { cardShadowStyle, spacing, palette, radius } from '../ui/theme';
+import { cardShadowStyle, spacing, palette, radius, typography } from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { useAppState } from '../state/appContext';
 import {
@@ -54,7 +54,7 @@ const HistoryScreen = () => {
           const summaries = summarizeDay(events);
           return (
             <View key={day} style={{ gap: spacing(0.75) }}>
-              <Text style={{ color: palette.mutedText, fontSize: 12 }}>
+              <Text style={[typography.label, { color: palette.mutedText }]}>
                 {dayLabel}
               </Text>
               <View style={dayList}>

@@ -398,45 +398,53 @@ const ExerciseBrowserListScreen = () => {
     );
   };
 
-  const renderExerciseRow = ({
-    item,
-  }: ListRenderItemInfo<ExerciseCatalogEntry>) => (
-    <TouchableOpacity
-      onPress={() =>
-        actions.openLogForExercise(
-          item.display_name,
-          state.selectedDate,
-          'Track',
-        )
-      }
-      onLongPress={() => {
-        dispatch({ type: 'browser/menu', open: false });
-        dispatch({ type: 'browser/search', expanded: false });
-        openExerciseContext(dispatch, item);
-      }}
-      style={rowStyle()}
-    >
-      <View style={{ flex: 1, gap: spacing(0.25) }}>
-        <Text style={rowText()}>{item.display_name}</Text>
-        <Text style={rowMeta()}>{`${formatLabel(
-          item.primary_muscle_group,
-        )} • ${formatLabel(item.modality)}`}</Text>
-      </View>
-      <Text
-        style={[
-          rowMeta(),
-          {
-            color: favoriteSlugs.includes(item.slug)
-              ? palette.primary
-              : palette.mutedText,
-            fontSize: 16,
-            lineHeight: 18,
-          },
-        ]}
+  const renderExerciseRow = useCallback(
+    ({
+      item,
+    }: ListRenderItemInfo<ExerciseCatalogEntry>) => (
+      <TouchableOpacity
+        onPress={() =>
+          actions.openLogForExercise(
+            item.display_name,
+            state.selectedDate,
+            'Track',
+          )
+        }
+        onLongPress={() => {
+          dispatch({ type: 'browser/menu', open: false });
+          dispatch({ type: 'browser/search', expanded: false });
+          openExerciseContext(dispatch, item);
+        }}
+        style={rowStyle()}
       >
-        {favoriteSlugs.includes(item.slug) ? '★' : ''}
-      </Text>
-    </TouchableOpacity>
+        <View style={{ flex: 1, gap: spacing(0.25) }}>
+          <Text style={rowText()}>{item.display_name}</Text>
+          <Text style={rowMeta()}>{`${formatLabel(
+            item.primary_muscle_group,
+          )} • ${formatLabel(item.modality)}`}</Text>
+        </View>
+        <Text
+          style={[
+            rowMeta(),
+            {
+              color: favoriteSlugs.includes(item.slug)
+                ? palette.primary
+                : palette.mutedText,
+              fontSize: 16,
+              lineHeight: 18,
+            },
+          ]}
+        >
+          {favoriteSlugs.includes(item.slug) ? '★' : ''}
+        </Text>
+      </TouchableOpacity>
+    ),
+    [
+      actions.openLogForExercise,
+      dispatch,
+      favoriteSlugs,
+      state.selectedDate,
+    ],
   );
   const listDividerComponent = useCallback(
     () => <View style={listDivider()} />,
@@ -568,6 +576,11 @@ const ExerciseBrowserListScreen = () => {
                     data={searchExercises}
                     keyExtractor={item => item.slug}
                     renderItem={renderExerciseRow}
+                    getItemLayout={(_data, index) => ({
+                      length: ROW_HEIGHT,
+                      offset: ROW_HEIGHT * index,
+                      index,
+                    })}
                     keyboardShouldPersistTaps="handled"
                     keyboardDismissMode="none"
                     style={{ flex: 1 }}
@@ -1227,6 +1240,12 @@ const formatExerciseNameInput = (value: string) =>
       `${spacer}${char.toUpperCase()}`,
   );
 
+const sanitizeInput = (value: string): string => {
+  // Remove control characters (0x00-0x1F and 0x7F)
+  // Allow only printable ASCII and common Unicode characters
+  return value.replace(/[\x00-\x1F\x7F]/g, '').trim();
+};
+
 const slugify = (value: string) =>
   value
     .toLowerCase()
@@ -1306,6 +1325,8 @@ const searchInput = () => ({
   color: palette.text,
   backgroundColor: palette.mutedSurface,
 });
+
+const ROW_HEIGHT = 56; // Estimated height for exercise row with padding
 
 const rowStyle = () => ({
   paddingHorizontal: spacing(0.5),
@@ -1521,11 +1542,12 @@ const ExerciseForm = ({
         <Text style={formLabel()}>Exercise name</Text>
         <TextInput
           value={displayNameInput}
-          onChangeText={setDisplayNameInput}
+          onChangeText={(text) => setDisplayNameInput(sanitizeInput(text))}
           onEndEditing={() => commitDisplayName(displayNameInput)}
           autoCapitalize="words"
           style={formInput()}
           placeholder="Back Squat"
+          maxLength={100}
         />
 
         <Text style={formLabel()}>Primary muscle group</Text>

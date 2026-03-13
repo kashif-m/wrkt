@@ -9,6 +9,7 @@ import SettingsIcon from '../assets/settings.svg';
 import PlusIcon from '../assets/plus.svg';
 import { getContrastTextColor, palette, spacing, ThemeMode } from '../ui/theme';
 import { LabelText, NavKey, asLabelText, asNavKey } from '../domain/types';
+import { strings } from '../i18n/strings';
 
 type Props = {
   current: NavKey;
@@ -21,22 +22,22 @@ const BottomNav = ({ current, onSelect, themeMode }: Props) => {
   const items: Array<{ key: NavKey; label: LabelText; icon: IconPair }> = [
     {
       key: asNavKey('home'),
-      label: asLabelText('Home'),
+      label: asLabelText(strings.navigation.home),
       icon: { outline: HomeOutlineIcon, filled: HomeFilledIcon },
     },
     {
       key: asNavKey('calendar'),
-      label: asLabelText('Calendar'),
+      label: asLabelText(strings.navigation.calendar),
       icon: { outline: CalendarIcon },
     },
     {
       key: asNavKey('analytics'),
-      label: asLabelText('Trends'),
+      label: asLabelText(strings.navigation.trends),
       icon: { outline: ChartIcon },
     },
     {
       key: asNavKey('more'),
-      label: asLabelText('More'),
+      label: asLabelText(strings.navigation.more),
       icon: { outline: SettingsIcon },
     },
   ];

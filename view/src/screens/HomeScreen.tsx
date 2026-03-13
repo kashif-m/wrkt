@@ -30,11 +30,12 @@ import {
 } from '../domain/analytics';
 import { roundToLocalDay } from '../timePolicy';
 import { palette, radius, spacing } from '../ui/theme';
-import { Card } from '../ui/components';
+import { Card, EmptyState } from '../ui/components';
 import { getMuscleColor } from '../ui/muscleColors';
 import { formatMuscleLabel, formatPercent } from '../ui/formatters';
 import ChevronLeftIcon from '../assets/chevron-left.svg';
 import ChevronRightIcon from '../assets/chevron-right.svg';
+import DumbbellIcon from '../assets/dumbbell.svg';
 import {
   useAppActions,
   useAppDispatch,
@@ -51,6 +52,7 @@ import {
   asScreenKey,
 } from '../domain/types';
 import { toAnalyticsInputEvents } from '../components/analytics/analyticsPayload';
+import { strings } from '../i18n/strings';
 
 type HomeDayModel = {
   date: Date;
@@ -710,7 +712,13 @@ const HomeDayContent = ({
 
         {model.emptyState ? (
           <Card style={styles.emptySetsCard}>
-            <Text style={styles.emptySetsText}>No sets logged</Text>
+            <EmptyState
+              title={strings.empty.noSetsToday}
+              subtitle={strings.empty.noSetsSubtitle}
+              actionLabel={strings.navigation.startWorkout}
+              onPress={() => actions.pushScreen(asScreenKey('browser'))}
+              icon={<DumbbellIcon width={48} height={48} fill={palette.mutedText} />}
+            />
           </Card>
         ) : null}
 
@@ -742,7 +750,11 @@ const HomeDayContent = ({
                         : exercise.sets.slice(0, MAX_SET_PREVIEW);
                       return (
                         <View style={{ flex: 1, gap: spacing(0.5) }}>
-                          <Text style={styles.exerciseTitle}>
+                          <Text 
+                            style={styles.exerciseTitle}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
                             {exercise.name}
                           </Text>
                           <View style={{ gap: spacing(0.25) }}>
