@@ -12,12 +12,12 @@
 export const withTimeout = <T>(
   promise: Promise<T>,
   timeoutMs: number = 10000,
-  errorMessage: string = 'Operation timed out'
+  errorMessage: string = 'Operation timed out',
 ): Promise<T> => {
   return Promise.race([
     promise,
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+      setTimeout(() => reject(new Error(errorMessage)), timeoutMs),
     ),
   ]);
 };
@@ -32,23 +32,23 @@ export const withTimeout = <T>(
 export const withRetry = async <T>(
   fn: () => Promise<T>,
   maxRetries: number = 3,
-  baseDelay: number = 100
+  baseDelay: number = 100,
 ): Promise<T> => {
   let lastError: Error | undefined;
-  
+
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       return await fn();
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
-      
+
       if (attempt < maxRetries) {
         const delay = baseDelay * Math.pow(2, attempt);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   throw lastError;
 };
 
@@ -60,15 +60,15 @@ export const withRetry = async <T>(
  */
 export const debounce = <T extends (...args: unknown[]) => unknown>(
   fn: T,
-  delay: number = 300
+  delay: number = 300,
 ): ((...args: Parameters<T>) => void) => {
   let timeoutId: ReturnType<typeof setTimeout> | null = null;
-  
+
   return (...args: Parameters<T>) => {
     if (timeoutId) {
       clearTimeout(timeoutId);
     }
-    
+
     timeoutId = setTimeout(() => {
       fn(...args);
     }, delay);
@@ -83,10 +83,10 @@ export const debounce = <T extends (...args: unknown[]) => unknown>(
  */
 export const throttle = <T extends (...args: unknown[]) => unknown>(
   fn: T,
-  limit: number = 100
+  limit: number = 100,
 ): ((...args: Parameters<T>) => void) => {
   let inThrottle = false;
-  
+
   return (...args: Parameters<T>) => {
     if (!inThrottle) {
       fn(...args);
@@ -108,7 +108,7 @@ export const throttle = <T extends (...args: unknown[]) => unknown>(
 export const withLoadingState = async <T>(
   operation: () => Promise<T>,
   setLoading: (loading: boolean) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
 ): Promise<T | undefined> => {
   setLoading(true);
   try {

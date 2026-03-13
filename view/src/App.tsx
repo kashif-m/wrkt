@@ -58,7 +58,7 @@ import {
   estimateOneRm as rustEstimateOneRm,
   scoreSet as rustScoreSet,
 } from './TrackerEngine';
-import { applyThemeSettings, palette } from './ui/theme';
+import { applyThemeSettings, palette, spacing } from './ui/theme';
 import { addAlpha } from './ui/color';
 import { getMuscleColor } from './ui/muscleColors';
 import { formatTrimmedNumber, secondsToMinutes } from './ui/formatters';
@@ -452,7 +452,7 @@ const AppInner = () => {
 
   useEffect(() => {
     // Set up storage error handler
-    setStorageErrorCallback((error) => {
+    setStorageErrorCallback(error => {
       dispatch({
         type: 'log/status',
         status: {
@@ -1031,9 +1031,22 @@ const AppInner = () => {
 
   if (!settingsHydrated) {
     return (
-      <View style={{ flex: 1, backgroundColor: palette.background, justifyContent: 'center', alignItems: 'center' }}>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: palette.background,
+          justifyContent: 'center',
+          alignItems: 'center',
+        }}
+      >
         <ActivityIndicator size="large" color={palette.primary} />
-        <Text style={{ marginTop: spacing(2), color: palette.mutedText, fontSize: 14 }}>
+        <Text
+          style={{
+            marginTop: spacing(2),
+            color: palette.mutedText,
+            fontSize: 14,
+          }}
+        >
           Loading your workouts...
         </Text>
       </View>

@@ -399,9 +399,7 @@ const ExerciseBrowserListScreen = () => {
   };
 
   const renderExerciseRow = useCallback(
-    ({
-      item,
-    }: ListRenderItemInfo<ExerciseCatalogEntry>) => (
+    ({ item }: ListRenderItemInfo<ExerciseCatalogEntry>) => (
       <TouchableOpacity
         onPress={() =>
           actions.openLogForExercise(
@@ -439,12 +437,7 @@ const ExerciseBrowserListScreen = () => {
         </Text>
       </TouchableOpacity>
     ),
-    [
-      actions.openLogForExercise,
-      dispatch,
-      favoriteSlugs,
-      state.selectedDate,
-    ],
+    [actions.openLogForExercise, dispatch, favoriteSlugs, state.selectedDate],
   );
   const listDividerComponent = useCallback(
     () => <View style={listDivider()} />,
@@ -1542,7 +1535,7 @@ const ExerciseForm = ({
         <Text style={formLabel()}>Exercise name</Text>
         <TextInput
           value={displayNameInput}
-          onChangeText={(text) => setDisplayNameInput(sanitizeInput(text))}
+          onChangeText={text => setDisplayNameInput(sanitizeInput(text))}
           onEndEditing={() => commitDisplayName(displayNameInput)}
           autoCapitalize="words"
           style={formInput()}

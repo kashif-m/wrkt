@@ -140,15 +140,15 @@ export const ListRow = ({
     }}
   >
     <View style={{ flex: 1, marginRight: spacing(1), minWidth: 0 }}>
-      <Text 
-        style={{ color: palette.text, fontWeight: '600' }} 
+      <Text
+        style={{ color: palette.text, fontWeight: '600' }}
         numberOfLines={2}
         ellipsizeMode="tail"
       >
         {unwrapLabelText(title)}
       </Text>
       {subtitle ? (
-        <Text 
+        <Text
           style={{ color: palette.mutedText, fontSize: 12 }}
           numberOfLines={1}
           ellipsizeMode="tail"
@@ -158,7 +158,7 @@ export const ListRow = ({
       ) : null}
     </View>
     {value ? (
-      <Text 
+      <Text
         style={{ color: palette.mutedText, fontSize: 12 }}
         numberOfLines={1}
         ellipsizeMode="tail"
@@ -188,17 +188,20 @@ export const EmptyState = ({
       {unwrapLabelText(title)}
     </Text>
     {subtitle ? (
-      <Text 
-        style={[typography.body, { color: palette.mutedText, textAlign: 'center' }]}
+      <Text
+        style={[
+          typography.body,
+          { color: palette.mutedText, textAlign: 'center' },
+        ]}
         numberOfLines={2}
       >
         {unwrapLabelText(subtitle)}
       </Text>
     ) : null}
     {actionLabel && onPress ? (
-      <TouchableOpacity 
-        onPress={onPress} 
-        style={{ 
+      <TouchableOpacity
+        onPress={onPress}
+        style={{
           marginTop: spacing(1),
           backgroundColor: palette.primary,
           paddingVertical: spacing(1),
@@ -206,7 +209,12 @@ export const EmptyState = ({
           borderRadius: radius.card,
         }}
       >
-        <Text style={{ color: getContrastTextColor(palette.primary), fontWeight: '600' }}>
+        <Text
+          style={{
+            color: getContrastTextColor(palette.primary),
+            fontWeight: '600',
+          }}
+        >
           {unwrapLabelText(actionLabel)}
         </Text>
       </TouchableOpacity>

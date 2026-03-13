@@ -46,6 +46,7 @@ import {
   DisplayLabel,
   ExerciseName,
   MuscleGroup,
+  asLabelText,
   asDisplayLabel,
   asExerciseName,
   asMuscleGroup,
@@ -106,6 +107,8 @@ const HomeScreen = () => {
   const state = useAppState();
   const dispatch = useAppDispatch();
   const actions = useAppActions();
+  const openLogForExercise = actions.openLogForExercise;
+  const navigate = actions.navigate;
   const [expandedExercises, setExpandedExercises] = useState<
     Record<string, boolean>
   >({});
@@ -454,7 +457,8 @@ const HomeScreen = () => {
             date={model.date}
             expandedExercises={expandedExercises}
             setExpandedExercises={setExpandedExercises}
-            onOpenLog={actions.openLogForExercise}
+            onOpenLog={openLogForExercise}
+            onStartWorkout={() => navigate(asScreenKey('browser'), 'home')}
             splitMode={homeSplitMode}
             onSplitModeChange={mode =>
               dispatch({ type: 'preferences/homeSplitMode', mode })
@@ -465,11 +469,12 @@ const HomeScreen = () => {
       );
     },
     [
-      actions.openLogForExercise,
       dispatch,
       expandedExercises,
       getModelForIndex,
       homeSplitMode,
+      navigate,
+      openLogForExercise,
       pageWidth,
       styles,
     ],
@@ -548,6 +553,7 @@ const HomeDayContent = ({
   expandedExercises,
   setExpandedExercises,
   onOpenLog,
+  onStartWorkout,
   splitMode,
   onSplitModeChange,
   styles,
@@ -563,6 +569,7 @@ const HomeDayContent = ({
     date: Date,
     tab: 'Track' | 'History' | 'Trends',
   ) => void;
+  onStartWorkout: () => void;
   splitMode: 'muscle' | 'volume';
   onSplitModeChange: (mode: 'muscle' | 'volume') => void;
   styles: ReturnType<typeof createStyles>;
@@ -713,11 +720,13 @@ const HomeDayContent = ({
         {model.emptyState ? (
           <Card style={styles.emptySetsCard}>
             <EmptyState
-              title={strings.empty.noSetsToday}
-              subtitle={strings.empty.noSetsSubtitle}
-              actionLabel={strings.navigation.startWorkout}
-              onPress={() => actions.pushScreen(asScreenKey('browser'))}
-              icon={<DumbbellIcon width={48} height={48} fill={palette.mutedText} />}
+              title={asLabelText(strings.empty.noSetsToday)}
+              subtitle={asLabelText(strings.empty.noSetsSubtitle)}
+              actionLabel={asLabelText(strings.navigation.startWorkout)}
+              onPress={onStartWorkout}
+              icon={
+                <DumbbellIcon width={48} height={48} fill={palette.mutedText} />
+              }
             />
           </Card>
         ) : null}
@@ -750,7 +759,7 @@ const HomeDayContent = ({
                         : exercise.sets.slice(0, MAX_SET_PREVIEW);
                       return (
                         <View style={{ flex: 1, gap: spacing(0.5) }}>
-                          <Text 
+                          <Text
                             style={styles.exerciseTitle}
                             numberOfLines={2}
                             ellipsizeMode="tail"

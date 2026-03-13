@@ -156,7 +156,7 @@ const persistNow = async () => {
   isSaving = true;
   let attempts = 0;
   const maxAttempts = 3;
-  
+
   while (attempts < maxAttempts) {
     try {
       const json = JSON.stringify(events);
@@ -167,8 +167,11 @@ const persistNow = async () => {
       break; // Success, exit retry loop
     } catch (error) {
       attempts++;
-      console.error(`[persistence] Write failed (attempt ${attempts}/${maxAttempts})`, error);
-      
+      console.error(
+        `[persistence] Write failed (attempt ${attempts}/${maxAttempts})`,
+        error,
+      );
+
       if (attempts >= maxAttempts) {
         // All retries failed, notify the app
         if (onStorageError && error instanceof Error) {
@@ -176,12 +179,14 @@ const persistNow = async () => {
         }
         break;
       }
-      
+
       // Exponential backoff: 100ms, 200ms, 400ms
-      await new Promise(resolve => setTimeout(resolve, 100 * Math.pow(2, attempts - 1)));
+      await new Promise(resolve =>
+        setTimeout(resolve, 100 * Math.pow(2, attempts - 1)),
+      );
     }
   }
-  
+
   isSaving = false;
   const hasQueuedChanges = needsResave;
   needsResave = false;

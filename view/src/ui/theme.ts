@@ -10,12 +10,7 @@ export type ThemeMode =
   | 'forest_night'
   | 'slate_blue'
   | 'sepia_dark';
-export type AccentKey =
-  | 'blue'
-  | 'emerald'
-  | 'amber'
-  | 'rose'
-  | 'custom';
+export type AccentKey = 'blue' | 'emerald' | 'amber' | 'rose' | 'custom';
 
 type Palette = {
   background: ColorHex;

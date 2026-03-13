@@ -2,7 +2,13 @@ import React, { useMemo } from 'react';
 import { ScrollView, View, Text } from 'react-native';
 import { WorkoutEvent } from '../workoutFlows';
 import { Card, SectionHeading, EmptyState, ListRow } from '../ui/components';
-import { cardShadowStyle, spacing, palette, radius, typography } from '../ui/theme';
+import {
+  cardShadowStyle,
+  spacing,
+  palette,
+  radius,
+  typography,
+} from '../ui/theme';
 import { roundToLocalDay } from '../timePolicy';
 import { useAppState } from '../state/appContext';
 import {

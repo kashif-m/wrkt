@@ -46,7 +46,8 @@ export const strings = {
     noData: 'No data available',
     noSets: 'No sets logged',
     noSetsToday: 'No workouts today',
-    noSetsSubtitle: 'Track your first set to start building your fitness journey.',
+    noSetsSubtitle:
+      'Track your first set to start building your fitness journey.',
   },
 
   // Exercise browser
