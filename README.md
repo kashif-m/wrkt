@@ -7,7 +7,8 @@
 - `strata/`: Generic, domain-agnostic Rust core (DSL parser, IR, evaluator, engine, analytics primitives, FFI core).
 - `workout-pack/`: Workout domain pack (workout DSL, analytics orchestration, catalog/import logic, workout FFI wrapper).
 - `view/`: React Native app (UI, local persistence, navigation, native JSI bindings).
-- `llm/`: Architecture, guidelines, and product/reference docs.
+- `integrations/`: Platform integration surfaces (for example JSI/native boundary).
+- `docs/`: Shared project documentation (architecture, testing, product, and guidelines).
 
 ## The 3-model boundary
 
@@ -61,8 +62,13 @@ Regenerate with:
 just pack-sync-dsl-contract
 ```
 
-## Architecture Docs
+## Shared Docs
 
-- `llm/ARCHITECTURE.md`
-- `llm/GUIDELINES.md`
-- `llm/PACK_CREATION_GUIDE.md`
+- `docs/architecture-overview.md`
+- `docs/architecture-notes.md`
+- `docs/development-guidelines.md`
+- `docs/integrations.md`
+- `docs/pack-creation-guide.md`
+- `docs/persistence.md`
+- `docs/product-requirements.md`
+- `docs/testing.md`

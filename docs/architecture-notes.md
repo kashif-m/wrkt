@@ -392,7 +392,7 @@ I won’t ask questions unless necessary, but here are “default decisions” I
 
 For creating new domain packs (for example `expense-pack`) using the same Strata core, follow:
 
-- `llm/PACK_CREATION_GUIDE.md`
+- `docs/pack-creation-guide.md`
 
 ---
 

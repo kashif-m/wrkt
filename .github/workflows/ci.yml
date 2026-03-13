@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  strata:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: strata
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust fmt
+        run: cargo fmt --check
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --workspace
+
+  workout-pack:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: workout-pack
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust fmt
+        run: cargo fmt --check
+      - name: Rust clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Rust tests
+        run: cargo test --workspace
+
+  view:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: view
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: view/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Type check
+        run: npx tsc --noEmit
