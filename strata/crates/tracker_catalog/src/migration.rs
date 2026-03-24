@@ -6,10 +6,10 @@ use super::TrackerError;
 /// Migration trait for catalog upgrades
 pub trait Migration {
     /// Source version
-    fn from_version(&self) -> CatalogVersion;
+    fn source_version(&self) -> CatalogVersion;
 
     /// Target version
-    fn to_version(&self) -> CatalogVersion;
+    fn target_version(&self) -> CatalogVersion;
 
     /// Apply migration to an entry
     fn migrate_entry(&self, entry: CatalogEntry) -> Result<CatalogEntry, TrackerError>;
@@ -36,7 +36,9 @@ impl MigrationRegistry {
         // Simple linear migration (assumes migrations are registered in order)
         self.migrations
             .iter()
-            .filter(|m| m.from_version().major >= from.major && m.to_version().major <= to.major)
+            .filter(|m| {
+                m.source_version().major >= from.major && m.target_version().major <= to.major
+            })
             .map(|m| m.as_ref())
             .collect()
     }
@@ -52,11 +54,11 @@ impl Default for MigrationRegistry {
 pub struct NoOpMigration;
 
 impl Migration for NoOpMigration {
-    fn from_version(&self) -> CatalogVersion {
+    fn source_version(&self) -> CatalogVersion {
         CatalogVersion::new(1, 0, 0)
     }
 
-    fn to_version(&self) -> CatalogVersion {
+    fn target_version(&self) -> CatalogVersion {
         CatalogVersion::new(1, 0, 0)
     }
 
@@ -81,11 +83,11 @@ impl RenameAttributeMigration {
 }
 
 impl Migration for RenameAttributeMigration {
-    fn from_version(&self) -> CatalogVersion {
+    fn source_version(&self) -> CatalogVersion {
         CatalogVersion::new(1, 0, 0)
     }
 
-    fn to_version(&self) -> CatalogVersion {
+    fn target_version(&self) -> CatalogVersion {
         CatalogVersion::new(1, 1, 0)
     }
 
@@ -96,7 +98,7 @@ impl Migration for RenameAttributeMigration {
                 obj.insert(self.to_attr.clone(), value);
             }
         }
-        entry.version = self.to_version();
+        entry.version = self.target_version();
         Ok(entry)
     }
 }

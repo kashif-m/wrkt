@@ -24,7 +24,7 @@ fn ffi_roundtrip_compiles_tracker() {
             .expect("ffi payload should be utf-8")
             .to_string()
     };
-    tracker_ffi::strata_free_string(result.data);
+    unsafe { tracker_ffi::strata_free_string(result.data) };
 
     let parsed: serde_json::Value =
         serde_json::from_str(&payload).expect("ffi payload should be valid json");
@@ -65,7 +65,7 @@ fn ffi_roundtrip_compute_smoke() {
             .expect("ffi payload should be utf-8")
             .to_string()
     };
-    tracker_ffi::strata_free_string(result.data);
+    unsafe { tracker_ffi::strata_free_string(result.data) };
 
     let parsed: serde_json::Value =
         serde_json::from_str(&payload).expect("ffi payload should be valid json");

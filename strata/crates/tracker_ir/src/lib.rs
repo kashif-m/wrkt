@@ -3,7 +3,6 @@
 //! The types in this crate stay domain agnostic and encode the deterministic API surface of the
 //! engine: tracker definitions, normalized events, query inputs, and output envelopes.
 
-use blake3;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::collections::{BTreeMap, BTreeSet};
@@ -263,20 +262,33 @@ pub struct TrackerDefinition {
     views: Vec<ViewDefinition>,
 }
 
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct TrackerDefinitionInput {
+    pub tracker_name: String,
+    pub version: TrackerVersion,
+    pub dsl: String,
+    pub fields: Vec<FieldDefinition>,
+    pub derives: Vec<DeriveDefinition>,
+    pub metrics: Vec<MetricDefinition>,
+    pub alerts: Vec<AlertDefinition>,
+    pub planning: Option<PlanningDefinition>,
+    #[serde(default)]
+    pub views: Vec<ViewDefinition>,
+}
+
 impl TrackerDefinition {
-    pub fn new(
-        tracker_name: impl Into<String>,
-        version: TrackerVersion,
-        dsl: impl Into<String>,
-        fields: Vec<FieldDefinition>,
-        derives: Vec<DeriveDefinition>,
-        metrics: Vec<MetricDefinition>,
-        alerts: Vec<AlertDefinition>,
-        planning: Option<PlanningDefinition>,
-        views: Vec<ViewDefinition>,
-    ) -> Self {
-        let tracker_name = tracker_name.into();
-        let dsl = dsl.into();
+    pub fn new(input: TrackerDefinitionInput) -> Self {
+        let TrackerDefinitionInput {
+            tracker_name,
+            version,
+            dsl,
+            fields,
+            derives,
+            metrics,
+            alerts,
+            planning,
+            views,
+        } = input;
         let tracker_id = build_tracker_id(&tracker_name, version, &dsl);
         Self {
             tracker_id,
@@ -452,7 +464,7 @@ impl EngineState {
 }
 
 /// Engine output returned by stateless compute.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct EngineOutput {
     pub total_events: usize,
     pub window_events: usize,
@@ -460,31 +472,11 @@ pub struct EngineOutput {
     pub alerts: Vec<Value>,
 }
 
-impl Default for EngineOutput {
-    fn default() -> Self {
-        Self {
-            total_events: 0,
-            window_events: 0,
-            metrics: BTreeMap::new(),
-            alerts: Vec::new(),
-        }
-    }
-}
-
 /// Delta emitted by incremental apply/simulate.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct EngineOutputDelta {
     pub total_events_delta: isize,
     pub metrics: BTreeMap<String, Value>,
-}
-
-impl Default for EngineOutputDelta {
-    fn default() -> Self {
-        Self {
-            total_events_delta: 0,
-            metrics: BTreeMap::new(),
-        }
-    }
 }
 
 /// Output returned by planning simulations.

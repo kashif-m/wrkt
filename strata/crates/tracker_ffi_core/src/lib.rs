@@ -13,13 +13,18 @@ pub struct FfiResult {
     pub data: *mut c_char,
 }
 
-pub fn strata_free_string(ptr: *mut c_char) {
+/// Frees a C string previously returned by this library.
+///
+/// # Safety
+/// `ptr` must be a valid pointer produced by `CString::into_raw` in this library and must not
+/// be freed more than once.
+pub unsafe fn strata_free_string(ptr: *mut c_char) {
     if ptr.is_null() {
         return;
     }
-    unsafe {
-        drop(CString::from_raw(ptr));
-    }
+    // SAFETY: Caller guarantees `ptr` was returned by `CString::into_raw` from this library
+    // and has not been freed yet.
+    drop(unsafe { CString::from_raw(ptr) });
 }
 
 pub fn strata_compile_tracker(dsl_ptr: *const c_char) -> FfiResult {
@@ -123,7 +128,7 @@ pub fn parse_query(ptr: *const c_char) -> Result<Query, String> {
     serde_json::from_str(json).or(Ok(Query::default()))
 }
 
-pub fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {
+fn cstr_to_str<'a>(ptr: *const c_char) -> Result<&'a str, String> {
     if ptr.is_null() {
         return Err("null pointer".into());
     }

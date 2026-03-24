@@ -151,7 +151,6 @@ pub fn compute(
         window_events,
         metrics,
         alerts,
-        ..EngineOutput::default()
     })
 }
 

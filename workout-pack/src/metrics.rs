@@ -239,7 +239,9 @@ pub fn build_pr_payload(
     existing_event: Option<&ExistingEventInfo>,
     logging_mode: &str,
 ) -> SetPayload {
-    let mode = LoggingMode::from_str(logging_mode).unwrap_or(LoggingMode::RepsWeight);
+    let mode = logging_mode
+        .parse::<LoggingMode>()
+        .unwrap_or(LoggingMode::RepsWeight);
 
     // Calculate score for the new payload
     let current_score = score_set(
@@ -303,7 +305,7 @@ pub fn build_pr_payload(
 
     // Determine if this event is currently a PR after update/create.
     // Updates must be able to demote a previously tagged PR.
-    let is_new_pr = best_score.map_or(true, |best| current_score > best);
+    let is_new_pr = best_score.is_none_or(|best| current_score > best);
     payload.pr = Some(is_new_pr);
 
     if is_new_pr {

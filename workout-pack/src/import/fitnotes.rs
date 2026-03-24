@@ -60,11 +60,9 @@ pub fn import_fitnotes(path: &str) -> Result<ImportBundle, String> {
         let modality = map_modality(exercise.exercise_type_id);
         let base_slug = slugify(&exercise.name);
         let slug = uniquify_slug(&base_slug, &mut used_slugs, exercise.id);
-        if exercise.is_favourite {
-            if !favorite_set.contains_key(&slug) {
-                favorites.push(slug.clone());
-                favorite_set.insert(slug.clone(), ());
-            }
+        if exercise.is_favourite && !favorite_set.contains_key(&slug) {
+            favorites.push(slug.clone());
+            favorite_set.insert(slug.clone(), ());
         }
         imported_exercises.push(ExerciseDefinition {
             slug,
@@ -163,7 +161,7 @@ fn load_categories(conn: &Connection) -> Result<Vec<FitNotesCategory>, String> {
         .prepare("SELECT _id, name FROM Category")
         .map_err(|err| err.to_string())?;
     let entries = stmt
-        .query_map([], |row| map_category_row(row))
+        .query_map([], map_category_row)
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
@@ -184,7 +182,7 @@ fn load_exercises(conn: &Connection) -> Result<Vec<FitNotesExercise>, String> {
         )
         .map_err(|err| err.to_string())?;
     let entries = stmt
-        .query_map([], |row| map_exercise_row(row))
+        .query_map([], map_exercise_row)
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;
@@ -209,7 +207,7 @@ fn load_logs(conn: &Connection) -> Result<Vec<FitNotesLog>, String> {
         )
         .map_err(|err| err.to_string())?;
     let entries = stmt
-        .query_map([], |row| map_log_row(row))
+        .query_map([], map_log_row)
         .map_err(|err| err.to_string())?
         .collect::<Result<Vec<_>, _>>()
         .map_err(|err| err.to_string())?;

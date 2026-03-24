@@ -427,10 +427,7 @@ fn evaluate_aggregation(spec: &AggregationSpec, events: &[&NormalizedEvent]) -> 
     }
 }
 
-fn filter_events<'a>(
-    events: &'a [NormalizedEvent],
-    window: Option<TimeWindow>,
-) -> Vec<&'a NormalizedEvent> {
+fn filter_events(events: &[NormalizedEvent], window: Option<TimeWindow>) -> Vec<&NormalizedEvent> {
     match window {
         Some(window) => events
             .iter()
@@ -615,7 +612,7 @@ mod tests {
 
     #[test]
     fn aggregates_sum_with_group_by() {
-        let events = vec![
+        let events = [
             sample_event(json!({"group_key": "segment_a", "value_a": 80}), 1_000),
             sample_event(json!({"group_key": "segment_a", "value_a": 85}), 2_000),
             sample_event(json!({"group_key": "segment_b", "value_a": 120}), 3_000),
@@ -645,7 +642,7 @@ mod tests {
 
     #[test]
     fn rounds_aggregations_to_two_decimals() {
-        let events = vec![
+        let events = [
             sample_event(json!({"group_key": "segment_a", "value_a": 1.0}), 1_000),
             sample_event(json!({"group_key": "segment_a", "value_a": 2.0}), 2_000),
             sample_event(json!({"group_key": "segment_a", "value_a": 2.0}), 3_000),
@@ -676,7 +673,7 @@ mod tests {
     #[test]
     fn counts_events_by_day() {
         let day_ms = 24 * 60 * 60 * 1_000;
-        let events = vec![
+        let events = [
             sample_event(json!({}), 0),
             sample_event(json!({}), day_ms),
             sample_event(json!({}), day_ms + 10),

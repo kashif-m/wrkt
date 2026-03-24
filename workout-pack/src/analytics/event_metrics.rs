@@ -87,7 +87,7 @@ pub(crate) fn extract_event_metrics(
         .filter(|v| *v > 0.0);
 
     let resolved_logging_mode = resolve_catalog_entry(event, exercise_name, catalog_map)
-        .map(|entry| entry.logging_mode.clone())
+        .map(|entry| entry.logging_mode)
         .unwrap_or_else(|| infer_logging_mode(weight, reps, duration, distance));
 
     let mut metrics = EventMetricValues {

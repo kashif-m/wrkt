@@ -6,8 +6,12 @@ pub use tracker_ffi_core::FfiResult;
 
 /// Frees an allocated C string returned by Strata FFI calls.
 #[no_mangle]
-pub extern "C" fn strata_free_string(ptr: *mut c_char) {
-    tracker_ffi_core::strata_free_string(ptr)
+///
+/// # Safety
+/// `ptr` must be a valid pointer produced by Strata FFI and must not be freed more than once.
+pub unsafe extern "C" fn strata_free_string(ptr: *mut c_char) {
+    // SAFETY: Guaranteed by this function's contract.
+    unsafe { tracker_ffi_core::strata_free_string(ptr) }
 }
 
 /// Compiles tracker DSL and returns a JSON payload with tracker metadata.

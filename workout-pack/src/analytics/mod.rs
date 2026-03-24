@@ -360,7 +360,7 @@ fn days_in_month_from_bucket(month_bucket: i64, offset_minutes: i32) -> i32 {
     let local_proxy = Utc
         .timestamp_millis_opt(month_bucket)
         .single()
-        .unwrap_or_else(|| Utc::now())
+        .unwrap_or_else(Utc::now)
         + Duration::minutes(offset_minutes as i64);
 
     let year = local_proxy.year();
@@ -371,7 +371,7 @@ fn days_in_month_from_bucket(month_bucket: i64, offset_minutes: i32) -> i32 {
     let next_start = Utc
         .with_ymd_and_hms(next_year, next_month, 1, 0, 0, 0)
         .single()
-        .unwrap_or_else(|| Utc::now());
+        .unwrap_or_else(Utc::now);
     (next_start - Duration::days(1)).day() as i32
 }
 
@@ -391,7 +391,7 @@ pub fn compute_calendar_month_analytics(
         let local_now = Utc
             .timestamp_millis_opt(now_ts)
             .single()
-            .unwrap_or_else(|| Utc::now())
+            .unwrap_or_else(Utc::now)
             + Duration::minutes(offset_minutes as i64);
         local_now.day() as i32
     } else {
@@ -426,7 +426,7 @@ pub fn compute_calendar_month_analytics(
 
         day_groups
             .entry(day_bucket)
-            .or_insert_with(HashSet::new)
+            .or_default()
             .insert(group.clone());
         *muscle_set_counts.entry(group).or_insert(0) += 1;
     }
@@ -1562,7 +1562,7 @@ mod tests {
             events.push(make_event(
                 base + (index as i64 * 60_000),
                 "Barbell Squat",
-                (5 + (index % 6)) as i32,
+                5 + (index % 6),
                 80.0 + (index % 40) as f32,
             ));
         }

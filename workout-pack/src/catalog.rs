@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExerciseDefinition {
@@ -37,8 +38,8 @@ pub enum LoggingMode {
 }
 
 impl LoggingMode {
-    /// Parse from string representation
-    pub fn from_str(s: &str) -> Option<Self> {
+    /// Parse from string representation.
+    pub fn parse_mode(s: &str) -> Option<Self> {
         match s {
             "reps" => Some(Self::Reps),
             "reps_weight" => Some(Self::RepsWeight),
@@ -72,6 +73,14 @@ impl LoggingMode {
             self,
             Self::Distance | Self::TimeDistance | Self::DistanceWeight | Self::Mixed
         )
+    }
+}
+
+impl FromStr for LoggingMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse_mode(s).ok_or(())
     }
 }
 

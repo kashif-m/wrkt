@@ -2,7 +2,7 @@
 
 use serde::Deserialize;
 use tracker_ir::error::{ErrorCode, TrackerError, TrackerResult};
-use tracker_ir::TrackerDefinition;
+use tracker_ir::{TrackerDefinition, TrackerDefinitionInput};
 
 pub mod ast;
 pub mod parser;
@@ -14,17 +14,17 @@ pub fn compile(input: &str) -> TrackerResult<TrackerDefinition> {
     let ast = parser::parse_tracker(input)?;
     validate_semantics(&ast)?;
 
-    Ok(TrackerDefinition::new(
-        ast.name,
-        ast.version,
-        input,
-        ast.fields,
-        ast.derives,
-        ast.metrics,
-        ast.alerts,
-        ast.planning,
-        ast.views,
-    ))
+    Ok(TrackerDefinition::new(TrackerDefinitionInput {
+        tracker_name: ast.name,
+        version: ast.version,
+        dsl: input.to_string(),
+        fields: ast.fields,
+        derives: ast.derives,
+        metrics: ast.metrics,
+        alerts: ast.alerts,
+        planning: ast.planning,
+        views: ast.views,
+    }))
 }
 
 /// Parse DSL into AST (without full semantic validation).

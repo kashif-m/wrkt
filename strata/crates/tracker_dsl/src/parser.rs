@@ -189,7 +189,7 @@ fn parse_planning(body: Option<&str>) -> TrackerResult<Option<PlanningDefinition
 
         let block = extract_braced(after_kw, brace_idx)?;
         let mut params = std::collections::BTreeMap::new();
-        for (line_index, line) in statement_lines(&block).into_iter().enumerate() {
+        for (line_index, line) in statement_lines(block).into_iter().enumerate() {
             if let Some((key, value)) = line.split_once('=') {
                 params.insert(key.trim().to_string(), parse_literal(value.trim())?);
             } else {
@@ -237,7 +237,7 @@ fn parse_views(body: Option<&str>) -> TrackerResult<Vec<ViewDefinition>> {
 
         let block = extract_braced(after_kw, brace_idx)?;
         let mut params = std::collections::BTreeMap::new();
-        for (line_index, line) in statement_lines(&block).into_iter().enumerate() {
+        for (line_index, line) in statement_lines(block).into_iter().enumerate() {
             if let Some((key, value)) = line.split_once('=') {
                 params.insert(key.trim().to_string(), parse_literal(value.trim())?);
             } else {
@@ -298,8 +298,8 @@ fn parse_aggregation(rhs: &str) -> TrackerResult<AggregationDefinition> {
         tail = tail[end..].trim();
     }
 
-    if tail.starts_with("over") {
-        let grain = tail[4..].trim();
+    if let Some(grain) = tail.strip_prefix("over") {
+        let grain = grain.trim();
         over = Some(parse_time_grain(grain)?);
     }
 
