@@ -16,6 +16,10 @@ core-build:
 core-test:
 	cd {{strata_dir}} && cargo test
 
+clippy:
+	cd {{strata_dir}} && cargo clippy --all-targets -- -D warnings
+	cd workout-pack && cargo clippy --all-targets -- -D warnings
+
 coverage-core:
 	@if ! command -v cargo-llvm-cov >/dev/null 2>&1; then \
 		echo "cargo-llvm-cov is required. Install via: cargo install cargo-llvm-cov"; \
@@ -87,6 +91,7 @@ strata-purity:
 sot-check:
 	just strata-purity
 	just sot-strict
+	just clippy
 	cd {{strata_dir}} && cargo test -p tracker_dsl -p tracker_engine
 	cd workout-pack && cargo test -p workout_pack -p workout_ffi
 	cd {{view_dir}} && npx tsc --noEmit

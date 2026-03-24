@@ -16,7 +16,7 @@ members = [
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.79"
-license = "UNLICENSED"
+license = "MIT"
 readme = "README.md"
 description = "Generic tracker core written in Rust; integrates with RN clients via FFI."
 

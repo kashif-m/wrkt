@@ -1,30 +1,52 @@
 # wrkt
 
-`wrkt` is a React Native app backed by a Rust analytics engine with a DSL-first domain model.
+`wrkt` is a fitness tracking project built around `strata`, a reusable Rust tracker engine for DSL parsing, deterministic computation, analytics, and mobile FFI integration.
+
+## Status
+
+Active development. Architecture and APIs can evolve while core domain boundaries remain strict.
+
+## Why `wrkt`
+
+`wrkt` separates product behavior from UI implementation:
+
+- Domain logic lives in Rust (`strata` + domain pack DSL).
+- App clients consume contracts and engine outputs.
+- Analytics and compute remain deterministic and testable.
+
+## Key Capabilities
+
+- DSL-first domain modeling for tracker definitions and queries.
+- Reusable Rust core (`strata`) designed to stay domain-agnostic.
+- Workout-specific pack (`workout-pack`) layered on top of the core.
+- React Native client (`view`) connected through native FFI/JSI boundaries.
+- Contract generation pipeline from Rust domain definitions to TypeScript consumers.
 
 ## Repository Layout
 
-- `strata/`: Generic, domain-agnostic Rust core (DSL parser, IR, evaluator, engine, analytics primitives, FFI core).
-- `workout-pack/`: Workout domain pack (workout DSL, analytics orchestration, catalog/import logic, workout FFI wrapper).
-- `view/`: React Native app (UI, local persistence, navigation, native JSI bindings).
-- `integrations/`: Platform integration surfaces (for example JSI/native boundary).
-- `docs/`: Shared project documentation (architecture, testing, product, and guidelines).
+- `strata/`: generic Rust tracker core crates.
+- `workout-pack/`: workout domain pack, import logic, and workout FFI wrapper.
+- `view/`: React Native app, local persistence, navigation, analytics views, and native bridge usage.
+- `integrations/`: integration surfaces at platform boundaries.
+- `docs/`: architecture, product, persistence, integration, and testing documentation.
 
-## The 3-model boundary
+## Architecture Boundaries
 
-- Domain model: canonical logic and schema in Rust (`strata` + pack DSL).
-- Boundary models: API/FFI and DB/persistence shapes at module edges.
-- UI model: presentation-only state and component props.
+The project uses a 3-model boundary:
 
-Rule: domain behavior must be defined in DSL/pack/core, not reimplemented in UI.
+- Domain model: canonical schema and behavior in Rust.
+- Boundary models: API/FFI and persistence interfaces.
+- UI model: presentation-only state and components.
+
+Rule: domain behavior should not be reimplemented in the UI layer.
 
 ## Quick Start
 
 Prerequisites:
 
 - Rust toolchain
-- Node + npm
-- Xcode (iOS) and/or Android toolchain
+- Node.js + npm
+- Xcode (iOS) and/or Android SDK/NDK toolchain
 
 From repo root:
 
@@ -33,36 +55,36 @@ just pack-sync-dsl-contract
 just sot-check
 ```
 
-Run app:
+Run the app:
 
 ```sh
 just metro
 just ios
 ```
 
-## Common Commands
+## Development Commands
 
-- `just sot-check`: purity + SoT checks + Rust tests + TypeScript compile
-- `just strata-purity`: blocks domain leakage into `strata`
-- `just pack-test`: workout pack tests
-- `just core-test`: strata tests
-- `just ts-check`: TypeScript compile check
+- `just sot-check`: SoT checks, boundary checks, Rust tests, and TS compile.
+- `just strata-purity`: enforce domain-agnostic constraints in `strata`.
+- `just core-test`: run `strata` tests.
+- `just pack-test`: run `workout-pack` tests.
+- `just ts-check`: TypeScript compile check.
 
-## Build Artifacts
+## Generated Contracts
 
-`workout-pack/build.rs` generates contracts consumed by the app:
+`workout-pack/build.rs` generates app contracts:
 
 - `view/src/domain/generated/workoutDslContract.ts`
 - `view/src/domain/generated/workoutApiContract.ts`
 - `view/src/domain/generated/workoutDomainContract.ts`
 
-Regenerate with:
+Regenerate contracts:
 
 ```sh
 just pack-sync-dsl-contract
 ```
 
-## Shared Docs
+## Documentation
 
 - `docs/architecture-overview.md`
 - `docs/architecture-notes.md`
@@ -72,3 +94,17 @@ just pack-sync-dsl-contract
 - `docs/persistence.md`
 - `docs/product-requirements.md`
 - `docs/testing.md`
+
+## Contributing
+
+Before opening a PR, run:
+
+```sh
+just sot-check
+```
+
+Keep domain changes in Rust/domain-pack layers and keep UI changes presentation-focused.
+
+## License
+
+MIT. See `LICENSE`.
